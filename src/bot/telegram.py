@@ -18,6 +18,9 @@ from telegram.ext import (
 from config import settings
 from .commands import get_command_handler
 from .conversation import get_conversation_manager
+from .validation import get_validation_workflow, ValidationStage
+from ..models.validation import ProofType
+from ..scheduler.reminders import get_reminder_service
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,10 @@ class TelegramBot:
         self.webhook_url = f"{settings.webhook_base_url}/webhook/telegram"
         self.commands = get_command_handler()
         self.conversation = get_conversation_manager()
+        self.validation = get_validation_workflow()
+        self.reminders = get_reminder_service()
         self.app: Optional[Application] = None
+        self.boss_chat_id = settings.telegram_boss_chat_id
 
     async def initialize(self) -> None:
         """Initialize the Telegram bot application."""
@@ -77,6 +83,13 @@ class TelegramBot:
         self.app.add_handler(TGCommandHandler("addteam", self._handle_addteam))
         self.app.add_handler(TGCommandHandler("note", self._handle_note))
         self.app.add_handler(TGCommandHandler("delay", self._handle_delay))
+
+        # Validation commands
+        self.app.add_handler(TGCommandHandler("submit", self._handle_submit))
+        self.app.add_handler(TGCommandHandler("submitproof", self._handle_submitproof))
+        self.app.add_handler(TGCommandHandler("pending", self._handle_pending))
+        self.app.add_handler(TGCommandHandler("approve", self._handle_approve))
+        self.app.add_handler(TGCommandHandler("reject", self._handle_reject))
 
         # Voice message handler
         self.app.add_handler(MessageHandler(filters.VOICE, self._handle_voice))
@@ -246,13 +259,108 @@ class TelegramBot:
         await update.message.reply_text(response, parse_mode='Markdown')
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle general text messages - main conversation flow."""
+        """Handle general text messages - main conversation flow and validation flow."""
         user_id = str(update.effective_user.id)
         chat_id = str(update.effective_chat.id)
         message = update.message.text
         message_id = str(update.message.message_id)
+        message_lower = message.lower().strip()
 
         try:
+            # Check if user is in validation submission mode
+            session = await self.validation._get_session(user_id)
+
+            if session:
+                stage = session.get("stage", "")
+
+                # Collecting proof - check for "done" signal
+                if stage == ValidationStage.COLLECTING_PROOF.value:
+                    if message_lower in ["done", "finish", "submit", "that's all", "thats all"]:
+                        response = await self.commands.handle_submit_proof(user_id)
+                        await update.message.reply_text(response, parse_mode='Markdown')
+                        return
+                    elif message_lower.startswith("http"):
+                        # User sent a link as proof
+                        response = await self.commands.handle_add_proof(
+                            user_id=user_id,
+                            proof_type=ProofType.LINK,
+                            content=message,
+                            caption="Link proof"
+                        )
+                        await update.message.reply_text(response, parse_mode='Markdown')
+                        return
+                    else:
+                        # Treat as a note/text proof
+                        response = await self.commands.handle_add_proof(
+                            user_id=user_id,
+                            proof_type=ProofType.NOTE,
+                            content=message,
+                            caption="Text note"
+                        )
+                        await update.message.reply_text(response, parse_mode='Markdown')
+                        return
+
+                # Collecting notes stage
+                elif stage == ValidationStage.COLLECTING_NOTES.value:
+                    response = await self.commands.handle_submission_notes(user_id, message)
+                    await update.message.reply_text(response, parse_mode='Markdown')
+                    return
+
+                # Confirming submission
+                elif stage == ValidationStage.CONFIRMING.value:
+                    if message_lower in ["yes", "y", "confirm", "ok", "submit"]:
+                        response, request = await self.commands.handle_confirm_submission(user_id)
+                        await update.message.reply_text(response, parse_mode='Markdown')
+
+                        # Send validation request to boss
+                        if request and self.boss_chat_id:
+                            await self._send_validation_to_boss(request, context)
+                        return
+
+                    elif message_lower in ["no", "cancel", "abort"]:
+                        response = await self.commands.handle_cancel_submission(user_id)
+                        await update.message.reply_text(response, parse_mode='Markdown')
+                        return
+
+            # Check if boss is responding to validation request
+            if str(chat_id) == str(self.boss_chat_id):
+                if message_lower.startswith("approve"):
+                    # Boss approving - need to determine which task from reply context
+                    response, feedback, assignee_id = await self.commands.handle_approve(
+                        boss_id=user_id,
+                        task_id="",  # Would get from context
+                        message=message[7:].strip() or "Great work!"
+                    )
+                    if response:
+                        await update.message.reply_text(response, parse_mode='Markdown')
+                        if feedback and assignee_id:
+                            await self._notify_assignee(
+                                assignee_id, feedback, "", "", context
+                            )
+                    return
+
+                elif message_lower.startswith("reject"):
+                    feedback_text = message[6:].strip()
+                    if not feedback_text:
+                        await update.message.reply_text(
+                            "❌ Please provide feedback:\n`reject [what needs to change]`",
+                            parse_mode='Markdown'
+                        )
+                        return
+                    response, feedback, assignee_id = await self.commands.handle_reject(
+                        boss_id=user_id,
+                        task_id="",
+                        feedback=feedback_text
+                    )
+                    if response:
+                        await update.message.reply_text(response, parse_mode='Markdown')
+                        if feedback and assignee_id:
+                            await self._notify_assignee(
+                                assignee_id, feedback, "", "", context
+                            )
+                    return
+
+            # Default: regular conversation flow
             response, _ = await self.conversation.process_message(
                 user_id=user_id,
                 message=message,
@@ -265,6 +373,163 @@ class TelegramBot:
             await update.message.reply_text(
                 "Sorry, I encountered an error. Please try again."
             )
+
+    # ==================== VALIDATION HANDLERS ====================
+
+    async def _handle_submit(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /submit command - Start validation submission."""
+        user_id = str(update.effective_user.id)
+        user_name = update.effective_user.full_name or update.effective_user.username or "Team Member"
+
+        if len(context.args) < 1:
+            await update.message.reply_text(
+                "Usage: /submit [task-id]\n"
+                "Example: /submit TASK-20260116-001\n\n"
+                "This will start the proof submission process."
+            )
+            return
+
+        task_id = context.args[0]
+        # In a full implementation, we'd look up the task title
+        task_title = f"Task {task_id}"
+
+        response = await self.commands.handle_submit(
+            user_id=user_id,
+            task_id=task_id,
+            task_title=task_title,
+            assignee_name=user_name
+        )
+        await update.message.reply_text(response, parse_mode='Markdown')
+
+    async def _handle_submitproof(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /submitproof command - Finish collecting proof."""
+        user_id = str(update.effective_user.id)
+        response = await self.commands.handle_submit_proof(user_id)
+        await update.message.reply_text(response, parse_mode='Markdown')
+
+    async def _handle_pending(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /pending command - Show pending validations (for boss)."""
+        user_id = str(update.effective_user.id)
+        response = await self.commands.handle_pending_validations(user_id)
+        await update.message.reply_text(response, parse_mode='Markdown')
+
+    async def _handle_approve(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /approve command."""
+        user_id = str(update.effective_user.id)
+
+        if len(context.args) < 1:
+            await update.message.reply_text(
+                "Usage: /approve [task-id] [optional message]\n"
+                "Example: /approve TASK-20260116-001 Great work!"
+            )
+            return
+
+        task_id = context.args[0]
+        message = ' '.join(context.args[1:]) if len(context.args) > 1 else "Great work!"
+
+        response, feedback, assignee_id = await self.commands.handle_approve(
+            boss_id=user_id,
+            task_id=task_id,
+            message=message
+        )
+
+        if response:
+            await update.message.reply_text(response, parse_mode='Markdown')
+
+            # Notify assignee
+            if feedback and assignee_id:
+                await self._notify_assignee(assignee_id, feedback, task_id, "", context)
+
+    async def _handle_reject(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /reject command."""
+        user_id = str(update.effective_user.id)
+
+        if len(context.args) < 2:
+            await update.message.reply_text(
+                "Usage: /reject [task-id] [feedback]\n"
+                "Example: /reject TASK-20260116-001 Please add mobile screenshots\n\n"
+                "You can list multiple issues separated by newlines or semicolons."
+            )
+            return
+
+        task_id = context.args[0]
+        feedback_text = ' '.join(context.args[1:])
+
+        response, feedback, assignee_id = await self.commands.handle_reject(
+            boss_id=user_id,
+            task_id=task_id,
+            feedback=feedback_text
+        )
+
+        if response:
+            await update.message.reply_text(response, parse_mode='Markdown')
+
+            # Notify assignee
+            if feedback and assignee_id:
+                await self._notify_assignee(assignee_id, feedback, task_id, "", context)
+
+    async def _send_validation_to_boss(
+        self,
+        request,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Send validation request to boss's Telegram."""
+        if not self.boss_chat_id:
+            logger.warning("Boss chat ID not configured")
+            return
+
+        try:
+            message = request.to_telegram_message()
+            await context.bot.send_message(
+                chat_id=self.boss_chat_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+
+            # Send proof items (photos)
+            for proof in request.attempt.proof_items:
+                if proof.proof_type == ProofType.SCREENSHOT and proof.file_id:
+                    await context.bot.send_photo(
+                        chat_id=self.boss_chat_id,
+                        photo=proof.file_id,
+                        caption=f"Proof: {proof.caption or 'Screenshot'}"
+                    )
+                elif proof.proof_type == ProofType.LINK:
+                    await context.bot.send_message(
+                        chat_id=self.boss_chat_id,
+                        text=f"🔗 Link proof: {proof.content}"
+                    )
+
+            logger.info(f"Sent validation request to boss for task {request.task_id}")
+
+        except Exception as e:
+            logger.error(f"Error sending validation to boss: {e}")
+
+    async def _notify_assignee(
+        self,
+        assignee_id: str,
+        feedback,
+        task_id: str,
+        task_title: str,
+        context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Notify assignee of validation result."""
+        try:
+            notification = await self.commands.build_validation_notification(
+                feedback=feedback,
+                task_id=task_id,
+                task_title=task_title
+            )
+
+            await context.bot.send_message(
+                chat_id=assignee_id,
+                text=notification,
+                parse_mode='Markdown'
+            )
+            logger.info(f"Notified assignee {assignee_id} of validation result")
+
+        except Exception as e:
+            logger.error(f"Error notifying assignee: {e}")
 
     async def _handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle voice messages."""
@@ -315,22 +580,39 @@ class TelegramBot:
             )
 
     async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle photo messages (screenshots)."""
+        """Handle photo messages (screenshots) - for both task creation and proof submission."""
         user_id = str(update.effective_user.id)
         caption = update.message.caption or ""
+        photo = update.message.photo[-1]  # Get highest resolution
+        file_id = photo.file_id
 
-        await update.message.reply_text(
-            "📸 Photo received! " +
-            (f"Processing with caption: {caption}" if caption else "Please describe what this is about.")
-        )
+        # Check if user is in validation submission mode
+        session = await self.validation._get_session(user_id)
 
-        if caption:
-            # Process the caption as a message with attachment context
-            response, _ = await self.conversation.process_message(
+        if session and session.get("stage") == ValidationStage.COLLECTING_PROOF.value:
+            # User is submitting proof - add the photo as proof
+            response = await self.commands.handle_add_proof(
                 user_id=user_id,
-                message=f"[Photo attached] {caption}"
+                proof_type=ProofType.SCREENSHOT,
+                content=file_id,
+                caption=caption,
+                file_id=file_id
             )
             await update.message.reply_text(response, parse_mode='Markdown')
+        else:
+            # Regular photo for task context
+            await update.message.reply_text(
+                "📸 Photo received! " +
+                (f"Processing with caption: {caption}" if caption else "Please describe what this is about.")
+            )
+
+            if caption:
+                # Process the caption as a message with attachment context
+                response, _ = await self.conversation.process_message(
+                    user_id=user_id,
+                    message=f"[Photo attached] {caption}"
+                )
+                await update.message.reply_text(response, parse_mode='Markdown')
 
     async def process_webhook(self, update_data: dict) -> None:
         """Process an incoming webhook update."""

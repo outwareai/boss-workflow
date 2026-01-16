@@ -23,7 +23,9 @@ from config import settings
 from .reminders import get_reminder_service
 from ..integrations.sheets import get_sheets_integration
 from ..integrations.discord import get_discord_integration
+from ..integrations.gmail import get_gmail_integration
 from ..ai.deepseek import get_deepseek_client
+from ..ai.email_summarizer import get_email_summarizer
 from ..memory.context import get_conversation_context
 from ..models.task import TaskStatus
 
@@ -41,7 +43,9 @@ class SchedulerManager:
         self.reminders = get_reminder_service()
         self.sheets = get_sheets_integration()
         self.discord = get_discord_integration()
+        self.gmail = get_gmail_integration()
         self.ai = get_deepseek_client()
+        self.email_summarizer = get_email_summarizer()
         self.context = get_conversation_context()
 
     def start(self) -> None:
@@ -142,6 +146,34 @@ class SchedulerManager:
             name="Archive Completed Tasks",
             replace_existing=True
         )
+
+        # Morning email digest
+        if settings.enable_email_digest:
+            self.scheduler.add_job(
+                self._morning_email_digest_job,
+                CronTrigger(
+                    hour=settings.morning_digest_hour,
+                    minute=0,
+                    timezone=self.timezone
+                ),
+                id="morning_email_digest",
+                name="Morning Email Digest",
+                replace_existing=True
+            )
+
+            # Evening email digest
+            self.scheduler.add_job(
+                self._evening_email_digest_job,
+                CronTrigger(
+                    hour=settings.evening_digest_hour,
+                    minute=0,
+                    timezone=self.timezone
+                ),
+                id="evening_email_digest",
+                name="Evening Email Digest",
+                replace_existing=True
+            )
+            logger.info(f"Email digests scheduled: {settings.morning_digest_hour}:00 and {settings.evening_digest_hour}:00")
 
         self.scheduler.start()
         logger.info("Scheduler started with all jobs")
@@ -328,6 +360,124 @@ Keep up the great work!"""
 
         except Exception as e:
             logger.error(f"Error in archive tasks job: {e}")
+
+    async def _morning_email_digest_job(self) -> None:
+        """Generate and send morning email digest."""
+        logger.info("Running morning email digest job")
+
+        try:
+            # Initialize Gmail if needed
+            if not self.gmail._initialized:
+                await self.gmail.initialize()
+
+            # Get emails from overnight (last 12 hours)
+            emails = await self.gmail.get_emails_since(
+                hours=settings.morning_digest_hours_back,
+                max_results=50
+            )
+
+            if not emails:
+                logger.info("No new emails for morning digest")
+                return
+
+            # Convert to summary format
+            email_dicts = [e.to_summary_dict() for e in emails]
+
+            # Generate summary with DeepSeek
+            summary_result = await self.email_summarizer.summarize_emails(
+                emails=email_dicts,
+                period="morning"
+            )
+
+            # Generate formatted message
+            unread_count = sum(1 for e in emails if e.is_unread)
+            digest_message = await self.email_summarizer.generate_digest_message(
+                summary_result=summary_result,
+                period="morning",
+                total_emails=len(emails),
+                unread_count=unread_count
+            )
+
+            # Send to Telegram
+            if settings.telegram_boss_chat_id:
+                await self.reminders.send_telegram_message(
+                    settings.telegram_boss_chat_id,
+                    digest_message
+                )
+
+            # Also post to Discord if configured
+            if settings.discord_webhook_url:
+                await self.discord.post_alert(
+                    title="☀️ Morning Email Digest",
+                    message=summary_result.summary + (
+                        f"\n\n**{len(emails)}** emails | **{unread_count}** unread"
+                    ),
+                    alert_type="info"
+                )
+
+            logger.info(f"Morning email digest sent: {len(emails)} emails summarized")
+
+        except Exception as e:
+            logger.error(f"Error in morning email digest job: {e}", exc_info=True)
+
+    async def _evening_email_digest_job(self) -> None:
+        """Generate and send evening email digest."""
+        logger.info("Running evening email digest job")
+
+        try:
+            # Initialize Gmail if needed
+            if not self.gmail._initialized:
+                await self.gmail.initialize()
+
+            # Get today's emails (last 12 hours from evening)
+            emails = await self.gmail.get_emails_since(
+                hours=settings.evening_digest_hours_back,
+                max_results=50
+            )
+
+            if not emails:
+                logger.info("No new emails for evening digest")
+                return
+
+            # Convert to summary format
+            email_dicts = [e.to_summary_dict() for e in emails]
+
+            # Generate summary with DeepSeek
+            summary_result = await self.email_summarizer.summarize_emails(
+                emails=email_dicts,
+                period="evening"
+            )
+
+            # Generate formatted message
+            unread_count = sum(1 for e in emails if e.is_unread)
+            digest_message = await self.email_summarizer.generate_digest_message(
+                summary_result=summary_result,
+                period="evening",
+                total_emails=len(emails),
+                unread_count=unread_count
+            )
+
+            # Send to Telegram
+            if settings.telegram_boss_chat_id:
+                await self.reminders.send_telegram_message(
+                    settings.telegram_boss_chat_id,
+                    digest_message
+                )
+
+            # Also post to Discord if configured
+            if settings.discord_webhook_url:
+                await self.discord.post_alert(
+                    title="🌙 Evening Email Digest",
+                    message=summary_result.summary + (
+                        f"\n\n**{len(emails)}** emails | **{unread_count}** unread"
+                    ),
+                    alert_type="info"
+                )
+
+            logger.info(f"Evening email digest sent: {len(emails)} emails summarized")
+
+        except Exception as e:
+            logger.error(f"Error in evening email digest job: {e}", exc_info=True)
 
     def trigger_job(self, job_id: str) -> bool:
         """Manually trigger a job."""

@@ -16,9 +16,10 @@ A conversational task management system that integrates Telegram, DeepSeek AI, D
   - End-of-day reminders
   - Weekly reports
   - Deadline and overdue alerts
-- **Extended Task Status**: pending, in_progress, completed, delayed, undone, blocked, on_hold, waiting, needs_info, overdue
+- **Extended Task Status**: pending, in_progress, awaiting_validation, needs_revision, completed, delayed, undone, blocked, on_hold, waiting, needs_info, overdue
 - **Notes System**: Add notes to tasks with pinning support
 - **Status History**: Full tracking of status changes with reasons
+- **Validation Workflow**: Team member submits proof → Boss reviews → Approve or reject with feedback
 
 ## Architecture
 
@@ -88,38 +89,167 @@ python -m uvicorn src.main:app --reload
 4. Set environment variables
 5. Deploy!
 
-## Commands
+## How It Works
 
-### Task Creation
-- `/task [description]` - Start task creation
-- `/urgent [description]` - Create high-priority task
-- `/skip` - Skip current question, use defaults
-- `/done` - Finalize immediately
-- `/cancel` - Cancel task creation
+**No commands needed!** Just talk naturally.
 
-### Task Management
-- `/status` - Current task overview
-- `/note [task-id] [note]` - Add note to task
-- `/delay [task-id] [deadline] [reason]` - Delay a task
+### Creating Tasks
+```
+"John needs to fix the login bug"
+"Sarah should build the checkout page by Friday"
+"Fix mobile menu - urgent"
+```
 
-### Reports
-- `/weekly` - Weekly summary
-- `/daily` - Today's tasks
-- `/overdue` - Overdue tasks
+The bot asks clarifying questions if needed, then creates the task.
 
-### Settings
-- `/preferences` - View preferences
-- `/teach` - Teach the bot something new
-- `/team` - View team members
+### Marking Tasks Done
+```
+"I finished the landing page"
+→ Bot: "Send me proof (screenshots, links)"
+[send screenshots/links]
+"that's all"
+→ Bot: "Any notes?"
+"Tested on Chrome and Safari"
+→ Bot: "Send to boss? (yes/no)"
+"yes"
+```
 
-## Teaching the Bot
+### Auto-Review (Before Boss Sees It)
+The bot automatically reviews submissions before they reach you:
 
 ```
-/teach When I say ASAP, deadline is 4 hours
-/teach John is our backend expert
-/teach Always ask about deadline
-/teach My default priority is medium
+Developer: "I finished the landing page"
+→ sends screenshots
+→ "that's all"
+→ "tested it quickly"
+
+Bot: "⚠️ Your submission needs some work:
+      • Notes are too brief
+      • Missing details about what was tested
+
+      Suggested notes: 'Completed landing page redesign.
+      Tested on Chrome and Safari. All responsive
+      breakpoints working.'
+
+      Score: 55/100 (need 70+)
+
+      Reply:
+      • 'yes' - Apply my suggestions
+      • 'no' - Send to boss anyway
+      • 'edit' - Type better notes yourself"
+
+Developer: "yes"
+
+Bot: "✨ Applied! Ready to send to boss? (yes/no)"
 ```
+
+### Boss Validation
+When submission passes review (or developer insists), boss receives notification with proof.
+- Reply "yes" or "approved" → Task approved, person notified
+- Reply "no - [feedback]" → Feedback sent, revision requested
+
+### Checking Status
+```
+"What's pending?"
+"Anything overdue?"
+"Status"
+```
+
+### Teaching the Bot
+```
+"John is our backend dev"
+"When I say ASAP, deadline is 4 hours"
+"When I mention client X, priority is high"
+```
+
+### Email Digests
+Automatic morning and evening email summaries sent to your Telegram:
+
+```
+☀️ Morning Email Digest
+Jan 16 - 7:00 AM
+
+📬 23 emails | 8 unread
+
+Summary:
+Received 3 client updates requiring responses, 5 internal
+notifications, and 15 newsletters. Client X needs approval
+on the new proposal by EOD.
+
+Action Items:
+  ☐ Reply to Client X proposal (deadline today)
+  ☐ Review John's PR comments
+  ☐ Schedule team sync for next week
+
+Priority:
+  📧 Re: Contract Approval Needed...
+     _Client X_
+  📧 Urgent: Production Issue...
+     _DevOps Team_
+
+Breakdown: work: 8 | clients: 3 | newsletters: 12
+─────────────────
+```
+
+Configure times in your `.env`:
+- `MORNING_DIGEST_HOUR=7` (7 AM)
+- `EVENING_DIGEST_HOUR=20` (8 PM)
+- Uses your configured `TIMEZONE`
+
+
+## Validation Workflow
+
+The system includes a complete task validation workflow for proof of work:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    VALIDATION WORKFLOW                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  TEAM MEMBER                          BOSS                       │
+│  ───────────                          ────                       │
+│  1. "I finished the landing page"                               │
+│     ↓                                                            │
+│  2. Send screenshots/links                                       │
+│     📸 Screenshot 1                                              │
+│     📸 Screenshot 2                                              │
+│     🔗 Live demo link                                            │
+│     ↓                                                            │
+│  3. "that's all"                                                │
+│     ↓                                                            │
+│  4. Add notes (optional)                                         │
+│     "Fixed the login bug,                                        │
+│      tested on Chrome/Safari"                                    │
+│     ↓                                                            │
+│  5. "yes" (confirm) ──────────────────▶ 6. Receives request     │
+│                                             with all proof       │
+│                                             ↓                    │
+│                                          7. Reviews work         │
+│                                             ↓                    │
+│  ┌──────────────────────────────────── 8a. "approved"           │
+│  │                                          "Great work!"        │
+│  ▼                                          ↓                    │
+│  9a. 🎉 "TASK APPROVED!"                Task → COMPLETED         │
+│                                                                  │
+│  ─────── OR ───────                                             │
+│                                                                  │
+│  ┌──────────────────────────────────── 8b. "no - fix footer"    │
+│  │                                                               │
+│  ▼                                          ↓                    │
+│  9b. 🔄 "REVISION NEEDED"               Task → NEEDS_REVISION    │
+│      Feedback displayed                                          │
+│      ↓                                                           │
+│  10. Make changes, submit again...                               │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Proof Types Supported
+- 📸 **Screenshots** - Send photos directly in Telegram
+- 🔗 **Links** - URLs to live demos, PRs, deployments
+- 📄 **Documents** - Attached files
+- 📝 **Notes** - Text descriptions
+- 💻 **Code commits** - Git commit references
 
 ## Project Structure
 
@@ -128,17 +258,19 @@ boss-workflow/
 ├── src/
 │   ├── main.py              # FastAPI app entry
 │   ├── bot/
-│   │   ├── telegram.py      # Telegram bot handlers
-│   │   ├── commands.py      # Command processing
-│   │   └── conversation.py  # Conversation state machine
+│   │   ├── telegram_simple.py  # Simplified bot (no commands)
+│   │   ├── handler.py       # Unified message handler
+│   │   ├── conversation.py  # Conversation state machine
+│   │   └── validation.py    # Validation workflow
 │   ├── ai/
 │   │   ├── deepseek.py      # DeepSeek integration
+│   │   ├── intent.py        # Intent detection (NLU)
 │   │   ├── prompts.py       # Prompt templates
 │   │   └── clarifier.py     # Smart question generation
 │   ├── memory/
 │   │   ├── preferences.py   # User preferences
 │   │   ├── context.py       # Conversation context
-│   │   └── learning.py      # /teach handler
+│   │   └── learning.py      # Learning from user teachings
 │   ├── integrations/
 │   │   ├── discord.py       # Discord webhooks
 │   │   ├── sheets.py        # Google Sheets
@@ -147,8 +279,9 @@ boss-workflow/
 │   │   ├── jobs.py          # Scheduled tasks
 │   │   └── reminders.py     # Reminder logic
 │   └── models/
-│       ├── task.py          # Task model
-│       └── conversation.py  # Conversation model
+│       ├── task.py          # Task model with notes
+│       ├── conversation.py  # Conversation model
+│       └── validation.py    # Validation models
 ├── config/
 │   └── settings.py          # Configuration
 ├── requirements.txt

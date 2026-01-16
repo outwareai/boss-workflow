@@ -1,18 +1,30 @@
 """
 Discord integration for posting task updates and embeds.
 
-Supports both webhook-based posting and bot-based reactions (optional).
+Supports:
+- Webhook-based posting for tasks and alerts
+- Interactive buttons for submission review flow
+- Bot-based reactions (optional)
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime
+from enum import Enum
 import aiohttp
+import asyncio
 
 from config import settings
 from ..models.task import Task, TaskStatus, TaskPriority
 
 logger = logging.getLogger(__name__)
+
+
+class ReviewAction(str, Enum):
+    """Possible actions for submission review."""
+    ACCEPT_SUGGESTIONS = "accept_suggestions"  # Apply AI suggestions
+    SEND_ANYWAY = "send_anyway"                # Send to boss despite issues
+    EDIT_MANUAL = "edit_manual"                # User will edit manually
 
 
 class DiscordIntegration:
@@ -295,6 +307,203 @@ class DiscordIntegration:
         elif channel == "standup":
             return self.standup_webhook or self.default_webhook
         return self.default_webhook
+
+    # ==================== SUBMISSION REVIEW FLOW ====================
+
+    async def post_review_feedback(
+        self,
+        user_id: str,
+        user_name: str,
+        review_message: str,
+        submission_id: str,
+        has_suggestions: bool = True
+    ) -> Optional[str]:
+        """
+        Post review feedback with interactive buttons.
+
+        Buttons:
+        - ✅ Apply Suggestions (if suggestions available)
+        - 📤 Send Anyway
+        - ✏️ Edit Manually
+        """
+        webhook_url = self._get_webhook_url("tasks")
+        if not webhook_url:
+            return None
+
+        embed = {
+            "title": f"📋 Submission Review - {user_name}",
+            "description": review_message,
+            "color": 0xF39C12,  # Orange for "needs attention"
+            "timestamp": datetime.now().isoformat(),
+            "footer": {"text": f"Submission ID: {submission_id}"}
+        }
+
+        # Build button components
+        # Note: Webhooks can't use buttons directly - we'll simulate with reactions
+        # For full button support, need Discord bot token
+
+        if settings.discord_bot_token:
+            # Full button support with bot
+            components = [
+                {
+                    "type": 1,  # Action Row
+                    "components": [
+                        {
+                            "type": 2,  # Button
+                            "style": 3,  # Green (Success)
+                            "label": "Apply Suggestions",
+                            "custom_id": f"review_accept_{submission_id}",
+                            "emoji": {"name": "✅"},
+                            "disabled": not has_suggestions
+                        },
+                        {
+                            "type": 2,
+                            "style": 1,  # Blue (Primary)
+                            "label": "Send to Boss Anyway",
+                            "custom_id": f"review_send_{submission_id}",
+                            "emoji": {"name": "📤"}
+                        },
+                        {
+                            "type": 2,
+                            "style": 2,  # Gray (Secondary)
+                            "label": "Edit Manually",
+                            "custom_id": f"review_edit_{submission_id}",
+                            "emoji": {"name": "✏️"}
+                        }
+                    ]
+                }
+            ]
+            return await self._post_with_bot(embed, components, user_id)
+        else:
+            # Webhook fallback - add reaction instructions
+            embed["description"] += "\n\n**React to choose:**\n"
+            if has_suggestions:
+                embed["description"] += "✅ = Apply my suggestions\n"
+            embed["description"] += "📤 = Send to boss anyway\n"
+            embed["description"] += "✏️ = I'll edit it myself"
+
+            return await self._post_with_reactions(
+                embed=embed,
+                reactions=["✅", "📤", "✏️"] if has_suggestions else ["📤", "✏️"],
+                channel="tasks"
+            )
+
+    async def _post_with_bot(
+        self,
+        embed: Dict,
+        components: List[Dict],
+        target_user_id: str
+    ) -> Optional[str]:
+        """Post message with buttons using Discord bot."""
+        if not settings.discord_bot_token:
+            return None
+
+        # This would use discord.py or direct API calls
+        # For now, falling back to webhook
+        logger.warning("Bot token configured but bot posting not fully implemented")
+        return None
+
+    async def _post_with_reactions(
+        self,
+        embed: Dict,
+        reactions: List[str],
+        channel: str
+    ) -> Optional[str]:
+        """Post message and add reactions for interaction."""
+        webhook_url = self._get_webhook_url(channel)
+        if not webhook_url:
+            return None
+
+        payload = {
+            "embeds": [embed],
+            "username": "Boss Workflow Bot"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{webhook_url}?wait=true",
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        message_id = data.get("id")
+                        logger.info(f"Posted review message: {message_id}")
+
+                        # Note: Adding reactions to webhook messages requires bot token
+                        # For full functionality, use Discord bot
+
+                        return message_id
+                    else:
+                        error = await response.text()
+                        logger.error(f"Discord post error: {error}")
+                        return None
+
+        except Exception as e:
+            logger.error(f"Error posting with reactions: {e}")
+            return None
+
+    async def post_submission_approved(
+        self,
+        user_name: str,
+        task_description: str,
+        submission_id: str,
+        applied_suggestions: bool = False
+    ) -> bool:
+        """Post notification that submission passed review."""
+        message = f"**{user_name}** submitted: {task_description[:100]}\n\n"
+        if applied_suggestions:
+            message += "✨ AI suggestions were applied\n"
+        message += "📤 Sent to boss for final approval"
+
+        return await self.post_alert(
+            title="Submission Ready for Review",
+            message=message,
+            alert_type="success"
+        )
+
+    async def post_submission_revised(
+        self,
+        user_name: str,
+        changes_made: str,
+        submission_id: str
+    ) -> bool:
+        """Post notification that user is revising their submission."""
+        message = f"**{user_name}** is revising their submission.\n"
+        message += f"Changes: {changes_made[:200]}"
+
+        return await self.post_alert(
+            title="Submission Being Revised",
+            message=message,
+            alert_type="info"
+        )
+
+
+# Pending review callbacks - stores what to do when user responds
+_review_callbacks: Dict[str, Dict[str, Any]] = {}
+
+
+def register_review_callback(
+    submission_id: str,
+    user_id: str,
+    callback_data: Dict[str, Any]
+) -> None:
+    """Register a callback for when user responds to review."""
+    _review_callbacks[submission_id] = {
+        "user_id": user_id,
+        "data": callback_data,
+        "registered_at": datetime.now().isoformat()
+    }
+
+
+def get_review_callback(submission_id: str) -> Optional[Dict[str, Any]]:
+    """Get the callback data for a submission."""
+    return _review_callbacks.get(submission_id)
+
+
+def clear_review_callback(submission_id: str) -> None:
+    """Clear a review callback."""
+    _review_callbacks.pop(submission_id, None)
 
 
 # Singleton instance

@@ -11,10 +11,12 @@ python-telegram-bot==20.7
 discord.py==2.3.2
 aiohttp==3.9.1
 
-# Google Sheets
+# Google APIs
 gspread==6.0.0
+gspread-formatting==1.1.2
 google-auth==2.26.1
 google-auth-oauthlib==1.2.0
+google-api-python-client==2.111.0
 
 # AI Integration (OpenAI-compatible for DeepSeek)
 openai==1.6.1

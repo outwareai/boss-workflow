@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config import settings
-from .bot.telegram import get_telegram_bot
+from .bot.telegram_simple import get_telegram_bot_simple
 from .scheduler.jobs import get_scheduler_manager
 from .memory.preferences import get_preferences_manager
 from .memory.context import get_conversation_context
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Boss Workflow Automation...")
 
     # Initialize services
-    telegram_bot = get_telegram_bot()
+    telegram_bot = get_telegram_bot_simple()
     await telegram_bot.initialize()
 
     # Set webhook if URL is configured
@@ -135,7 +135,7 @@ async def telegram_webhook(request: Request):
         update_data = await request.json()
         logger.debug(f"Received Telegram update: {update_data.get('update_id')}")
 
-        telegram_bot = get_telegram_bot()
+        telegram_bot = get_telegram_bot_simple()
         await telegram_bot.process_webhook(update_data)
 
         return {"ok": True}

@@ -362,6 +362,142 @@ Or use `/addteam [name] [role]`"""
 
         return "\n".join(lines)
 
+    # ==================== VALIDATION COMMANDS ====================
+
+    async def handle_submit(
+        self,
+        user_id: str,
+        task_id: str,
+        task_title: str = "Task",
+        assignee_name: str = "Team Member"
+    ) -> str:
+        """
+        Handle /submit command - Start task submission for validation.
+
+        Team member uses this when they've completed a task.
+        """
+        return await self.validation.start_submission(
+            user_id=user_id,
+            task_id=task_id,
+            task_title=task_title,
+            assignee_name=assignee_name
+        )
+
+    async def handle_add_proof(
+        self,
+        user_id: str,
+        proof_type: ProofType,
+        content: str,
+        caption: str = None,
+        file_id: str = None
+    ) -> str:
+        """Handle adding a proof item to current submission."""
+        success, message = await self.validation.add_proof_item(
+            user_id=user_id,
+            proof_type=proof_type,
+            content=content,
+            caption=caption,
+            file_id=file_id
+        )
+        return message
+
+    async def handle_submit_proof(self, user_id: str) -> str:
+        """Handle /submitproof - Finish collecting proof, move to notes."""
+        return await self.validation.finish_collecting_proof(user_id)
+
+    async def handle_submission_notes(self, user_id: str, notes: str) -> str:
+        """Handle notes for the submission."""
+        return await self.validation.add_submission_notes(user_id, notes)
+
+    async def handle_confirm_submission(self, user_id: str) -> tuple:
+        """
+        Handle confirmation of submission.
+
+        Returns (response_message, validation_request or None)
+        """
+        success, message, request = await self.validation.confirm_submission(user_id)
+        return message, request
+
+    async def handle_cancel_submission(self, user_id: str) -> str:
+        """Handle cancellation of submission."""
+        return await self.validation.cancel_submission(user_id)
+
+    async def handle_pending_validations(self, user_id: str) -> str:
+        """
+        Handle /pending command - Show pending validation requests.
+
+        For boss to see what needs approval.
+        """
+        pending = await self.validation.get_pending_validations()
+
+        if not pending:
+            return "✅ No pending validation requests!"
+
+        lines = ["📋 **Pending Validations**", ""]
+
+        for item in pending:
+            lines.append(f"• **{item['task_id']}**")
+            lines.append(f"  Attempts: {item['attempts']}")
+            if item.get('submitted_at'):
+                lines.append(f"  Submitted: {item['submitted_at'][:16]}")
+            lines.append("")
+
+        lines.extend([
+            "─────────────────────",
+            "Reply to a validation message with:",
+            "• `approve` - Accept the work",
+            "• `reject [feedback]` - Request changes"
+        ])
+
+        return "\n".join(lines)
+
+    async def handle_approve(
+        self,
+        boss_id: str,
+        task_id: str,
+        message: str = "Great work!"
+    ) -> tuple:
+        """
+        Handle /approve command - Approve a task submission.
+
+        Returns (response_for_boss, feedback, assignee_id)
+        """
+        return await self.validation.process_boss_response(
+            boss_id=boss_id,
+            message=f"approve {message}",
+            reply_to_request_id=task_id  # Using task_id as lookup
+        )
+
+    async def handle_reject(
+        self,
+        boss_id: str,
+        task_id: str,
+        feedback: str
+    ) -> tuple:
+        """
+        Handle /reject command - Reject a task with feedback.
+
+        Returns (response_for_boss, feedback, assignee_id)
+        """
+        return await self.validation.process_boss_response(
+            boss_id=boss_id,
+            message=f"reject {feedback}",
+            reply_to_request_id=task_id
+        )
+
+    async def build_validation_notification(
+        self,
+        feedback,
+        task_id: str,
+        task_title: str
+    ) -> str:
+        """Build notification message for assignee after validation."""
+        return await self.validation.build_assignee_notification(
+            feedback=feedback,
+            task_id=task_id,
+            task_title=task_title
+        )
+
 
 # Singleton instance
 command_handler = CommandHandler()

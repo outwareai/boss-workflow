@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL")
 
     # Scheduler Settings
-    timezone: str = Field(default="America/New_York", env="TIMEZONE")
+    timezone: str = Field(default="Asia/Bangkok", env="TIMEZONE")
     daily_standup_hour: int = Field(default=9, env="DAILY_STANDUP_HOUR")
     eod_reminder_hour: int = Field(default=18, env="EOD_REMINDER_HOUR")
     weekly_summary_day: str = Field(default="friday", env="WEEKLY_SUMMARY_DAY")
@@ -61,6 +61,27 @@ class Settings(BaseSettings):
     # Reminder Settings
     deadline_reminder_hours_before: int = Field(default=2, env="DEADLINE_REMINDER_HOURS")
     overdue_alert_interval_hours: int = Field(default=4, env="OVERDUE_ALERT_INTERVAL_HOURS")
+
+    # Auto-Review Settings
+    submission_quality_threshold: int = Field(default=70, env="SUBMISSION_QUALITY_THRESHOLD")
+    enable_auto_review: bool = Field(default=True, env="ENABLE_AUTO_REVIEW")
+    require_notes_for_submission: bool = Field(default=True, env="REQUIRE_NOTES_FOR_SUBMISSION")
+
+    # Google Calendar
+    google_calendar_id: str = Field(default="primary", env="GOOGLE_CALENDAR_ID")
+
+    # Gmail / Email Digest Settings
+    gmail_user_email: str = Field(default="corporationout@gmail.com", env="GMAIL_USER_EMAIL")
+    gmail_oauth_credentials: str = Field(default="", env="GMAIL_OAUTH_CREDENTIALS")
+    enable_email_digest: bool = Field(default=True, env="ENABLE_EMAIL_DIGEST")
+    morning_digest_hour: int = Field(default=10, env="MORNING_DIGEST_HOUR")
+    evening_digest_hour: int = Field(default=21, env="EVENING_DIGEST_HOUR")
+    morning_digest_hours_back: int = Field(default=12, env="MORNING_DIGEST_HOURS_BACK")
+    evening_digest_hours_back: int = Field(default=11, env="EVENING_DIGEST_HOURS_BACK")
+
+    # Google Drive Settings
+    enable_drive_storage: bool = Field(default=True, env="ENABLE_DRIVE_STORAGE")
+    drive_folder_id: str = Field(default="", env="DRIVE_FOLDER_ID")
 
     class Config:
         env_file = ".env"

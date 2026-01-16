@@ -1,5 +1,6 @@
-from .telegram import TelegramBot
-from .commands import CommandHandler
+from .telegram_simple import TelegramBotSimple
+from .handler import UnifiedHandler
 from .conversation import ConversationManager
+from .validation import ValidationWorkflow
 
-__all__ = ["TelegramBot", "CommandHandler", "ConversationManager"]
+__all__ = ["TelegramBotSimple", "UnifiedHandler", "ConversationManager", "ValidationWorkflow"]
