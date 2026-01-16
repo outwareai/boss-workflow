@@ -1,0 +1,45 @@
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Discord
+discord.py==2.3.2
+aiohttp==3.9.1
+
+# Google Sheets
+gspread==6.0.0
+google-auth==2.26.1
+google-auth-oauthlib==1.2.0
+
+# AI Integration (OpenAI-compatible for DeepSeek)
+openai==1.6.1
+
+# Database
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.25
+alembic==1.13.1
+
+# Redis for caching and conversation state
+redis==5.0.1
+aioredis==2.0.1
+
+# Scheduler
+apscheduler==3.10.4
+
+# Utilities
+python-dotenv==1.0.0
+httpx==0.26.0
+tenacity==8.2.3
+python-dateutil==2.8.2
+pytz==2024.1
+
+# Voice transcription (optional)
+openai-whisper==20231117
+
+# Logging and monitoring
+structlog==24.1.0
