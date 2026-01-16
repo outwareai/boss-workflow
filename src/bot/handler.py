@@ -610,13 +610,18 @@ Make the changes and submit again when ready!"""
             if not emails:
                 return "No new emails in the last 12 hours.", None
 
+            # Count unread
+            unread_count = sum(1 for e in emails if e.is_unread)
+
             # Convert to dict format for summarizer
             email_dicts = [
                 {
                     "subject": e.subject,
-                    "sender": e.sender,
+                    "from": e.sender,
                     "snippet": e.snippet,
-                    "date": e.date.isoformat() if e.date else ""
+                    "body": e.body_text[:500] if e.body_text else e.snippet,
+                    "date": e.date.isoformat() if e.date else "",
+                    "is_important": e.is_important
                 }
                 for e in emails
             ]
@@ -627,25 +632,15 @@ Make the changes and submit again when ready!"""
             # Summarize
             result = await summarizer.summarize_emails(email_dicts, "on-demand", user_prefs.to_dict())
 
-            # Format response
-            lines = ["📧 **Email Recap**", ""]
-            lines.append(result.summary)
+            # Use the proper digest formatter
+            formatted = await summarizer.generate_digest_message(
+                summary_result=result,
+                period="now",
+                total_emails=len(emails),
+                unread_count=unread_count
+            )
 
-            if result.action_items:
-                lines.append("")
-                lines.append("**Action Items:**")
-                for item in result.action_items[:5]:
-                    lines.append(f"• {item}")
-
-            if result.priority_subjects:
-                lines.append("")
-                lines.append("**Priority Emails:**")
-                for subj in result.priority_subjects[:3]:
-                    lines.append(f"• {subj}")
-
-            lines.append(f"\n_({len(emails)} emails analyzed)_")
-
-            return "\n".join(lines), None
+            return formatted, None
 
         except Exception as e:
             logger.error(f"Email recap error: {e}", exc_info=True)
@@ -871,7 +866,25 @@ Ready to send to boss? (yes/no)""", None
 
         # Post to integrations
         await self.discord.post_task(task)
-        await self.sheets.add_task(task)
+
+        # Convert task to dict for sheets
+        task_dict = {
+            'id': task.id,
+            'title': task.title,
+            'description': task.description,
+            'assignee': task.assignee or '',
+            'priority': task.priority.value,
+            'status': task.status.value,
+            'task_type': task.task_type,
+            'deadline': task.deadline.strftime('%Y-%m-%d %H:%M') if task.deadline else '',
+            'created_at': task.created_at.strftime('%Y-%m-%d %H:%M'),
+            'updated_at': task.updated_at.strftime('%Y-%m-%d %H:%M'),
+            'effort': task.estimated_effort or '',
+            'tags': ', '.join(task.tags) if task.tags else '',
+            'created_by': task.created_by or 'Boss',
+        }
+        await self.sheets.add_task(task_dict)
+
         if task.deadline:
             await self.calendar.create_task_event(task)
 

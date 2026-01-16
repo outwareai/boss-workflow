@@ -209,6 +209,10 @@ class GoogleSheetsIntegration:
         all_tasks = await self.get_all_tasks()
         return [t for t in all_tasks if t.get('Assignee', '').lower() == assignee.lower()]
 
+    async def get_daily_tasks(self) -> List[Dict[str, Any]]:
+        """Get today's tasks. Alias for get_all_tasks for now."""
+        return await self.get_all_tasks()
+
     # ============================================
     # NOTES LOG OPERATIONS
     # ============================================
