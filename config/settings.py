@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     # Gmail / Email Digest Settings
     gmail_user_email: str = Field(default="corporationout@gmail.com", env="GMAIL_USER_EMAIL")
     gmail_oauth_credentials: str = Field(default="", env="GMAIL_OAUTH_CREDENTIALS")
+    gmail_oauth_token: str = Field(default="", env="GMAIL_OAUTH_TOKEN")  # OAuth token JSON
     enable_email_digest: bool = Field(default=False, env="ENABLE_EMAIL_DIGEST")
     morning_digest_hour: int = Field(default=10, env="MORNING_DIGEST_HOUR")
     evening_digest_hour: int = Field(default=21, env="EVENING_DIGEST_HOUR")

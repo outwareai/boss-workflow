@@ -181,18 +181,31 @@ class GmailIntegration:
         try:
             creds = None
 
-            # Check for existing token
-            if TOKEN_PATH.exists():
+            # First, check for token in environment variable (Railway deployment)
+            if settings.gmail_oauth_token:
+                try:
+                    token_data = json.loads(settings.gmail_oauth_token)
+                    creds = OAuth2Credentials.from_authorized_user_info(
+                        token_data, self.SCOPES
+                    )
+                    logger.info("Loaded Gmail token from environment variable")
+                except Exception as e:
+                    logger.warning(f"Failed to load token from env var: {e}")
+
+            # Fall back to token file (local development)
+            if not creds and TOKEN_PATH.exists():
                 creds = OAuth2Credentials.from_authorized_user_file(
                     str(TOKEN_PATH), self.SCOPES
                 )
+                logger.info("Loaded Gmail token from file")
 
             # Refresh or get new credentials
             if not creds or not creds.valid:
                 if creds and creds.expired and creds.refresh_token:
                     creds.refresh(Request())
+                    logger.info("Gmail token refreshed")
                 else:
-                    # Need OAuth2 credentials file
+                    # Need OAuth2 credentials file for new token
                     if not CREDENTIALS_PATH.exists():
                         # Try to create from environment
                         if settings.gmail_oauth_credentials:
@@ -208,9 +221,13 @@ class GmailIntegration:
                     )
                     creds = flow.run_local_server(port=0)
 
-                # Save token for next time
-                with open(TOKEN_PATH, 'w') as f:
-                    f.write(creds.to_json())
+                # Save token for next time (local file)
+                try:
+                    TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    with open(TOKEN_PATH, 'w') as f:
+                        f.write(creds.to_json())
+                except Exception as e:
+                    logger.warning(f"Could not save token to file: {e}")
 
             # Build service
             self.service = build('gmail', 'v1', credentials=creds)

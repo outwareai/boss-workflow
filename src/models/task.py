@@ -113,6 +113,8 @@ class Task(BaseModel):
 
     # Assignee info for notifications
     assignee_telegram_id: Optional[str] = None
+    assignee_discord_id: Optional[str] = None  # Discord user ID or username for mentions
+    assignee_email: Optional[str] = None  # Email for Google Calendar/Sheets
 
     def generate_task_id(self) -> str:
         """Generate a sequential task ID for the day."""
@@ -146,8 +148,17 @@ class Task(BaseModel):
             TaskStatus.OVERDUE: "🚨",
         }
 
+        # Format assignee with Discord mention if available
+        if self.assignee_discord_id:
+            # Use @username format for Discord
+            assignee_display = f"@{self.assignee_discord_id}" if not self.assignee_discord_id.startswith('@') else self.assignee_discord_id
+            if self.assignee:
+                assignee_display = f"{self.assignee} ({assignee_display})"
+        else:
+            assignee_display = self.assignee or "Unassigned"
+
         fields = [
-            {"name": "Assignee", "value": self.assignee or "Unassigned", "inline": True},
+            {"name": "Assignee", "value": assignee_display, "inline": True},
             {"name": "Priority", "value": f"{priority_emoji[self.priority]} {self.priority.value.upper()}", "inline": True},
             {"name": "Status", "value": f"{status_emoji[self.status]} {self.status.value.replace('_', ' ').title()}", "inline": True},
         ]

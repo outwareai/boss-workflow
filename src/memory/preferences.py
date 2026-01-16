@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 import redis.asyncio as redis
 
 from config import settings
+from config.team import get_default_team
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,11 @@ logger = logging.getLogger(__name__)
 class TeamMember(BaseModel):
     """Team member information."""
     name: str
-    username: str  # Discord/Telegram username
+    username: str  # Primary username
+    telegram_id: str = ""  # Telegram user ID for notifications
+    discord_id: str = ""  # Discord user ID for mentions (e.g., "123456789")
+    discord_username: str = ""  # Discord username (e.g., "@MAYANK")
+    email: str = ""  # Google email for Sheets/Calendar
     role: str = ""  # e.g., "backend specialist", "frontend developer"
     skills: List[str] = Field(default_factory=list)
     default_task_types: List[str] = Field(default_factory=list)  # Task types usually assigned
@@ -158,8 +163,23 @@ class PreferencesManager:
             except Exception as e:
                 logger.error(f"Error loading preferences for {user_id}: {e}")
 
-        # Create default preferences
+        # Create default preferences with default team
         prefs = UserPreferences(user_id=user_id)
+
+        # Load default team members
+        for member_data in get_default_team():
+            member = TeamMember(
+                name=member_data.get("name", ""),
+                username=member_data.get("username", ""),
+                role=member_data.get("role", ""),
+                email=member_data.get("email", ""),
+                discord_id=member_data.get("discord_id", ""),
+                discord_username=member_data.get("discord_username", ""),
+                telegram_id=member_data.get("telegram_id", ""),
+                skills=member_data.get("skills", []),
+            )
+            prefs.team_members[member.name.lower()] = member
+
         await self.save_preferences(prefs)
         return prefs
 
@@ -217,7 +237,11 @@ class PreferencesManager:
         name: str,
         username: str,
         role: str = "",
-        skills: List[str] = None
+        skills: List[str] = None,
+        discord_id: str = "",
+        discord_username: str = "",
+        email: str = "",
+        telegram_id: str = ""
     ) -> bool:
         """Add a team member to user's knowledge."""
         prefs = await self.get_preferences(user_id)
@@ -226,11 +250,29 @@ class PreferencesManager:
             name=name,
             username=username,
             role=role,
-            skills=skills or []
+            skills=skills or [],
+            discord_id=discord_id,
+            discord_username=discord_username,
+            email=email,
+            telegram_id=telegram_id
         )
 
         prefs.team_members[name.lower()] = member
         return await self.save_preferences(prefs)
+
+    def find_team_member(self, prefs: UserPreferences, identifier: str) -> Optional[TeamMember]:
+        """Find a team member by name, username, or email."""
+        identifier_lower = identifier.lower().strip()
+
+        for key, member in prefs.team_members.items():
+            if (identifier_lower == key or
+                identifier_lower == member.name.lower() or
+                identifier_lower == member.username.lower() or
+                identifier_lower == member.email.lower() or
+                identifier_lower == member.discord_username.lower().lstrip('@')):
+                return member
+
+        return None
 
     async def add_trigger(
         self,

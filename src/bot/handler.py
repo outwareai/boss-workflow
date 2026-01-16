@@ -828,10 +828,29 @@ Ready to send to boss? (yes/no)""", None
         if not spec:
             return "Something went wrong. Try describing the task again.", None
 
+        # Get user preferences for team member lookup
+        user_prefs = await self.prefs.get_preferences(user_id)
+        assignee_name = spec.get("assignee")
+        assignee_discord_id = None
+        assignee_email = None
+        assignee_telegram_id = None
+
+        # Look up team member info if assignee specified
+        if assignee_name:
+            team_member = self.prefs.find_team_member(user_prefs, assignee_name)
+            if team_member:
+                assignee_name = team_member.name  # Use canonical name
+                assignee_discord_id = team_member.discord_username or team_member.discord_id
+                assignee_email = team_member.email
+                assignee_telegram_id = team_member.telegram_id
+
         task = Task(
             title=spec.get("title", "Untitled"),
             description=spec.get("description", conv.original_message),
-            assignee=spec.get("assignee"),
+            assignee=assignee_name,
+            assignee_discord_id=assignee_discord_id,
+            assignee_email=assignee_email,
+            assignee_telegram_id=assignee_telegram_id,
             priority=TaskPriority(spec.get("priority", "medium")),
             task_type=spec.get("task_type", "task"),
             estimated_effort=spec.get("estimated_effort"),

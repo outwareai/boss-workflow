@@ -173,9 +173,12 @@ class IntentDetector:
         if any(w in message for w in ["overdue", "late", "past due", "missed deadline"]):
             return UserIntent.CHECK_OVERDUE, {}
 
-        # Email recap
+        # Email recap - prioritize this for email-related personal requests
         if any(w in message for w in ["email", "emails", "inbox", "mail", "gmail"]):
-            if any(w in message for w in ["recap", "summary", "summarize", "check", "show", "what", "any", "unread"]):
+            # Any request to see/get/check emails is a recap, not a task
+            if any(w in message for w in ["recap", "summary", "summarize", "check", "show", "what",
+                                           "any", "unread", "fetch", "get", "read", "see", "my",
+                                           "last", "recent", "latest", "new", "today"]):
                 return UserIntent.EMAIL_RECAP, {}
 
         # Delay
@@ -216,12 +219,13 @@ CONTEXT:
 - Collecting proof: {context.get('collecting_proof', False)}
 
 POSSIBLE INTENTS:
-- create_task: User wants to create/assign a task
+- create_task: User wants to create/assign a task TO SOMEONE ELSE
 - task_done: User is saying they finished a task
 - submit_proof: User is providing proof of work
 - approve_task: Boss is approving submitted work
 - reject_task: Boss is rejecting with feedback
 - check_status: User wants status overview
+- email_recap: User wants to see/read/check their OWN emails (not delegate)
 - delay_task: User wants to delay/postpone a task
 - add_team: User is telling about a team member
 - teach: User wants bot to learn something
@@ -229,6 +233,9 @@ POSSIBLE INTENTS:
 - help: Asking for help
 - cancel: Wants to cancel current action
 - unknown: Can't determine intent
+
+IMPORTANT: If user asks about their OWN emails (fetch, recap, check, see emails), use email_recap NOT create_task.
+Only use create_task when user wants to DELEGATE something to another person.
 
 Respond with JSON:
 {{
