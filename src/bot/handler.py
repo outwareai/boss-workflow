@@ -21,6 +21,8 @@ from ..models.validation import ProofItem, ProofType, TaskValidation, Validation
 from ..integrations.discord import get_discord_integration, register_review_callback, get_review_callback, clear_review_callback, ReviewAction
 from ..integrations.sheets import get_sheets_integration
 from ..integrations.calendar import get_calendar_integration
+from ..integrations.gmail import get_gmail_integration
+from ..ai.email_summarizer import get_email_summarizer
 from ..ai.reviewer import get_submission_reviewer, ReviewResult
 
 logger = logging.getLogger(__name__)
@@ -101,6 +103,7 @@ class UnifiedHandler:
             UserIntent.REJECT_TASK: self._handle_reject,
             UserIntent.CHECK_STATUS: self._handle_status,
             UserIntent.CHECK_OVERDUE: self._handle_overdue,
+            UserIntent.EMAIL_RECAP: self._handle_email_recap,
             UserIntent.DELAY_TASK: self._handle_delay,
             UserIntent.ADD_TEAM_MEMBER: self._handle_add_team,
             UserIntent.TEACH_PREFERENCE: self._handle_teach,
@@ -588,6 +591,65 @@ Make the changes and submit again when ready!"""
             lines.append(f"• {task.get('Title', 'Task')[:40]} - {task.get('Assignee', '?')}")
 
         return "\n".join(lines), None
+
+    async def _handle_email_recap(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, None]:
+        """Handle email recap request."""
+        try:
+            gmail = get_gmail_integration()
+            summarizer = get_email_summarizer()
+
+            # Check if Gmail is available
+            if not await gmail.is_available():
+                return "Email integration not configured. Contact admin to set up Gmail OAuth.", None
+
+            # Get recent emails (last 12 hours)
+            emails = await gmail.get_emails_since(hours=12, max_results=20)
+
+            if not emails:
+                return "No new emails in the last 12 hours.", None
+
+            # Convert to dict format for summarizer
+            email_dicts = [
+                {
+                    "subject": e.subject,
+                    "sender": e.sender,
+                    "snippet": e.snippet,
+                    "date": e.date.isoformat() if e.date else ""
+                }
+                for e in emails
+            ]
+
+            # Get user preferences for context
+            user_prefs = await self.prefs.get_preferences(user_id)
+
+            # Summarize
+            result = await summarizer.summarize_emails(email_dicts, "on-demand", user_prefs.to_dict())
+
+            # Format response
+            lines = ["📧 **Email Recap**", ""]
+            lines.append(result.summary)
+
+            if result.action_items:
+                lines.append("")
+                lines.append("**Action Items:**")
+                for item in result.action_items[:5]:
+                    lines.append(f"• {item}")
+
+            if result.priority_subjects:
+                lines.append("")
+                lines.append("**Priority Emails:**")
+                for subj in result.priority_subjects[:3]:
+                    lines.append(f"• {subj}")
+
+            lines.append(f"\n_({len(emails)} emails analyzed)_")
+
+            return "\n".join(lines), None
+
+        except Exception as e:
+            logger.error(f"Email recap error: {e}", exc_info=True)
+            return f"Sorry, couldn't fetch emails: {str(e)[:100]}", None
 
     async def _handle_delay(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str

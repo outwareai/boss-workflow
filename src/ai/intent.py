@@ -35,6 +35,7 @@ class UserIntent(str, Enum):
     CHECK_STATUS = "check_status"            # "what's pending?", "status"
     LIST_TASKS = "list_tasks"                # "what tasks are there?"
     CHECK_OVERDUE = "check_overdue"          # "anything overdue?"
+    EMAIL_RECAP = "email_recap"              # "recap my emails", "summarize my inbox"
 
     # Task updates
     DELAY_TASK = "delay_task"                # "delay the landing page to tomorrow"
@@ -171,6 +172,11 @@ class IntentDetector:
             return UserIntent.CHECK_STATUS, {}
         if any(w in message for w in ["overdue", "late", "past due", "missed deadline"]):
             return UserIntent.CHECK_OVERDUE, {}
+
+        # Email recap
+        if any(w in message for w in ["email", "emails", "inbox", "mail", "gmail"]):
+            if any(w in message for w in ["recap", "summary", "summarize", "check", "show", "what", "any", "unread"]):
+                return UserIntent.EMAIL_RECAP, {}
 
         # Delay
         if any(w in message for w in ["delay", "postpone", "push back", "move to", "reschedule"]):

@@ -150,6 +150,12 @@ class GmailIntegration:
         self._initialized = False
         self._auth_method = None  # "oauth2" or "service_account"
 
+    async def is_available(self) -> bool:
+        """Check if Gmail integration is available."""
+        if not self._initialized:
+            await self.initialize()
+        return self._initialized and self.service is not None
+
     async def initialize(self) -> bool:
         """Initialize Gmail API connection."""
         if not self.user_email:
