@@ -28,14 +28,21 @@ class ConversationContext:
         self.default_ttl = settings.conversation_timeout_minutes * 60  # seconds
 
     async def connect(self):
-        """Connect to Redis."""
-        if not self.redis:
-            self.redis = await redis.from_url(
-                settings.redis_url,
-                encoding="utf-8",
-                decode_responses=True
-            )
-            logger.info("Connected to Redis for conversation context")
+        """Connect to Redis (optional - falls back to in-memory)."""
+        if not self.redis and settings.redis_url:
+            try:
+                self.redis = await redis.from_url(
+                    settings.redis_url,
+                    encoding="utf-8",
+                    decode_responses=True
+                )
+                # Test connection
+                await self.redis.ping()
+                logger.info("Connected to Redis for conversation context")
+            except Exception as e:
+                logger.warning(f"Redis not available for context, using in-memory: {e}")
+                self.redis = None
+                self._memory_store = {}  # Fallback in-memory storage
 
     async def disconnect(self):
         """Disconnect from Redis."""

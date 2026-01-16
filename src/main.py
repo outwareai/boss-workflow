@@ -40,31 +40,54 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Boss Workflow Automation...")
 
-    # Initialize services
-    telegram_bot = get_telegram_bot_simple()
-    await telegram_bot.initialize()
+    # Initialize services with error handling
+    try:
+        telegram_bot = get_telegram_bot_simple()
+        await telegram_bot.initialize()
+        logger.info("Telegram bot initialized")
 
-    # Set webhook if URL is configured
-    if settings.webhook_base_url:
-        await telegram_bot.set_webhook()
+        # Set webhook if URL is configured
+        if settings.webhook_base_url:
+            await telegram_bot.set_webhook()
+            logger.info("Telegram webhook set")
+    except Exception as e:
+        logger.error(f"Telegram init failed (will retry on first message): {e}")
 
-    # Initialize integrations
-    sheets = get_sheets_integration()
-    await sheets.initialize()
+    # Initialize integrations (optional - don't fail startup)
+    try:
+        sheets = get_sheets_integration()
+        await sheets.initialize()
+        logger.info("Google Sheets initialized")
+    except Exception as e:
+        logger.warning(f"Google Sheets init failed: {e}")
 
-    calendar = get_calendar_integration()
-    await calendar.initialize()
+    try:
+        calendar = get_calendar_integration()
+        await calendar.initialize()
+        logger.info("Google Calendar initialized")
+    except Exception as e:
+        logger.warning(f"Google Calendar init failed: {e}")
 
-    # Connect to Redis
-    prefs = get_preferences_manager()
-    await prefs.connect()
+    # Connect to Redis (optional)
+    try:
+        prefs = get_preferences_manager()
+        await prefs.connect()
+    except Exception as e:
+        logger.warning(f"Preferences Redis failed: {e}")
 
-    context = get_conversation_context()
-    await context.connect()
+    try:
+        context = get_conversation_context()
+        await context.connect()
+    except Exception as e:
+        logger.warning(f"Context Redis failed: {e}")
 
     # Start scheduler
-    scheduler = get_scheduler_manager()
-    scheduler.start()
+    try:
+        scheduler = get_scheduler_manager()
+        scheduler.start()
+        logger.info("Scheduler started")
+    except Exception as e:
+        logger.warning(f"Scheduler failed: {e}")
 
     logger.info("Boss Workflow Automation started successfully!")
 
@@ -73,9 +96,23 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down Boss Workflow Automation...")
 
-    scheduler.stop()
-    await prefs.disconnect()
-    await context.disconnect()
+    try:
+        scheduler = get_scheduler_manager()
+        scheduler.stop()
+    except:
+        pass
+
+    try:
+        prefs = get_preferences_manager()
+        await prefs.disconnect()
+    except:
+        pass
+
+    try:
+        context = get_conversation_context()
+        await context.disconnect()
+    except:
+        pass
 
     logger.info("Shutdown complete")
 

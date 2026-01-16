@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     # Database (PostgreSQL)
     database_url: str = Field(default="", env="DATABASE_URL")
 
-    # Redis
-    redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL")
+    # Redis (optional - set empty to disable)
+    redis_url: str = Field(default="", env="REDIS_URL")
 
     # Scheduler Settings
     timezone: str = Field(default="Asia/Bangkok", env="TIMEZONE")
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     # Gmail / Email Digest Settings
     gmail_user_email: str = Field(default="corporationout@gmail.com", env="GMAIL_USER_EMAIL")
     gmail_oauth_credentials: str = Field(default="", env="GMAIL_OAUTH_CREDENTIALS")
-    enable_email_digest: bool = Field(default=True, env="ENABLE_EMAIL_DIGEST")
+    enable_email_digest: bool = Field(default=False, env="ENABLE_EMAIL_DIGEST")
     morning_digest_hour: int = Field(default=10, env="MORNING_DIGEST_HOUR")
     evening_digest_hour: int = Field(default=21, env="EVENING_DIGEST_HOUR")
     morning_digest_hours_back: int = Field(default=12, env="MORNING_DIGEST_HOURS_BACK")

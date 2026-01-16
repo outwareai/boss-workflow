@@ -109,14 +109,20 @@ class PreferencesManager:
         self._cache: Dict[str, UserPreferences] = {}
 
     async def connect(self):
-        """Connect to Redis."""
-        if not self.redis:
-            self.redis = await redis.from_url(
-                settings.redis_url,
-                encoding="utf-8",
-                decode_responses=True
-            )
-            logger.info("Connected to Redis for preferences")
+        """Connect to Redis (optional - falls back to in-memory)."""
+        if not self.redis and settings.redis_url:
+            try:
+                self.redis = await redis.from_url(
+                    settings.redis_url,
+                    encoding="utf-8",
+                    decode_responses=True
+                )
+                # Test connection
+                await self.redis.ping()
+                logger.info("Connected to Redis for preferences")
+            except Exception as e:
+                logger.warning(f"Redis not available for preferences, using in-memory: {e}")
+                self.redis = None
 
     async def disconnect(self):
         """Disconnect from Redis."""
