@@ -47,6 +47,9 @@ class TelegramBotSimple:
         self.app.add_handler(MessageHandler(filters.VOICE, self._handle_voice))
         self.app.add_handler(MessageHandler(filters.TEXT, self._handle_message))
 
+        # Initialize the application (required for v20+)
+        await self.app.initialize()
+
         logger.info("Telegram bot initialized (conversational mode)")
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
