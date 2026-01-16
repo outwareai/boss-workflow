@@ -101,14 +101,14 @@ Generate questions that:
 3. Can be answered quickly
 4. Focus on the most impactful missing information
 
-Format response as:
+Respond with a JSON object in this exact format:
 {{
     "questions": [
         {{
             "text": "The question to ask",
             "options": ["Option A", "Option B", "Option C"],
             "field": "which field this clarifies",
-            "allow_custom": true/false
+            "allow_custom": true
         }}
     ],
     "intro_message": "Brief friendly intro before questions"
@@ -195,7 +195,7 @@ ANSWER: {answer}
 FIELD BEING CLARIFIED: {field}
 CURRENT INFORMATION: {current_info}
 
-Extract the relevant information from the answer and return:
+Extract the relevant information from the answer and return a JSON object:
 {{
     "field": "{field}",
     "extracted_value": "the value extracted from the answer",
