@@ -35,13 +35,13 @@ apscheduler==3.10.4
 
 # Utilities
 python-dotenv==1.0.0
-httpx==0.26.0
+httpx>=0.25.0
 tenacity==8.2.3
 python-dateutil==2.8.2
 pytz==2024.1
 
-# Voice transcription (optional)
-openai-whisper==20231117
+# Voice transcription (optional - requires ffmpeg)
+# openai-whisper==20231117
 
 # Logging and monitoring
 structlog==24.1.0
