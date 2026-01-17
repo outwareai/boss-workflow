@@ -137,18 +137,35 @@ class UnifiedHandler:
         active_conv = await self.context.get_active_conversation(user_id)
         if active_conv and active_conv.stage == ConversationStage.PREVIEW:
             msg_lower = message.lower().strip()
+
             # User says "no" followed by correction = edit the task
             if msg_lower.startswith("no ") or msg_lower.startswith("no,"):
-                # This is a correction, not a new task
                 correction = message[3:].strip() if msg_lower.startswith("no ") else message[3:].strip()
                 if correction:
                     return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+
+            # User says "edit" or "change" followed by what to change
+            if msg_lower.startswith("edit ") or msg_lower.startswith("change "):
+                correction = message[5:].strip() if msg_lower.startswith("edit ") else message[7:].strip()
+                if correction:
+                    return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+
+            # User says "add" something to the task
+            if msg_lower.startswith("add "):
+                correction = message  # Keep full message for context
+                return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+
+            # User says "make it" something
+            if msg_lower.startswith("make it ") or msg_lower.startswith("make this "):
+                return await self._handle_task_correction(user_id, active_conv, message, user_name)
+
             # User just says "no" = cancel
             elif msg_lower == "no":
                 await self.context.clear_conversation(user_id)
                 return "Task cancelled. What would you like to do?", None
+
             # User says "yes" = confirm and create
-            elif msg_lower in ["yes", "y", "ok", "confirm", "create", "looks good", "lgtm"]:
+            elif msg_lower in ["yes", "y", "ok", "confirm", "create", "looks good", "lgtm", "good", "perfect"]:
                 return await self._finalize_task(active_conv, user_id)
 
         # Detect intent
