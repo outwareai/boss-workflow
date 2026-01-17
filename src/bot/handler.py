@@ -2009,16 +2009,27 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             if len(tasks) >= 2:
                 return tasks
 
-        # Pattern 2: Explicit separators
+        # Pattern 2: Explicit separators - order matters (more specific first)
         separators = [
+            # "Then another task" patterns
+            r'\.\s*[Tt]hen\s+another\s+task\s*',
+            r'\s+[Tt]hen\s+another\s+task\s*',
+            # "And another task" patterns
+            r'\.\s*[Aa]nd\s+another\s+task\s*',
+            r'\s+[Aa]nd\s+another\s+task\s*',
+            # Generic "another task" patterns
+            r'\.\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
+            r',\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
+            r'\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
+            # Also patterns
             r'\.\s+also\s+',
             r',\s+also\s+',
             r'\s+and\s+also\s+',
-            r'\.\s+another\s+(?:task|one)?\s*(?:is\s+)?',
-            r',\s+another\s+(?:task|one)?\s*(?:is\s+)?',
+            # Plus patterns
             r'\.\s+plus\s+',
             r',\s+plus\s+',
-            r'\s+then\s+',
+            # Then (not followed by "another" - handled above)
+            r'\s+[Tt]hen\s+(?!another)',
         ]
 
         for sep in separators:
@@ -2177,9 +2188,11 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             self._batch_tasks[user_id] = batch
 
             num = len(batch['tasks'])
+            # Join with double newline for spacing between tasks
+            tasks_text = "\n\n".join(responses)
             return f"""📋 **{num} Tasks Ready**
 
-{chr(10).join(responses)}
+{tasks_text}
 
 **yes** = create all | **no** = cancel all
 Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
@@ -2345,9 +2358,11 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         self._batch_tasks[user_id] = batch
 
         num_tasks = len(batch['tasks'])
+        # Join with double newline for spacing between tasks
+        tasks_text = "\n\n".join(previews)
         return f"""📋 **{num_tasks} Tasks Ready:**
 
-{chr(10).join(previews)}
+{tasks_text}
 
 **yes** = create all | **no** = cancel all
 Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
