@@ -55,6 +55,7 @@ class UnifiedHandler:
         self._pending_validations: Dict[str, Dict] = {}  # task_id -> validation info
         self._pending_reviews: Dict[str, Dict] = {}  # user_id -> review session
         self._pending_actions: Dict[str, Dict] = {}  # user_id -> pending dangerous action
+        self._batch_tasks: Dict[str, Dict] = {}  # user_id -> batch task session
 
     async def handle_message(
         self,
@@ -117,6 +118,14 @@ class UnifiedHandler:
             action_type = pending_action.get("type")
             if action_type == "clear_tasks":
                 return await self._handle_clear_tasks(user_id, message, {}, context, user_name)
+
+        # Check for batch task session (answering numbered questions or confirming)
+        batch_session = self._batch_tasks.get(user_id)
+        if batch_session:
+            if batch_session.get("awaiting_answers"):
+                return await self._handle_batch_answers(user_id, message, user_name)
+            elif batch_session.get("awaiting_confirm"):
+                return await self._handle_batch_confirm(user_id, message, user_name)
 
         # Detect intent
         intent, data = await self.intent.detect_intent(message, context)
@@ -346,11 +355,18 @@ What would you like to do?""", None
     async def _handle_create_task(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
     ) -> Tuple[str, Optional[Dict]]:
-        """Handle task creation."""
+        """Handle task creation - supports multiple tasks in one message."""
         # Get preferences
         prefs = await self.prefs.get_preferences(user_id)
 
-        # Create conversation
+        # Detect multiple tasks in message
+        task_messages = self._split_multiple_tasks(message)
+
+        if len(task_messages) > 1:
+            # Multiple tasks - handle as batch
+            return await self._handle_batch_tasks(user_id, task_messages, prefs, user_name)
+
+        # Single task - normal flow
         conversation = await self.context.create_conversation(
             user_id=user_id,
             chat_id=user_id,
@@ -1396,6 +1412,317 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             response += f"\n📨 Notifying {task.assignee} on Telegram"
 
         return response, action
+
+    # ==================== BATCH TASK HANDLING ====================
+
+    def _split_multiple_tasks(self, message: str) -> List[str]:
+        """
+        Detect and split multiple tasks in a single message.
+
+        Handles patterns like:
+        - "1. Task one 2. Task two 3. Task three"
+        - "Task one, also task two, and task three"
+        - "Task one. Another task is two. And three"
+        """
+        import re
+
+        message = message.strip()
+
+        # Pattern 1: Numbered list (1. 2. 3. or 1) 2) 3))
+        numbered_pattern = r'(?:^|\s)(\d+[\.\)]\s*)'
+        if re.search(numbered_pattern, message):
+            # Split by numbers
+            parts = re.split(r'\s*\d+[\.\)]\s*', message)
+            tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
+            if len(tasks) >= 2:
+                return tasks
+
+        # Pattern 2: "Also" / "And also" / "Another" separators
+        separators = [
+            r'\.\s+also\s+',
+            r',\s+also\s+',
+            r'\s+and\s+also\s+',
+            r'\.\s+another\s+(?:task|one)\s+(?:is\s+)?',
+            r',\s+another\s+(?:task|one)\s+(?:is\s+)?',
+            r'\.\s+plus\s+',
+            r',\s+plus\s+',
+        ]
+
+        for sep in separators:
+            if re.search(sep, message, re.IGNORECASE):
+                parts = re.split(sep, message, flags=re.IGNORECASE)
+                tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
+                if len(tasks) >= 2:
+                    return tasks
+
+        # No multiple tasks detected
+        return [message]
+
+    async def _handle_batch_tasks(
+        self, user_id: str, task_messages: List[str], prefs, user_name: str
+    ) -> Tuple[str, None]:
+        """Handle multiple tasks with numbered questions."""
+        batch = {
+            "tasks": [],
+            "questions": [],
+            "awaiting_answers": False,
+            "created_at": datetime.now().isoformat()
+        }
+
+        all_questions = []
+        tasks_needing_questions = []
+        tasks_ready = []
+
+        for idx, task_msg in enumerate(task_messages, 1):
+            # Create conversation for each task
+            conversation = await self.context.create_conversation(
+                user_id=f"{user_id}_batch_{idx}",
+                chat_id=user_id,
+                original_message=task_msg
+            )
+
+            # Analyze
+            should_ask, analysis = await self.clarifier.analyze_and_decide(
+                conversation=conversation,
+                preferences=prefs.to_dict(),
+                team_info=prefs.get_team_info()
+            )
+
+            task_entry = {
+                "index": idx,
+                "message": task_msg,
+                "conversation": conversation,
+                "analysis": analysis,
+                "needs_questions": should_ask
+            }
+
+            if should_ask and analysis.get("suggested_questions"):
+                tasks_needing_questions.append(task_entry)
+                # Add numbered questions
+                for q in analysis.get("suggested_questions", [])[:2]:  # Max 2 questions per task
+                    all_questions.append({
+                        "task_idx": idx,
+                        "question": q.get("question", q.get("text", "")),
+                        "field": q.get("field", ""),
+                        "options": q.get("options", [])
+                    })
+            else:
+                tasks_ready.append(task_entry)
+
+            batch["tasks"].append(task_entry)
+
+        batch["questions"] = all_questions
+
+        # If no questions needed, create all tasks directly
+        if not all_questions:
+            responses = []
+            for task_entry in batch["tasks"]:
+                preview, spec = await self.clarifier.generate_spec_preview(
+                    conversation=task_entry["conversation"],
+                    preferences=prefs.to_dict()
+                )
+                task_entry["conversation"].generated_spec = spec
+                task_entry["conversation"].stage = ConversationStage.PREVIEW
+                responses.append(f"**Task {task_entry['index']}:**\n{preview[:200]}...")
+
+            batch["awaiting_confirm"] = True
+            self._batch_tasks[user_id] = batch
+
+            return f"""📋 **{len(batch['tasks'])} Tasks Ready**
+
+{chr(10).join(responses)}
+
+Reply **yes** to create all, or specify changes.""", None
+
+        # Questions needed - format them with numbers
+        batch["awaiting_answers"] = True
+        self._batch_tasks[user_id] = batch
+
+        lines = [f"📋 **{len(task_messages)} Tasks** - Quick questions:\n"]
+
+        for q in all_questions:
+            q_num = len([x for x in all_questions if all_questions.index(x) < all_questions.index(q)]) + 1
+            lines.append(f"**{q_num}.** [Task {q['task_idx']}] {q['question']}")
+            if q['options']:
+                opts = " / ".join(q['options'][:3])
+                lines.append(f"   _Options: {opts}_")
+            lines.append("")
+
+        lines.append("**Answer format:** `1yes 2tomorrow 3skip`")
+        lines.append("Or just type answers in order, one per line.")
+
+        return "\n".join(lines), None
+
+    async def _handle_batch_answers(
+        self, user_id: str, message: str, user_name: str
+    ) -> Tuple[str, None]:
+        """Handle numbered answers for batch tasks."""
+        import re
+
+        batch = self._batch_tasks.get(user_id)
+        if not batch:
+            return "No pending batch tasks.", None
+
+        questions = batch.get("questions", [])
+        message_lower = message.lower().strip()
+
+        # Check for cancel
+        if message_lower in ["cancel", "stop", "nevermind"]:
+            del self._batch_tasks[user_id]
+            return "Batch cancelled.", None
+
+        # Check for skip all
+        if message_lower in ["skip", "skip all", "defaults"]:
+            # Use defaults for all
+            for task_entry in batch["tasks"]:
+                prefs = await self.prefs.get_preferences(user_id)
+                self.clarifier.apply_defaults(task_entry["conversation"], prefs.to_dict())
+            batch["awaiting_answers"] = False
+            batch["awaiting_confirm"] = True
+            return await self._finalize_batch_preview(user_id, batch)
+
+        # Parse answers - support formats:
+        # "1yes 2tomorrow 3skip" or "1. yes 2. tomorrow" or line by line
+        answers = {}
+
+        # Pattern: number followed by answer (1yes, 1. yes, 1: yes)
+        pattern = r'(\d+)[\.\:\s]*([^\d]+?)(?=\d+[\.\:\s]|$)'
+        matches = re.findall(pattern, message_lower + " ")
+
+        if matches:
+            for num_str, answer in matches:
+                num = int(num_str)
+                answers[num] = answer.strip()
+        else:
+            # Try line by line
+            lines = message.strip().split('\n')
+            for i, line in enumerate(lines, 1):
+                if line.strip():
+                    answers[i] = line.strip()
+
+        # Apply answers to questions
+        for q_idx, q in enumerate(questions, 1):
+            if q_idx in answers:
+                answer = answers[q_idx]
+                task_idx = q["task_idx"]
+
+                # Find the task
+                for task_entry in batch["tasks"]:
+                    if task_entry["index"] == task_idx:
+                        # Apply answer
+                        field = q["field"]
+                        if answer.lower() in ["skip", "default", "idk"]:
+                            continue
+
+                        # Map common answers
+                        if field == "priority":
+                            if "high" in answer or "urgent" in answer:
+                                task_entry["conversation"].extracted_info["priority"] = "high"
+                            elif "low" in answer:
+                                task_entry["conversation"].extracted_info["priority"] = "low"
+                            else:
+                                task_entry["conversation"].extracted_info["priority"] = "medium"
+                        elif field == "deadline":
+                            task_entry["conversation"].extracted_info["deadline_text"] = answer
+                        elif field == "assignee":
+                            task_entry["conversation"].extracted_info["assignee"] = answer
+                        else:
+                            task_entry["conversation"].extracted_info[field] = answer
+
+        # Move to confirmation
+        batch["awaiting_answers"] = False
+        batch["awaiting_confirm"] = True
+
+        return await self._finalize_batch_preview(user_id, batch)
+
+    async def _finalize_batch_preview(
+        self, user_id: str, batch: Dict
+    ) -> Tuple[str, None]:
+        """Generate preview for all batch tasks."""
+        prefs = await self.prefs.get_preferences(user_id)
+        previews = []
+
+        for task_entry in batch["tasks"]:
+            preview, spec = await self.clarifier.generate_spec_preview(
+                conversation=task_entry["conversation"],
+                preferences=prefs.to_dict()
+            )
+            task_entry["conversation"].generated_spec = spec
+            task_entry["spec"] = spec
+
+            title = spec.get("title", "Untitled")[:50]
+            assignee = spec.get("assignee", "Unassigned")
+            priority = spec.get("priority", "medium")
+            priority_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+
+            previews.append(f"{task_entry['index']}. {priority_emoji} **{title}** → {assignee}")
+
+        self._batch_tasks[user_id] = batch
+
+        return f"""📋 **{len(batch['tasks'])} Tasks Ready:**
+
+{chr(10).join(previews)}
+
+Reply **yes** to create all, or **cancel** to abort.""", None
+
+    async def _handle_batch_confirm(
+        self, user_id: str, message: str, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle confirmation to create all batch tasks."""
+        batch = self._batch_tasks.get(user_id)
+        if not batch:
+            return "No pending batch tasks.", None
+
+        message_lower = message.lower().strip()
+
+        # Check for cancel
+        if any(w in message_lower for w in ["cancel", "no", "stop", "abort"]):
+            del self._batch_tasks[user_id]
+            return "Batch cancelled. No tasks created.", None
+
+        # Check for confirmation
+        if any(w in message_lower for w in ["yes", "ok", "confirm", "create", "go", "do it"]):
+            created_tasks = []
+            errors = []
+
+            for task_entry in batch["tasks"]:
+                try:
+                    conv = task_entry["conversation"]
+                    if not conv.generated_spec:
+                        continue
+
+                    # Create the task
+                    response, action = await self._finalize_task(conv, user_id)
+
+                    if "Created" in response or "✅" in response:
+                        # Extract task ID from response
+                        import re
+                        match = re.search(r'(TASK-[\w-]+)', response)
+                        if match:
+                            created_tasks.append(match.group(1))
+                    else:
+                        errors.append(f"Task {task_entry['index']}: {response[:50]}")
+
+                except Exception as e:
+                    logger.error(f"Error creating batch task {task_entry['index']}: {e}")
+                    errors.append(f"Task {task_entry['index']}: Error")
+
+            # Clean up batch session
+            del self._batch_tasks[user_id]
+
+            # Build response
+            if created_tasks and not errors:
+                return f"✅ **Created {len(created_tasks)} tasks:**\n• " + "\n• ".join(created_tasks), None
+            elif created_tasks and errors:
+                return f"""✅ **Created {len(created_tasks)} tasks:**
+• {chr(10).join(created_tasks)}
+
+⚠️ **Issues:**
+• {chr(10).join(errors)}""", None
+            else:
+                return "❌ Failed to create tasks. Please try again.", None
+
+        return "Reply **yes** to create all tasks, or **cancel** to abort.", None
 
 
 # Singleton
