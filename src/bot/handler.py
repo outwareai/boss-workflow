@@ -463,13 +463,17 @@ What would you like to do?""", None
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
     ) -> Tuple[str, None]:
         """Handle when someone says they finished a task."""
-        # Boss doesn't submit proof - they review it
+        # Boss on Telegram = might be trying to create a task, not submit proof
         if context.get("is_boss"):
-            return """As the boss, you review task completions rather than submit them.
+            # Check if this looks like task creation
+            msg_lower = message.lower()
+            if any(w in msg_lower for w in ["title:", "assignee:", "submit new", "create", "task for", "needs to"]):
+                # Redirect to task creation
+                return await self._handle_create_task(user_id, message, {"message": message}, context, user_name)
 
-To create a new task, just describe it:
+            return """To create a task, just describe it:
 • "Mayank needs to fix the login bug"
-• "Assign Sarah to update the docs"
+• "Sarah should update the docs by Friday"
 
 Or ask "what's pending?" to see current tasks.""", None
 
