@@ -2009,7 +2009,7 @@ When done, tell me "I finished {task.id}" and show me proof!"""
 
         batch["questions"] = all_questions
 
-        # If no questions needed, create all tasks directly
+        # If no questions needed, show clean previews
         if not all_questions:
             responses = []
             for task_entry in batch["tasks"]:
@@ -2019,7 +2019,17 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 )
                 task_entry["conversation"].generated_spec = spec
                 task_entry["conversation"].stage = ConversationStage.PREVIEW
-                responses.append(f"**Task {task_entry['index']}:**\n{preview[:200]}...")
+                task_entry["spec"] = spec
+
+                # Create clean summary (not truncated mid-word)
+                title = spec.get("title", "Untitled")
+                assignee = spec.get("assignee") or "Unassigned"
+                priority = spec.get("priority", "medium")
+                p_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+                deadline = spec.get("deadline", "")
+                deadline_str = f" | Due: {deadline[:10]}" if deadline else ""
+
+                responses.append(f"**{task_entry['index']}.** {p_emoji} **{title}**\n   → {assignee}{deadline_str}")
 
             batch["awaiting_confirm"] = True
             self._batch_tasks[user_id] = batch
