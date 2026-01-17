@@ -1139,27 +1139,41 @@ Reply **yes** to confirm or **no** to cancel.""", None
                 "conversation_history": []
             }
 
-            # Format the first question(s)
-            response_lines = [
-                f"📋 **Generating spec for {task_id}**: {title}",
-                "",
-                "I need a bit more info to create a detailed spec:",
-                ""
-            ]
+            # Format questions naturally
+            response_lines = [f"📋 **{title}** ({task_id})", ""]
 
-            # Show questions with numbers for easy answering
-            for i, q in enumerate(questions[:3], 1):
+            # If there's reasoning, show it briefly
+            reasoning = analysis.get("reasoning", "")
+            if reasoning:
+                response_lines.append(f"_{reasoning}_")
+                response_lines.append("")
+
+            # Show questions conversationally
+            if len(questions) == 1:
+                q = questions[0]
                 question_text = q.get("question", q) if isinstance(q, dict) else q
-                response_lines.append(f"**{i}.** {question_text}")
+                response_lines.append(f"Quick question: {question_text}")
 
                 options = q.get("options", []) if isinstance(q, dict) else []
                 if options:
+                    response_lines.append("")
                     for j, opt in enumerate(options, 1):
-                        response_lines.append(f"   {j}) {opt}")
+                        response_lines.append(f"  {j}) {opt}")
+            else:
+                response_lines.append("A couple things I need to know:")
                 response_lines.append("")
+                for i, q in enumerate(questions[:2], 1):
+                    question_text = q.get("question", q) if isinstance(q, dict) else q
+                    response_lines.append(f"{i}. {question_text}")
 
-            response_lines.append("Reply with your answers (e.g., \"1. option2  2. my custom answer\")")
-            response_lines.append("Or say `/skip` to generate with assumptions.")
+                    options = q.get("options", []) if isinstance(q, dict) else []
+                    if options:
+                        opts_str = " / ".join(options)
+                        response_lines.append(f"   ({opts_str})")
+                    response_lines.append("")
+
+            response_lines.append("")
+            response_lines.append("_Or say 'skip' to generate with reasonable assumptions_")
 
             return "\n".join(response_lines), None
 

@@ -275,63 +275,73 @@ Make it insightful and actionable."""
     ) -> str:
         """Analyze if we have enough information to create a detailed spec sheet."""
 
-        return f"""Analyze this task and determine if there's enough information to create a comprehensive spec sheet for the team.
+        return f"""You are a senior technical lead reviewing a task before writing a spec for your team.
 
-TASK INFORMATION:
-- Task ID: {task_id}
+TASK:
+- ID: {task_id}
 - Title: {title}
-- Description: {description or "Not provided"}
-- Assignee: {assignee or "Not assigned"}
+- Description: {description or "(empty)"}
+- Assignee: {assignee or "TBD"}
 - Priority: {priority}
 - Deadline: {deadline or "Not set"}
 - Type: {task_type}
 {f"- Notes: {existing_notes}" if existing_notes else ""}
-{f"- Additional Context: {additional_context}" if additional_context else ""}
+{f"- Context: {additional_context}" if additional_context else ""}
 
-A GOOD SPEC SHEET needs:
-1. Clear understanding of WHAT needs to be done (specific requirements)
-2. Understanding of WHY (business context/purpose)
-3. Scope boundaries (what's included vs excluded)
-4. Testable acceptance criteria
-5. Technical approach hints (if applicable)
+YOUR JOB: Decide if you can write a useful spec, or if you need specific clarification.
 
-Analyze and determine:
-- Do we have enough to write a detailed spec?
-- If not, what's CRITICALLY missing?
+THINK LIKE A DEVELOPER WHO WILL IMPLEMENT THIS:
+- For a BUG: Do I know what's broken? What should happen instead? Can I reproduce it?
+- For a FEATURE: Do I know the user flow? What screens/components are involved? Edge cases?
+- For a TASK: Is the scope clear? What's the definition of done?
+
+BE SMART - DON'T ASK GENERIC QUESTIONS:
+❌ BAD: "What's the priority?" (already provided)
+❌ BAD: "Who should work on this?" (already assigned)
+❌ BAD: "What are the acceptance criteria?" (that's YOUR job to derive)
+❌ BAD: "Is there a deadline?" (already provided or not relevant)
+
+✅ GOOD: Specific questions about THIS task that a developer would need answered
+✅ GOOD: Questions that unlock understanding of the actual work
+
+EXAMPLES OF SMART QUESTIONS:
+
+For "Fix login bug":
+- "What error do users see? (or does the page just hang?)"
+- "Does this happen on all browsers or specific ones?"
+
+For "Add dark mode":
+- "Should it sync with system settings or be a manual toggle?"
+- "Any specific colors/brand guidelines to follow?"
+
+For "Update pricing page":
+- "What specifically needs to change - prices, layout, or copy?"
+- "Are there new pricing tiers or changes to existing ones?"
+
+For "Improve performance":
+- "Which part is slow? (page load, specific action, API calls?)"
+- "Is there a target load time we're aiming for?"
 
 Respond with JSON:
 {{
     "has_enough_info": true/false,
-    "confidence": 0.8,
-    "missing_critical_info": [
-        "What exactly should happen when...",
-        "Who is the target user for this feature?"
-    ],
+    "confidence": 0.0-1.0,
+    "reasoning": "Brief explanation of your assessment",
     "questions_to_ask": [
         {{
-            "question": "What should happen when the user clicks submit?",
-            "options": ["Show confirmation", "Redirect to dashboard", "Stay on page"],
-            "why_needed": "To define the success flow"
-        }},
-        {{
-            "question": "Are there any edge cases to handle?",
-            "options": null,
-            "why_needed": "To ensure completeness"
+            "question": "Specific question about THIS task",
+            "options": ["Option A", "Option B"] or null,
+            "why_needed": "What this unlocks for the spec"
         }}
-    ],
-    "can_proceed_with_assumptions": true/false,
-    "assumptions_if_proceed": [
-        "Assuming standard error handling",
-        "Assuming mobile responsive design"
     ]
 }}
 
 RULES:
-- If description is vague like "fix the bug" or "update the page", you NEED more info
-- If it's a feature, you need to understand the user flow
-- If it's a bug, you need to understand the current vs expected behavior
-- Limit questions to 3 MAX - ask only the most important ones
-- Offer multiple choice options when possible for faster answers"""
+- Max 2 questions - ask only what's CRITICAL
+- If title + description give you enough to work with, set has_enough_info=true
+- Questions must be specific to THIS task, not generic templates
+- Offer options only when there are clear choices (not open-ended)
+- If you can make reasonable assumptions, do it - don't ask"""
 
     @staticmethod
     def generate_spec_questions_prompt(
@@ -380,25 +390,30 @@ Respond with JSON:
     ) -> str:
         """Process user's answer to a spec clarifying question."""
 
-        return f"""Process this answer and extract useful information for the spec.
+        return f"""The boss answered a clarifying question. Extract the useful info.
 
-QUESTION: {question}
-ANSWER: {answer}
-CURRENT TASK INFO: {current_info}
+QUESTION ASKED: {question}
+BOSS'S ANSWER: {answer}
+TASK SO FAR: {current_info}
 
-Extract any useful details from the answer that should be included in the spec.
+Your job: Take their answer and turn it into spec-ready information.
+
+BE SMART:
+- If they said "mobile only" → derive: "Bug is specific to mobile browsers"
+- If they said "redirect to dashboard" → derive: "Success flow: redirect user to dashboard"
+- If they said "users see 500 error" → derive: "Current behavior: Server returns 500 error"
 
 Respond with JSON:
 {{
-    "extracted_info": {{
-        "key": "value"
-    }},
-    "should_add_to_description": "text to append to description if any",
-    "acceptance_criteria": ["any criteria that can be derived"],
-    "technical_notes": "any technical implications",
+    "should_add_to_description": "Clear description text derived from their answer (or null)",
+    "acceptance_criteria": ["Testable criteria derived from answer"] or [],
+    "technical_notes": "Any technical implications (or null)",
     "needs_followup": false,
     "followup_question": null
-}}"""
+}}
+
+ONLY set needs_followup=true if their answer was unclear or incomplete.
+Most answers should just add to the spec directly."""
 
     @staticmethod
     def generate_detailed_spec_prompt(
@@ -414,58 +429,59 @@ Respond with JSON:
     ) -> str:
         """Generate prompt to create a detailed spec sheet for team members."""
 
-        return f"""Create a detailed specification sheet for this task that team members can use as their guide.
+        return f"""You're a senior dev writing a spec that a developer can pick up and start working immediately.
 
-TASK INFORMATION:
-- Task ID: {task_id}
-- Title: {title}
-- Description: {description}
-- Assignee: {assignee or "Not assigned"}
-- Priority: {priority}
-- Deadline: {deadline or "Not set"}
-- Type: {task_type}
-{f"- Existing Notes: {existing_notes}" if existing_notes else ""}
-{f"- Team Context: {team_context}" if team_context else ""}
+TASK: {title}
+TYPE: {task_type}
+DESCRIPTION: {description or "(see title)"}
+ASSIGNEE: {assignee or "TBD"}
+PRIORITY: {priority} | DEADLINE: {deadline or "Not set"}
+{f"NOTES: {existing_notes}" if existing_notes else ""}
+{f"EXTRA CONTEXT: {team_context}" if team_context else ""}
 
-Generate a comprehensive spec with the following sections:
+WRITE A SPEC THAT'S ACTUALLY USEFUL:
 
-1. EXPANDED DESCRIPTION: Rewrite the description to be clearer and more detailed. Include:
-   - What exactly needs to be done
-   - Why this task matters (business context)
-   - Any constraints or limitations
+For BUGS:
+- Current behavior (what's broken)
+- Expected behavior (what should happen)
+- Reproduction steps if known
+- Acceptance: "Bug is fixed when X works correctly"
 
-2. ACCEPTANCE CRITERIA: List 3-7 specific, testable criteria. Each should be:
-   - Clear and unambiguous
-   - Measurable or verifiable
-   - Written as "The system should..." or "User can..."
+For FEATURES:
+- What the user can do after this is done
+- The flow/interaction
+- Edge cases to handle
+- Acceptance: specific user scenarios that work
 
-3. TECHNICAL DETAILS (if applicable): Include:
-   - Files/components likely affected
-   - Suggested approach (if obvious)
-   - Potential edge cases to handle
+For TASKS:
+- Clear scope of what's included
+- What "done" looks like
+- Any constraints
 
-4. DEPENDENCIES: List any:
-   - Tasks that must be completed first
-   - External resources needed
-   - People to consult
+DON'T BE GENERIC:
+❌ "Implement the feature as described"
+❌ "Ensure quality and testing"
+❌ "Follow best practices"
 
-5. ESTIMATED EFFORT: Provide a time estimate
+✅ Specific, actionable items for THIS task
+✅ Criteria a dev can actually verify
+✅ Real technical considerations if relevant
 
 Respond with JSON:
 {{
-    "expanded_description": "Detailed description...",
+    "expanded_description": "2-4 sentences explaining the task clearly. Include the WHY if it adds context.",
     "acceptance_criteria": [
-        "Criterion 1",
-        "Criterion 2",
-        "Criterion 3"
+        "Specific testable thing 1",
+        "Specific testable thing 2",
+        "Specific testable thing 3"
     ],
-    "technical_details": "Technical implementation notes or null if not applicable",
-    "dependencies": ["Dependency 1"] or null if none,
-    "estimated_effort": "2 hours" or "1 day" etc.,
-    "additional_notes": "Any other relevant notes or null"
+    "technical_details": "Only if there are real technical considerations. null otherwise.",
+    "dependencies": ["Only real dependencies"] or null,
+    "estimated_effort": "Realistic estimate based on scope",
+    "additional_notes": "Only if genuinely useful. null otherwise."
 }}
 
-Be specific and practical. This spec will be read by developers/team members who need to understand exactly what to do."""
+Keep it concise. A dev should read this in 30 seconds and know exactly what to do."""
 
     @staticmethod
     def breakdown_task_prompt(
