@@ -276,20 +276,50 @@ async def health_check():
     }
 
 
+# Track processed update IDs to prevent duplicate processing from Telegram retries
+_processed_updates: set = set()
+_max_processed_updates = 1000
+
+
 @app.post("/webhook/telegram")
 async def telegram_webhook(request: Request):
     """
     Telegram webhook endpoint.
 
-    Receives updates from Telegram and processes them.
+    Receives updates from Telegram and processes them in background
+    to avoid Telegram's 60-second timeout causing duplicate requests.
     """
     try:
         update_data = await request.json()
-        logger.debug(f"Received Telegram update: {update_data.get('update_id')}")
+        update_id = update_data.get('update_id')
+        logger.debug(f"Received Telegram update: {update_id}")
 
-        telegram_bot = get_telegram_bot_simple()
-        await telegram_bot.process_webhook(update_data)
+        # Deduplicate - Telegram resends if we're slow (>60s)
+        if update_id in _processed_updates:
+            logger.info(f"Skipping duplicate update {update_id}")
+            return {"ok": True}
 
+        # Mark as processed immediately
+        _processed_updates.add(update_id)
+
+        # Cleanup old update IDs to prevent memory leak
+        if len(_processed_updates) > _max_processed_updates:
+            sorted_ids = sorted(_processed_updates)
+            for old_id in sorted_ids[:len(sorted_ids)//2]:
+                _processed_updates.discard(old_id)
+
+        # Process in background - don't await, return immediately
+        async def process_in_background():
+            try:
+                telegram_bot = get_telegram_bot_simple()
+                await telegram_bot.process_webhook(update_data)
+            except Exception as e:
+                logger.error(f"Background processing error for update {update_id}: {e}")
+
+        # Fire and forget - process in background
+        asyncio.create_task(process_in_background())
+
+        # Return immediately to prevent Telegram timeout
         return {"ok": True}
 
     except Exception as e:
