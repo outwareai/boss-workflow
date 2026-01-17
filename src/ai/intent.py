@@ -124,6 +124,49 @@ class IntentDetector:
         awaiting_notes = context.get("awaiting_notes", False)
         awaiting_confirm = context.get("awaiting_confirm", False)
 
+        # === SLASH COMMAND HANDLING ===
+        if message.startswith("/"):
+            cmd_parts = message[1:].split(None, 1)  # Remove / and split
+            cmd = cmd_parts[0].lower() if cmd_parts else ""
+            args = cmd_parts[1] if len(cmd_parts) > 1 else ""
+
+            # Map slash commands to intents
+            slash_commands = {
+                "help": (UserIntent.HELP, {}),
+                "start": (UserIntent.GREETING, {}),
+                "status": (UserIntent.CHECK_STATUS, {}),
+                "daily": (UserIntent.CHECK_STATUS, {"filter": "today"}),
+                "weekly": (UserIntent.CHECK_STATUS, {"filter": "week"}),
+                "overdue": (UserIntent.CHECK_OVERDUE, {}),
+                "pending": (UserIntent.CHECK_STATUS, {"filter": "pending"}),
+                "cancel": (UserIntent.CANCEL, {}),
+                "skip": (UserIntent.SKIP, {}),
+                "done": (UserIntent.SKIP, {}),  # Finalize with current info
+                "templates": (UserIntent.LIST_TEMPLATES, {}),
+                "team": (UserIntent.CHECK_STATUS, {"filter": "team"}),
+            }
+
+            if cmd in slash_commands:
+                return slash_commands[cmd]
+
+            # Commands with arguments
+            if cmd == "task" and args:
+                return UserIntent.CREATE_TASK, {"message": args}
+            if cmd == "urgent" and args:
+                return UserIntent.CREATE_TASK, {"message": args, "priority": "urgent"}
+            if cmd == "search" and args:
+                return UserIntent.SEARCH_TASKS, {"query": args}
+            if cmd in ["complete", "finish"] and args:
+                task_ids = [t.strip() for t in args.replace(",", " ").split()]
+                return UserIntent.BULK_COMPLETE, {"task_ids": task_ids}
+            if cmd == "clear" and args:
+                task_ids = [t.strip() for t in args.replace(",", " ").split()]
+                return UserIntent.CLEAR_TASKS, {"task_ids": task_ids}
+            if cmd == "archive":
+                return UserIntent.ARCHIVE_TASKS, {}
+
+            # If command not recognized, let it fall through to AI detection
+
         # === CONTEXT-AWARE MATCHING ===
 
         # Boss responding to validation
