@@ -71,6 +71,24 @@ class UnifiedHandler:
             Tuple of (response_text, optional_action_data)
             action_data might contain: send_to_boss, notify_user, etc.
         """
+        # Boss protection: Clear any stuck validation sessions
+        # Boss creates/reviews tasks, doesn't submit proof
+        if is_boss and user_id in self._validation_sessions:
+            # Check if boss is trying to do something new (not continue validation flow)
+            lower_msg = message.lower()
+            validation_keywords = ["yes", "no", "approve", "reject", "send"]
+            if not any(kw in lower_msg for kw in validation_keywords):
+                # Boss wants to do something else - clear the stuck session
+                del self._validation_sessions[user_id]
+                logger.info(f"Cleared stuck validation session for boss {user_id}")
+
+        # Also clear pending reviews for boss
+        if is_boss and user_id in self._pending_reviews:
+            lower_msg = message.lower()
+            if not any(kw in lower_msg for kw in ["yes", "no", "edit", "apply"]):
+                del self._pending_reviews[user_id]
+                logger.info(f"Cleared stuck review session for boss {user_id}")
+
         # Build context for intent detection
         context = await self._build_context(user_id, is_boss)
 
@@ -251,7 +269,17 @@ No commands needed - just chat!""", None
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
     ) -> Tuple[str, None]:
         """Handle when someone says they finished a task."""
-        # Start proof collection session
+        # Boss doesn't submit proof - they review it
+        if context.get("is_boss"):
+            return """As the boss, you review task completions rather than submit them.
+
+To create a new task, just describe it:
+• "Mayank needs to fix the login bug"
+• "Assign Sarah to update the docs"
+
+Or ask "what's pending?" to see current tasks.""", None
+
+        # Start proof collection session for team member
         self._validation_sessions[user_id] = {
             "stage": "collecting_proof",
             "user_id": user_id,
@@ -260,9 +288,6 @@ No commands needed - just chat!""", None
             "proof_items": [],
             "started_at": datetime.now().isoformat()
         }
-
-        # Try to extract task reference from message
-        # AI could help identify which task they're referring to
 
         return f"""Nice work! 🎉
 
@@ -892,8 +917,35 @@ Ready to send to boss? (yes/no)""", None
         conv.task_id = task.id
         await self.context.save_conversation(conv)
 
+        # Clear conversation after successful creation
+        await self.context.clear_active_conversation(user_id)
+
         assignee_text = f" for {task.assignee}" if task.assignee else ""
-        return f"✅ Created{assignee_text}!\n\n**{task.id}**: {task.title}", None
+        response = f"✅ Created{assignee_text}!\n\n**{task.id}**: {task.title}"
+
+        # Prepare notification for assignee if they have Telegram ID
+        action = None
+        if task.assignee_telegram_id:
+            deadline_text = f"\n📅 Deadline: {task.deadline.strftime('%b %d, %I:%M %p')}" if task.deadline else ""
+            assignee_notification = f"""📋 **New Task Assigned**
+
+**{task.title}**
+
+{task.description[:200]}{'...' if len(task.description) > 200 else ''}
+{deadline_text}
+Priority: {task.priority.value.upper()}
+
+_Task ID: {task.id}_
+
+When done, tell me "I finished {task.id}" and show me proof!"""
+
+            action = {
+                "notify_user": task.assignee_telegram_id,
+                "notification": assignee_notification
+            }
+            response += f"\n📨 Notifying {task.assignee} on Telegram"
+
+        return response, action
 
 
 # Singleton
