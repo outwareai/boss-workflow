@@ -127,27 +127,48 @@ class DiscordIntegration:
         message_id: int,
         task: Task
     ) -> bool:
-        """Create a discussion thread for a task."""
+        """Create a discussion thread for a task with retry logic."""
         try:
-            from .discord_bot import create_task_thread
+            from .discord_bot import create_task_thread, get_discord_bot
+            import asyncio
 
-            result = await create_task_thread(
-                channel_id=channel_id,
-                message_id=message_id,
-                task_id=task.id,
-                task_title=task.title,
-                assignee=task.assignee
-            )
+            # Check if bot token is configured
+            if not settings.discord_bot_token:
+                logger.debug("Discord bot token not configured, skipping thread creation")
+                return False
 
-            if result:
-                logger.info(f"Created thread for task {task.id}")
-            else:
-                logger.debug(f"Could not create thread for task {task.id} (bot may not be ready)")
+            # Retry up to 3 times with delays (bot might not be ready yet)
+            max_retries = 3
+            for attempt in range(max_retries):
+                bot = get_discord_bot()
 
-            return result
+                if bot and bot.is_ready():
+                    result = await create_task_thread(
+                        channel_id=channel_id,
+                        message_id=message_id,
+                        task_id=task.id,
+                        task_title=task.title,
+                        assignee=task.assignee
+                    )
+
+                    if result:
+                        logger.info(f"Created thread for task {task.id}")
+                        return True
+                    else:
+                        logger.warning(f"Thread creation failed for {task.id}")
+                        return False
+
+                # Bot not ready, wait and retry
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # 2s, 4s, 6s
+                    logger.debug(f"Discord bot not ready, waiting {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+
+            logger.warning(f"Discord bot not ready after {max_retries} attempts, skipping thread for {task.id}")
+            return False
 
         except Exception as e:
-            logger.warning(f"Thread creation skipped for {task.id}: {e}")
+            logger.warning(f"Thread creation error for {task.id}: {e}")
             return False
 
     async def update_task_embed(
