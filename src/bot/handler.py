@@ -2141,7 +2141,14 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 deadline_str = f" | Due: {deadline[:10]}" if deadline else ""
 
                 # Build response with subtasks if present
-                task_lines = [f"**{task_entry['index']}.** {p_emoji} **{title}**", f"   → {assignee}{deadline_str}"]
+                priority_text = priority.upper()
+                effort = spec.get("estimated_effort", "")
+                effort_str = f" | Effort: {effort}" if effort else ""
+
+                task_lines = [
+                    f"**{task_entry['index']}.** {p_emoji} **{title}**",
+                    f"   → {assignee} | Priority: {priority_text}{deadline_str}{effort_str}"
+                ]
 
                 # Show subtasks
                 subtasks = spec.get("subtasks", [])
@@ -2288,11 +2295,37 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             task_entry["spec"] = spec
 
             title = spec.get("title", "Untitled")[:50]
-            assignee = spec.get("assignee", "Unassigned")
+            assignee = spec.get("assignee") or "Unassigned"
             priority = spec.get("priority", "medium")
             priority_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+            priority_text = priority.upper()
+            deadline = spec.get("deadline", "")
+            deadline_str = f" | Due: {deadline[:10]}" if deadline else ""
+            effort = spec.get("estimated_effort", "")
+            effort_str = f" | Effort: {effort}" if effort else ""
 
-            previews.append(f"{task_entry['index']}. {priority_emoji} **{title}** → {assignee}")
+            # Build detailed preview
+            preview_lines = [
+                f"**{task_entry['index']}.** {priority_emoji} **{title}**",
+                f"   → {assignee} | Priority: {priority_text}{deadline_str}{effort_str}"
+            ]
+
+            # Show subtasks
+            subtasks = spec.get("subtasks", [])
+            if subtasks:
+                preview_lines.append(f"   📝 **Subtasks ({len(subtasks)}):**")
+                for i, st in enumerate(subtasks[:5], 1):
+                    st_title = st.get("title", str(st)) if isinstance(st, dict) else str(st)
+                    preview_lines.append(f"      {i}. {st_title[:60]}")
+                if len(subtasks) > 5:
+                    preview_lines.append(f"      ... and {len(subtasks) - 5} more")
+
+            # Show notes
+            notes = spec.get("notes")
+            if notes and notes != "null" and str(notes).strip():
+                preview_lines.append(f"   📌 Note: {str(notes)[:80]}")
+
+            previews.append("\n".join(preview_lines))
 
         self._batch_tasks[user_id] = batch
 
