@@ -128,11 +128,45 @@ Respond with a JSON object in this exact format:
         original_message: str,
         qa_pairs: Dict[str, str],
         preferences: Dict[str, Any],
-        extracted_info: Dict[str, Any]
+        extracted_info: Dict[str, Any],
+        detailed_mode: bool = False
     ) -> str:
-        """Generate the final task specification."""
+        """Generate the final task specification.
+
+        Args:
+            detailed_mode: When True (triggered by SPECSHEET keyword), generate
+                          comprehensive spec with detailed description, acceptance
+                          criteria, and implementation steps.
+        """
 
         qa_str = "\n".join([f"Q: {q}\nA: {a}" for q, a in qa_pairs.items()]) if qa_pairs else "No additional Q&A"
+
+        # Add detailed mode instructions if triggered
+        detailed_instructions = ""
+        if detailed_mode:
+            detailed_instructions = """
+⚠️ SPECSHEET MODE ACTIVATED - GENERATE COMPREHENSIVE SPEC ⚠️
+
+The user requested a DETAILED specification. You MUST generate:
+1. A thorough, multi-paragraph description explaining the full scope
+2. At least 4-6 specific acceptance criteria
+3. Break down into subtasks with implementation details
+4. Add technical considerations, risks, and dependencies if relevant
+5. Estimate effort more precisely
+
+The description should be 3-5 paragraphs covering:
+- What needs to be done (detailed explanation)
+- Why it's needed / context / business value
+- Technical approach or implementation considerations
+- Any constraints, requirements, or dependencies
+- Success metrics or how to verify completion
+
+DO NOT generate a minimal spec - this needs to be COMPREHENSIVE!
+"""
+
+        description_instruction = "COMPREHENSIVE multi-paragraph description (3-5 paragraphs) covering scope, context, approach, and success criteria" if detailed_mode else "Description of the main task - NOT the subtasks"
+        criteria_instruction = "Generate 4-6 detailed, specific, testable acceptance criteria" if detailed_mode else "Clear, testable criterion"
+        subtask_desc_instruction = "Include implementation details, technical notes, and approach" if detailed_mode else "Additional context if the title can't fit everything"
 
         return f"""Generate a complete task specification based on all gathered information.
 
@@ -147,7 +181,7 @@ EXTRACTED INFORMATION:
 
 USER PREFERENCES:
 {preferences}
-
+{detailed_instructions}
 CRITICAL - DETECT AND PRESERVE SUBTASKS:
 If the user lists subtasks or items (after "subtasks:", "in it:", "-", "•", numbered items, etc.),
 you MUST extract them as separate subtasks. DON'T oversimplify or lose details!
@@ -175,20 +209,20 @@ User: "Set up rate limiter in Digital Ocean to limit monthly billing" → "Set u
 Generate a complete task specification as JSON:
 {{
     "title": "Clear, actionable title for MAIN task (under 100 chars)",
-    "description": "Description of the main task - NOT the subtasks",
+    "description": "{description_instruction}",
     "assignee": "team member name or null",
     "priority": "low/medium/high/urgent",
     "deadline": "ISO datetime or null",
     "task_type": "bug/feature/task/research",
     "estimated_effort": "time estimate (e.g., '2 hours', '1 day')",
     "acceptance_criteria": [
-        "Clear, testable criterion 1",
+        "{criteria_instruction}",
         "Clear, testable criterion 2"
     ],
     "subtasks": [
         {{
             "title": "DETAILED subtask title preserving user's original wording (up to 150 chars)",
-            "description": "Additional context if the title can't fit everything",
+            "description": "{subtask_desc_instruction}",
             "order": 1
         }}
     ],
@@ -203,7 +237,7 @@ RULES:
 - Simple subtasks can have short titles
 - If NO subtasks mentioned → "subtasks": []
 - NEVER lose user's listed items or details
-- Keep notes separate from description"""
+- Keep notes separate from description{"" if not detailed_mode else chr(10) + "- SPECSHEET MODE: Generate comprehensive, detailed output for ALL fields!"}"""
 
     @staticmethod
     def format_preview_prompt(spec: Dict[str, Any]) -> str:

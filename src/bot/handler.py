@@ -2154,20 +2154,33 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             f"Assignee: {assignee}{effort_display} | Priority: {priority_text} {p_emoji}{deadline_display}"
         ]
 
-        # Show subtasks
+        # Show description if present and substantial (for SPECSHEET mode)
+        description = spec.get("description", "")
+        if description and len(description) > 50:  # Only show if substantial
+            task_lines.append(f"\n**Description:**")
+            # Show full description for detailed specs
+            task_lines.append(description)
+
+        # Show acceptance criteria if present (for SPECSHEET mode)
+        acceptance_criteria = spec.get("acceptance_criteria", [])
+        if acceptance_criteria and len(acceptance_criteria) > 0:
+            task_lines.append(f"\n**Acceptance Criteria ({len(acceptance_criteria)}):**")
+            for i, criterion in enumerate(acceptance_criteria, 1):
+                task_lines.append(f"   {i}. {criterion}")
+
+        # Show subtasks - full text, no truncation
         subtasks = spec.get("subtasks", [])
         if subtasks:
             task_lines.append(f"\n**Subtasks ({len(subtasks)}):**")
-            for i, st in enumerate(subtasks[:5], 1):
+            for i, st in enumerate(subtasks, 1):  # Show ALL subtasks
                 st_title = st.get("title", str(st)) if isinstance(st, dict) else str(st)
-                task_lines.append(f"   {i}. {st_title[:70]}{'...' if len(st_title) > 70 else ''}")
-            if len(subtasks) > 5:
-                task_lines.append(f"   ... and {len(subtasks) - 5} more")
+                # Show full subtask text - no truncation
+                task_lines.append(f"   {i}. {st_title}")
 
         # Show notes if present
         notes = spec.get("notes")
         if notes and notes != "null" and str(notes).strip():
-            task_lines.append(f"\nNote: {str(notes)[:100]}{'...' if len(str(notes)) > 100 else ''}")
+            task_lines.append(f"\nNote: {str(notes)}")
 
         # Navigation options
         task_lines.append("")

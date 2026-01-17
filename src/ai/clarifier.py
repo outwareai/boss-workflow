@@ -460,12 +460,20 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         Returns:
             Tuple of (preview_message, spec_dict)
         """
+        # Detect SPECSHEETS keyword for detailed spec generation
+        message_lower = conversation.original_message.lower()
+        detailed_mode = any(kw in message_lower for kw in [
+            "specsheet", "spec sheet", "detailed spec", "detailed for:",
+            "full spec", "comprehensive", "with details"
+        ])
+
         # Generate the spec
         spec = await self.ai.generate_task_spec(
             original_message=conversation.original_message,
             qa_pairs=conversation.get_qa_summary(),
             preferences=preferences,
-            extracted_info=conversation.extracted_info
+            extracted_info=conversation.extracted_info,
+            detailed_mode=detailed_mode  # Pass flag for detailed generation
         )
 
         # Store in conversation

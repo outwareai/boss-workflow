@@ -136,10 +136,15 @@ class DeepSeekClient:
         original_message: str,
         qa_pairs: Dict[str, str],
         preferences: Dict[str, Any],
-        extracted_info: Dict[str, Any]
+        extracted_info: Dict[str, Any],
+        detailed_mode: bool = False
     ) -> Dict[str, Any]:
         """
         Generate the final task specification.
+
+        Args:
+            detailed_mode: If True, generate comprehensive spec with more details
+                          (triggered by SPECSHEETS keyword)
 
         Returns complete task spec ready for creation.
         """
@@ -147,7 +152,8 @@ class DeepSeekClient:
             original_message=original_message,
             qa_pairs=qa_pairs,
             preferences=preferences,
-            extracted_info=extracted_info
+            extracted_info=extracted_info,
+            detailed_mode=detailed_mode
         )
 
         messages = [
