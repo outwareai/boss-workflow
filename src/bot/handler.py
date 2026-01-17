@@ -2154,7 +2154,7 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 # Show subtasks
                 subtasks = spec.get("subtasks", [])
                 if subtasks:
-                    task_lines.append(f"   📝 **Subtasks ({len(subtasks)}):**")
+                    task_lines.append(f"   **Subtasks ({len(subtasks)}):**")
                     for i, st in enumerate(subtasks[:5], 1):  # Show max 5 subtasks
                         st_title = st.get("title", str(st)) if isinstance(st, dict) else str(st)
                         task_lines.append(f"      {i}. {st_title[:60]}{'...' if len(st_title) > 60 else ''}")
@@ -2164,7 +2164,7 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 # Show notes if present
                 notes = spec.get("notes")
                 if notes and notes != "null" and str(notes).strip():
-                    task_lines.append(f"   📌 Note: {str(notes)[:80]}{'...' if len(str(notes)) > 80 else ''}")
+                    task_lines.append(f"   Note: {str(notes)[:80]}{'...' if len(str(notes)) > 80 else ''}")
 
                 responses.append("\n".join(task_lines))
 
@@ -2318,7 +2318,7 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             # Show subtasks
             subtasks = spec.get("subtasks", [])
             if subtasks:
-                preview_lines.append(f"   📝 **Subtasks ({len(subtasks)}):**")
+                preview_lines.append(f"   **Subtasks ({len(subtasks)}):**")
                 for i, st in enumerate(subtasks[:5], 1):
                     st_title = st.get("title", str(st)) if isinstance(st, dict) else str(st)
                     preview_lines.append(f"      {i}. {st_title[:60]}")
@@ -2328,7 +2328,7 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             # Show notes
             notes = spec.get("notes")
             if notes and notes != "null" and str(notes).strip():
-                preview_lines.append(f"   📌 Note: {str(notes)[:80]}")
+                preview_lines.append(f"   Note: {str(notes)[:80]}")
 
             previews.append("\n".join(preview_lines))
 
