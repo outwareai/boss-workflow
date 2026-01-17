@@ -362,11 +362,22 @@ Contact boss directly on Telegram.""",
 
             return thread
 
-        except discord.Forbidden:
-            logger.error(f"Bot lacks permission to create threads in channel {channel_id}")
+        except discord.Forbidden as e:
+            logger.error(f"Bot lacks permission to create threads in channel {channel_id}. Error: {e}. "
+                        f"Bot permissions: Make sure 'Create Public Threads' is enabled for the bot role.")
+            # Try to log what permissions the bot actually has
+            try:
+                if channel:
+                    perms = channel.permissions_for(channel.guild.me)
+                    logger.error(f"Bot permissions in channel: create_public_threads={perms.create_public_threads}, "
+                                f"send_messages={perms.send_messages}, "
+                                f"send_messages_in_threads={perms.send_messages_in_threads}, "
+                                f"read_message_history={perms.read_message_history}")
+            except Exception as perm_err:
+                logger.error(f"Could not check permissions: {perm_err}")
             return None
         except Exception as e:
-            logger.error(f"Error creating thread for task {task_id}: {e}")
+            logger.error(f"Error creating thread for task {task_id}: {type(e).__name__}: {e}")
             return None
 
 
