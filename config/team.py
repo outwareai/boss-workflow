@@ -16,7 +16,7 @@ DEFAULT_TEAM_MEMBERS: List[Dict[str, Any]] = [
         "role": "developer",
         "email": "colmayank52@gmail.com",
         "discord_username": "@MAYANK",
-        "discord_id": "bisc1076",  # Discord handle for mentions
+        "discord_id": "392400310108291092",  # Numeric Discord user ID for @mentions
         "telegram_id": "",  # Fill in if known
         "skills": ["development", "general"],
     },
