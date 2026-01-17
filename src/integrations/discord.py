@@ -96,11 +96,20 @@ class DiscordIntegration:
                     if response.status == 200:
                         data = await response.json()
                         message_id = data.get("id")
+                        channel_id = data.get("channel_id")
                         logger.info(f"Posted task {task.id} to Discord: {message_id}")
 
                         # Register message-task mapping for reaction tracking
                         if message_id:
                             _register_message_task_mapping(message_id, task.id)
+
+                        # Create thread for the task if bot is available
+                        if message_id and channel_id:
+                            await self._create_thread_for_task(
+                                channel_id=int(channel_id),
+                                message_id=int(message_id),
+                                task=task
+                            )
 
                         return message_id
                     else:
@@ -111,6 +120,35 @@ class DiscordIntegration:
         except Exception as e:
             logger.error(f"Error posting to Discord: {e}")
             return None
+
+    async def _create_thread_for_task(
+        self,
+        channel_id: int,
+        message_id: int,
+        task: Task
+    ) -> bool:
+        """Create a discussion thread for a task."""
+        try:
+            from .discord_bot import create_task_thread
+
+            result = await create_task_thread(
+                channel_id=channel_id,
+                message_id=message_id,
+                task_id=task.id,
+                task_title=task.title,
+                assignee=task.assignee
+            )
+
+            if result:
+                logger.info(f"Created thread for task {task.id}")
+            else:
+                logger.debug(f"Could not create thread for task {task.id} (bot may not be ready)")
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Thread creation skipped for {task.id}: {e}")
+            return False
 
     async def update_task_embed(
         self,

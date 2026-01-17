@@ -288,6 +288,87 @@ Contact boss directly on Telegram.""",
             except Exception as e:
                 logger.warning(f"Could not add reaction {emoji}: {e}")
 
+    async def create_task_thread(
+        self,
+        channel_id: int,
+        message_id: int,
+        task_id: str,
+        task_title: str,
+        assignee: str = None
+    ) -> Optional[discord.Thread]:
+        """
+        Create a thread on a task message for discussion.
+
+        Args:
+            channel_id: Discord channel ID where message was posted
+            message_id: Discord message ID to create thread on
+            task_id: Task ID for thread name
+            task_title: Task title for thread name
+            assignee: Optional assignee to mention in thread
+
+        Returns:
+            Created thread or None if failed
+        """
+        try:
+            channel = self.get_channel(channel_id)
+            if not channel:
+                channel = await self.fetch_channel(channel_id)
+
+            if not channel:
+                logger.error(f"Could not find channel {channel_id}")
+                return None
+
+            # Fetch the message
+            message = await channel.fetch_message(message_id)
+            if not message:
+                logger.error(f"Could not find message {message_id}")
+                return None
+
+            # Create thread name: "TASK-XXX | Short title"
+            # Discord thread names max 100 chars
+            short_title = task_title[:60] if len(task_title) > 60 else task_title
+            thread_name = f"{task_id} | {short_title}"
+            if len(thread_name) > 100:
+                thread_name = thread_name[:97] + "..."
+
+            # Create thread on the message
+            thread = await message.create_thread(
+                name=thread_name,
+                auto_archive_duration=10080  # 7 days
+            )
+
+            logger.info(f"Created Discord thread '{thread_name}' for task {task_id}")
+
+            # Post initial message in thread
+            intro_lines = [
+                f"**Task Discussion Thread**",
+                f"Use this thread to discuss {task_id}.",
+                "",
+                "**Quick Actions:**",
+                "- Share updates and progress here",
+                "- Post screenshots or links as proof",
+                "- Ask questions about the task",
+                "",
+                "When done, react with ✅ on the main message above."
+            ]
+
+            if assignee:
+                intro_lines.insert(2, f"Assigned to: **{assignee}**")
+
+            await thread.send("\n".join(intro_lines))
+
+            # Add status reactions to the original message
+            await self.add_status_reactions(message)
+
+            return thread
+
+        except discord.Forbidden:
+            logger.error(f"Bot lacks permission to create threads in channel {channel_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Error creating thread for task {task_id}: {e}")
+            return None
+
 
 # Singleton instance
 _bot: Optional[TaskingBot] = None
@@ -337,3 +418,35 @@ def setup_priority_callback(callback):
     if bot:
         bot.on_priority_update_callback = callback
         logger.info("Discord bot priority callback registered")
+
+
+async def create_task_thread(
+    channel_id: int,
+    message_id: int,
+    task_id: str,
+    task_title: str,
+    assignee: str = None
+) -> bool:
+    """
+    Create a thread for a task message.
+
+    This is a helper function that can be called from discord.py integration
+    after posting a task via webhook.
+
+    Returns:
+        True if thread created successfully, False otherwise
+    """
+    bot = get_discord_bot()
+    if not bot or not bot.is_ready():
+        logger.warning("Discord bot not ready, cannot create thread")
+        return False
+
+    thread = await bot.create_task_thread(
+        channel_id=channel_id,
+        message_id=message_id,
+        task_id=task_id,
+        task_title=task_title,
+        assignee=assignee
+    )
+
+    return thread is not None
