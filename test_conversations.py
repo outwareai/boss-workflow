@@ -5,7 +5,13 @@ Simulates real user interactions to test intent detection and handler responses.
 
 import asyncio
 import sys
+import codecs
 from pathlib import Path
+
+# Fix Windows console encoding for emoji output
+if sys.platform == 'win32':
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, errors='replace')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, errors='replace')
 
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))

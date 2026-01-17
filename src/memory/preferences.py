@@ -199,15 +199,21 @@ class PreferencesManager:
     Manages user preferences storage and retrieval.
 
     Uses Redis for fast access and caching.
+    Falls back to in-memory storage when Redis isn't available.
     """
 
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
         self._cache: Dict[str, UserPreferences] = {}
+        self._memory_store: Dict[str, str] = {}  # Fallback in-memory storage
+        self._connected: bool = False
 
     async def connect(self):
         """Connect to Redis (optional - falls back to in-memory)."""
-        if not self.redis and settings.redis_url:
+        if self._connected:
+            return
+
+        if settings.redis_url:
             try:
                 self.redis = await redis.from_url(
                     settings.redis_url,
@@ -221,11 +227,32 @@ class PreferencesManager:
                 logger.warning(f"Redis not available for preferences, using in-memory: {e}")
                 self.redis = None
 
+        self._connected = True
+
     async def disconnect(self):
         """Disconnect from Redis."""
         if self.redis:
             await self.redis.close()
             self.redis = None
+        self._connected = False
+
+    async def _store_get(self, key: str) -> Optional[str]:
+        """Get value from Redis or memory."""
+        if self.redis:
+            return await self.redis.get(key)
+        return self._memory_store.get(key)
+
+    async def _store_set(self, key: str, value: str) -> bool:
+        """Set value in Redis or memory."""
+        try:
+            if self.redis:
+                await self.redis.set(key, value)
+            else:
+                self._memory_store[key] = value
+            return True
+        except Exception as e:
+            logger.error(f"Error storing key {key}: {e}")
+            return False
 
     def _get_key(self, user_id: str) -> str:
         """Get Redis key for user preferences."""
@@ -235,7 +262,7 @@ class PreferencesManager:
         """
         Get user preferences, creating defaults if not exists.
 
-        Checks cache first, then Redis.
+        Checks cache first, then Redis/memory.
         """
         # Check cache
         if user_id in self._cache:
@@ -243,9 +270,9 @@ class PreferencesManager:
 
         await self.connect()
 
-        # Check Redis
+        # Check storage (Redis or memory)
         key = self._get_key(user_id)
-        data = await self.redis.get(key)
+        data = await self._store_get(key)
 
         if data:
             try:
@@ -276,13 +303,13 @@ class PreferencesManager:
         return prefs
 
     async def save_preferences(self, prefs: UserPreferences) -> bool:
-        """Save user preferences to Redis."""
+        """Save user preferences to storage."""
         await self.connect()
 
         try:
             key = self._get_key(prefs.user_id)
             prefs.updated_at = datetime.now()
-            await self.redis.set(key, json.dumps(prefs.to_dict()))
+            await self._store_set(key, json.dumps(prefs.to_dict()))
             self._cache[prefs.user_id] = prefs
             logger.info(f"Saved preferences for user {prefs.user_id}")
             return True

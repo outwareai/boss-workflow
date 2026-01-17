@@ -208,6 +208,17 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         # Check if we have enough information
         can_proceed = analysis.get("can_proceed_without_questions", False)
 
+        # Normalize suggested_questions to dict format early
+        # AI may return strings or dicts, we need dicts for filtering
+        raw_questions = analysis.get("suggested_questions", [])
+        normalized_questions = []
+        for q in raw_questions:
+            if isinstance(q, str):
+                normalized_questions.append({"question": q, "field": "general"})
+            elif isinstance(q, dict):
+                normalized_questions.append(q)
+        analysis["suggested_questions"] = normalized_questions
+
         # Apply preference overrides
         can_proceed = self._apply_preference_logic(analysis, preferences, can_proceed)
 
@@ -235,7 +246,7 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         skip_questions_for = preferences.get("skip_questions_for", [])
 
         confidence = analysis.get("confidence", {})
-        suggested_questions = analysis.get("suggested_questions", [])
+        suggested_questions = analysis.get("suggested_questions", [])  # Already normalized
 
         # Remove questions for fields user wants to skip
         filtered_questions = [

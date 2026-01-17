@@ -21,15 +21,21 @@ class ConversationContext:
     Manages conversation state for multi-turn task creation.
 
     Stores conversation state in Redis with expiration.
+    Falls back to in-memory storage when Redis isn't available.
     """
 
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
+        self._memory_store: Dict[str, str] = {}  # Fallback in-memory storage
+        self._connected = False
         self.default_ttl = settings.conversation_timeout_minutes * 60  # seconds
 
     async def connect(self):
         """Connect to Redis (optional - falls back to in-memory)."""
-        if not self.redis and settings.redis_url:
+        if self._connected:
+            return
+
+        if settings.redis_url:
             try:
                 self.redis = await redis.from_url(
                     settings.redis_url,
@@ -42,13 +48,66 @@ class ConversationContext:
             except Exception as e:
                 logger.warning(f"Redis not available for context, using in-memory: {e}")
                 self.redis = None
-                self._memory_store = {}  # Fallback in-memory storage
+
+        self._connected = True
 
     async def disconnect(self):
         """Disconnect from Redis."""
         if self.redis:
             await self.redis.close()
             self.redis = None
+        self._connected = False
+
+    # =========== Storage helper methods ===========
+
+    async def _store_get(self, key: str) -> Optional[str]:
+        """Get value from Redis or memory."""
+        if self.redis:
+            return await self.redis.get(key)
+        return self._memory_store.get(key)
+
+    async def _store_set(self, key: str, value: str, ttl: int = None) -> bool:
+        """Set value in Redis or memory."""
+        try:
+            if self.redis:
+                if ttl:
+                    await self.redis.setex(key, ttl, value)
+                else:
+                    await self.redis.set(key, value)
+            else:
+                self._memory_store[key] = value
+            return True
+        except Exception as e:
+            logger.error(f"Error storing key {key}: {e}")
+            return False
+
+    async def _store_delete(self, key: str) -> bool:
+        """Delete value from Redis or memory."""
+        try:
+            if self.redis:
+                await self.redis.delete(key)
+            else:
+                self._memory_store.pop(key, None)
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting key {key}: {e}")
+            return False
+
+    async def _store_scan(self, pattern: str) -> List[str]:
+        """Scan keys matching pattern."""
+        if self.redis:
+            keys = []
+            cursor = 0
+            while True:
+                cursor, batch = await self.redis.scan(cursor=cursor, match=pattern, count=100)
+                keys.extend(batch)
+                if cursor == 0:
+                    break
+            return keys
+        else:
+            # Simple in-memory pattern matching
+            import fnmatch
+            return [k for k in self._memory_store.keys() if fnmatch.fnmatch(k, pattern)]
 
     async def create_conversation(
         self,
@@ -97,7 +156,7 @@ class ConversationContext:
         await self.connect()
 
         key = f"conversation:{user_id}:{conversation_id}"
-        data = await self.redis.get(key)
+        data = await self._store_get(key)
 
         if data:
             try:
@@ -112,7 +171,7 @@ class ConversationContext:
         await self.connect()
 
         active_key = ConversationState.active_conversation_key(user_id)
-        conversation_id = await self.redis.get(active_key)
+        conversation_id = await self._store_get(active_key)
 
         if conversation_id:
             return await self.get_conversation(conversation_id, user_id)
@@ -120,7 +179,7 @@ class ConversationContext:
         return None
 
     async def save_conversation(self, conversation: ConversationState) -> bool:
-        """Save conversation state to Redis."""
+        """Save conversation state to storage."""
         await self.connect()
 
         try:
@@ -132,10 +191,10 @@ class ConversationContext:
             if conversation.stage in [ConversationStage.COMPLETED, ConversationStage.ABANDONED]:
                 ttl = 3600  # Keep completed conversations for 1 hour for reference
 
-            await self.redis.setex(
+            await self._store_set(
                 key,
-                ttl,
-                json.dumps(conversation.model_dump(mode="json"))
+                json.dumps(conversation.model_dump(mode="json")),
+                ttl
             )
             return True
 
@@ -147,11 +206,7 @@ class ConversationContext:
         """Set the user's active conversation ID."""
         try:
             active_key = ConversationState.active_conversation_key(user_id)
-            await self.redis.setex(
-                active_key,
-                self.default_ttl,
-                conversation_id
-            )
+            await self._store_set(active_key, conversation_id, self.default_ttl)
             return True
         except Exception as e:
             logger.error(f"Error setting active conversation: {e}")
@@ -161,7 +216,7 @@ class ConversationContext:
         """Clear the user's active conversation."""
         try:
             active_key = ConversationState.active_conversation_key(user_id)
-            await self.redis.delete(active_key)
+            await self._store_delete(active_key)
             return True
         except Exception as e:
             logger.error(f"Error clearing active conversation: {e}")
@@ -190,23 +245,14 @@ class ConversationContext:
         timeout_threshold = datetime.now() - timedelta(minutes=settings.conversation_timeout_minutes)
 
         # Scan for active conversation keys
-        cursor = 0
-        while True:
-            cursor, keys = await self.redis.scan(
-                cursor=cursor,
-                match="active_conversation:*",
-                count=100
-            )
+        keys = await self._store_scan("active_conversation:*")
 
-            for key in keys:
-                user_id = key.split(":")[-1]
-                conv = await self.get_active_conversation(user_id)
+        for key in keys:
+            user_id = key.split(":")[-1]
+            conv = await self.get_active_conversation(user_id)
 
-                if conv and conv.last_activity_at < timeout_threshold:
-                    timed_out.append(conv)
-
-            if cursor == 0:
-                break
+            if conv and conv.last_activity_at < timeout_threshold:
+                timed_out.append(conv)
 
         return timed_out
 
@@ -217,24 +263,16 @@ class ConversationContext:
         to_finalize = []
         finalize_threshold = datetime.now() - timedelta(hours=settings.auto_finalize_hours)
 
-        cursor = 0
-        while True:
-            cursor, keys = await self.redis.scan(
-                cursor=cursor,
-                match="active_conversation:*",
-                count=100
-            )
+        # Scan for active conversation keys
+        keys = await self._store_scan("active_conversation:*")
 
-            for key in keys:
-                user_id = key.split(":")[-1]
-                conv = await self.get_active_conversation(user_id)
+        for key in keys:
+            user_id = key.split(":")[-1]
+            conv = await self.get_active_conversation(user_id)
 
-                if conv and conv.last_activity_at < finalize_threshold:
-                    if conv.stage not in [ConversationStage.COMPLETED, ConversationStage.ABANDONED]:
-                        to_finalize.append(conv)
-
-            if cursor == 0:
-                break
+            if conv and conv.last_activity_at < finalize_threshold:
+                if conv.stage not in [ConversationStage.COMPLETED, ConversationStage.ABANDONED]:
+                    to_finalize.append(conv)
 
         return to_finalize
 
