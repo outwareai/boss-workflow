@@ -81,42 +81,36 @@ class TaskingBot(commands.Bot):
         # Register slash commands
         @self.command(name="help")
         async def help_command(ctx):
-            """Show help message with reaction guide."""
+            """Show help message for team members."""
             embed = discord.Embed(
-                title="📖 Boss Workflow Help",
-                description="""**React to Update Task Status:**
-✅ Complete task
-🚧 Mark as in progress
-🚫 Block task (can't proceed)
-⏸️ Put on hold
-🔄 Send for review
-❌ Cancel task
-⏳ Set to pending
+                title="📖 Team Member Guide",
+                description="""**Your Tasks Appear Here**
+When boss assigns you a task, it shows up in this channel.
 
-**Priority:**
-🔴 Mark as urgent
+**Update Status by Reacting:**
+✅ I'm done (completed)
+🚧 Working on it (in progress)
+🚫 I'm stuck (blocked)
+⏸️ Paused (on hold)
+🔄 Ready for review
+❌ Can't do this (cancelled)
+⏳ Haven't started (pending)
+🔴 This is urgent!
 
 **How It Works:**
-1. Tasks are posted here from Telegram
-2. React with an emoji to update status
-3. Changes sync to database & Google Sheets
-4. Boss gets notified of status changes
+1. Find your task message
+2. Click a reaction emoji
+3. Status updates automatically
+4. Boss gets notified
 
-**Via Telegram Bot:**
-• `/status` - View current tasks
-• `/search @name` - Find tasks by assignee
-• `/complete ID` - Mark task done
-• `/help` - Full command list
+**Need to Submit Work?**
+Message the boss on Telegram with proof (screenshots, links).
 
-**Natural Language in Telegram:**
-• "What's John working on?"
-• "Show blocked tasks"
-• "Mark TASK-001 as done"
-
-_Reactions sync task status automatically!_""",
-                color=0x3498DB
+**Questions?**
+Contact boss directly on Telegram.""",
+                color=0x2ECC71  # Green for team
             )
-            embed.set_footer(text="Boss Workflow Automation | React on task messages to update status")
+            embed.set_footer(text="Boss Workflow | Your reactions sync instantly")
             await ctx.send(embed=embed)
             logger.info(f"Help command used by {ctx.author}")
 
