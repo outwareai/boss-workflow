@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = Field(default="https://api.deepseek.com/v1", env="DEEPSEEK_BASE_URL")
     deepseek_model: str = Field(default="deepseek-chat", env="DEEPSEEK_MODEL")
 
+    # OpenAI (for Whisper voice transcription)
+    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+
     # Discord
     discord_webhook_url: str = Field(default="", env="DISCORD_WEBHOOK_URL")
     discord_tasks_channel_webhook: str = Field(default="", env="DISCORD_TASKS_CHANNEL_WEBHOOK")

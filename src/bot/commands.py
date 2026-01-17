@@ -107,17 +107,35 @@ Just send me a message to get started!"""
 • `/note [task-id] [note]` - Add note to task
 • `/delay [task-id] [deadline] [reason]` - Delay a task
 
+**Subtasks:**
+• `/subtask TASK-001 "Title"` - Add subtask
+• `/subtasks TASK-001` - List subtasks
+• `/subdone TASK-001 1,2,3` - Complete subtasks
+• `/breakdown TASK-001` - AI-powered task breakdown
+
+**Time Tracking:**
+• `/start TASK-001` - Start timer
+• `/stop` - Stop current timer
+• `/log TASK-001 2h30m` - Log time manually
+• `/time TASK-001` - Show time on task
+• `/timesheet` - Your weekly timesheet
+• `/timesheet team` - Team timesheet
+
+**Recurring Tasks:**
+• `/recurring "Title" every:monday 9am` - Create
+• `/recurring list` - View all
+• `/recurring pause/resume/delete REC-001`
+
 **Search & Filter:**
 • `/search [query]` - Search tasks by keyword
 • `/search @John` - Tasks assigned to John
 • `/search #urgent` - Urgent priority tasks
 • `/search status:blocked` - Blocked tasks
-• `/search due:today` - Tasks due today
 
 **Bulk Operations:**
-• `/complete ID ID ID` - Mark multiple tasks done
-• `/block ID ID ID [reason]` - Block multiple tasks
-• `/assign @Person ID ID` - Assign tasks to someone
+• `/complete ID ID ID` - Mark multiple done
+• `/block ID ID [reason]` - Block tasks
+• `/assign @Person ID ID` - Assign tasks
 
 **Reports:**
 • `/weekly` - Generate weekly summary
@@ -127,20 +145,23 @@ Just send me a message to get started!"""
 **Team & Settings:**
 • `/team` - View team members
 • `/addteam [name] [role]` - Add team member
-• `/preferences` - View your preferences
-• `/teach` - Teach me your preferences
+• `/preferences` - View preferences
+• `/teach` - Teach me preferences
 
-**Validation (Boss):**
+**Validation:**
 • `/pending` - View pending validations
-• `/approve [task-id] [message]` - Approve work
-• `/reject [task-id] [feedback]` - Request changes
+• `/approve [task-id]` - Approve work
+• `/reject [task-id] [feedback]` - Reject
+
+**Voice Messages:**
+• Send a voice message and I'll transcribe it!
 
 **Tips:**
-• Natural language works! "What's John working on?"
-• Templates auto-detect: "bug: login crashes"
-• React on Discord: ✅🚧🚫⏸️🔄
+• Natural language works!
+• Templates: "bug: login crashes"
+• Discord reactions: ✅🚧🚫⏸️🔄
 
-Need more help? Just ask!"""
+Need help? Just ask!"""
 
     async def handle_task(self, user_id: str, chat_id: str, message: str) -> str:
         """Handle /task command or plain message task creation."""
@@ -668,6 +689,628 @@ Or use `/addteam [name] [role]`"""
             task_id=task_id,
             task_title=task_title
         )
+
+    # ==================== RECURRING TASKS ====================
+
+    async def handle_recurring(self, user_id: str, args: str) -> str:
+        """
+        Handle /recurring command - manage recurring tasks.
+
+        Usage:
+        - /recurring "Task title" every:monday 9am assign:@John
+        - /recurring list
+        - /recurring pause REC-001
+        - /recurring resume REC-001
+        - /recurring delete REC-001
+        """
+        from ..database.repositories.recurring import get_recurring_repository, RecurrenceCalculator
+        import re
+
+        repo = get_recurring_repository()
+        args = args.strip()
+
+        if not args:
+            return await self._recurring_help()
+
+        # Handle subcommands
+        if args.lower() == "list":
+            return await self._list_recurring()
+
+        if args.lower().startswith("pause "):
+            recurring_id = args[6:].strip().upper()
+            success = await repo.pause(recurring_id)
+            if success:
+                return f"⏸️ Paused recurring task {recurring_id}"
+            return f"❌ Recurring task {recurring_id} not found"
+
+        if args.lower().startswith("resume "):
+            recurring_id = args[7:].strip().upper()
+            success = await repo.resume(recurring_id)
+            if success:
+                recurring = await repo.get_by_id(recurring_id)
+                next_run = recurring.next_run.strftime("%A, %b %d at %H:%M") if recurring else "soon"
+                return f"▶️ Resumed recurring task {recurring_id}\nNext run: {next_run}"
+            return f"❌ Recurring task {recurring_id} not found"
+
+        if args.lower().startswith("delete "):
+            recurring_id = args[7:].strip().upper()
+            success = await repo.delete(recurring_id)
+            if success:
+                return f"🗑️ Deleted recurring task {recurring_id}"
+            return f"❌ Recurring task {recurring_id} not found"
+
+        # Parse new recurring task
+        # Format: "Task title" every:pattern time [assign:@name] [priority:level]
+        title_match = re.search(r'"([^"]+)"', args)
+        if not title_match:
+            return "Please wrap the task title in quotes: `/recurring \"Weekly standup\" every:monday 9am`"
+
+        title = title_match.group(1)
+        rest = args.replace(title_match.group(0), '').strip()
+
+        # Extract pattern
+        pattern_match = re.search(r'every:(\S+)', rest, re.IGNORECASE)
+        if not pattern_match:
+            return "Please specify a pattern: `every:monday`, `every:day`, `every:1st`, etc."
+
+        pattern = f"every:{pattern_match.group(1)}"
+        if not RecurrenceCalculator.is_valid_pattern(pattern):
+            return f"Invalid pattern: {pattern}\n\nValid patterns: `every:day`, `every:weekday`, `every:monday`, `every:1st`, `every:last`, `every:2weeks`"
+
+        # Extract time
+        time_match = re.search(r'(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)', rest, re.IGNORECASE)
+        time_str = time_match.group(1) if time_match else "09:00"
+
+        # Extract assignee
+        assignee_match = re.search(r'assign:@?(\w+)', rest, re.IGNORECASE)
+        assignee = assignee_match.group(1) if assignee_match else None
+
+        # Extract priority
+        priority_match = re.search(r'priority:(\w+)', rest, re.IGNORECASE)
+        priority = priority_match.group(1).lower() if priority_match else "medium"
+
+        # Create recurring task
+        recurring = await repo.create({
+            "title": title,
+            "pattern": pattern,
+            "time": time_str,
+            "assignee": assignee,
+            "priority": priority,
+            "created_by": user_id,
+        })
+
+        if not recurring:
+            return "❌ Failed to create recurring task"
+
+        next_run = recurring.next_run.strftime("%A, %b %d at %H:%M") if recurring.next_run else "calculating..."
+
+        return f"""✅ **Recurring Task Created!**
+
+**ID:** {recurring.recurring_id}
+**Title:** {recurring.title}
+**Schedule:** {recurring.pattern} at {recurring.time}
+**Assignee:** {recurring.assignee or 'Unassigned'}
+**Priority:** {recurring.priority}
+
+**Next run:** {next_run}
+
+Use `/recurring list` to see all recurring tasks."""
+
+    async def _recurring_help(self) -> str:
+        """Show recurring tasks help."""
+        return """🔄 **Recurring Tasks**
+
+**Create:**
+`/recurring "Task title" every:pattern time [assign:@name]`
+
+**Examples:**
+• `/recurring "Daily standup" every:day 9am`
+• `/recurring "Weekly report" every:monday 10am assign:@Sarah`
+• `/recurring "Monthly review" every:1st 2pm priority:high`
+
+**Patterns:**
+• `every:day` - Daily
+• `every:weekday` - Monday-Friday
+• `every:monday` - Weekly on Monday
+• `every:monday,wednesday,friday` - Multiple days
+• `every:1st` - 1st of each month
+• `every:15th` - 15th of each month
+• `every:last` - Last day of month
+• `every:2weeks` - Every 2 weeks
+• `every:3days` - Every 3 days
+
+**Manage:**
+• `/recurring list` - View all recurring tasks
+• `/recurring pause REC-001` - Pause a recurring task
+• `/recurring resume REC-001` - Resume a paused task
+• `/recurring delete REC-001` - Delete a recurring task"""
+
+    async def _list_recurring(self) -> str:
+        """List all recurring tasks."""
+        from ..database.repositories.recurring import get_recurring_repository
+
+        repo = get_recurring_repository()
+        tasks = await repo.get_all()
+
+        if not tasks:
+            return "No recurring tasks found. Use `/recurring \"Task\" every:monday 9am` to create one."
+
+        lines = ["🔄 **Recurring Tasks**", ""]
+
+        for task in tasks:
+            status = "▶️" if task.is_active else "⏸️"
+            next_run = task.next_run.strftime("%b %d, %H:%M") if task.next_run else "N/A"
+            lines.append(f"{status} **{task.recurring_id}**: {task.title[:40]}")
+            lines.append(f"   {task.pattern} at {task.time} | Next: {next_run}")
+            lines.append(f"   Instances: {task.instances_created}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    # ==================== TIME TRACKING ====================
+
+    async def handle_start_timer(self, user_id: str, user_name: str, task_id: str) -> str:
+        """Handle /start command - start timer for a task."""
+        from ..database.repositories.time_tracking import get_time_tracking_repository
+
+        if not task_id:
+            return "Please specify a task: `/start TASK-001`"
+
+        repo = get_time_tracking_repository()
+        result = await repo.start_timer(user_id, user_name, task_id.upper())
+
+        if not result:
+            return "❌ Failed to start timer"
+
+        if result.get("error") == "timer_running":
+            return f"⚠️ Timer already running for {result['task_ref']}\nUse `/stop` first."
+
+        if result.get("error") == "task_not_found":
+            return f"❌ Task {task_id} not found"
+
+        return f"""⏱️ **Timer Started!**
+
+**Task:** {result['task_id']}
+**Title:** {result['task_title'][:50]}
+**Started:** {result['started_at'].strftime('%H:%M')}
+
+Use `/stop` when you're done."""
+
+    async def handle_stop_timer(self, user_id: str) -> str:
+        """Handle /stop command - stop the active timer."""
+        from ..database.repositories.time_tracking import get_time_tracking_repository
+
+        repo = get_time_tracking_repository()
+        result = await repo.stop_timer(user_id)
+
+        if not result:
+            return "No timer running. Use `/start TASK-001` to start one."
+
+        return f"""⏱️ **Timer Stopped!**
+
+**Task:** {result['task_id']}
+**Title:** {result['task_title'][:50]}
+**Duration:** {result['duration_formatted']}
+
+**Total on task:** {result['total_formatted']}"""
+
+    async def handle_log_time(self, user_id: str, user_name: str, task_id: str, duration: str, description: str = None) -> str:
+        """Handle /log command - log time manually."""
+        from ..database.repositories.time_tracking import get_time_tracking_repository
+
+        if not task_id or not duration:
+            return "Usage: `/log TASK-001 2h30m [description]`"
+
+        repo = get_time_tracking_repository()
+        result = await repo.log_manual(user_id, user_name, task_id.upper(), duration, description)
+
+        if not result:
+            return "❌ Failed to log time"
+
+        if result.get("error") == "task_not_found":
+            return f"❌ Task {task_id} not found"
+
+        if result.get("error") == "invalid_duration":
+            return "❌ Invalid duration. Examples: `2h30m`, `1.5h`, `45m`, `1d`"
+
+        return f"""📝 **Time Logged!**
+
+**Task:** {result['task_id']}
+**Logged:** {result['duration_formatted']}
+**Total on task:** {result['total_formatted']}"""
+
+    async def handle_time(self, user_id: str, task_id: str) -> str:
+        """Handle /time command - show time spent on a task."""
+        from ..database.repositories.time_tracking import get_time_tracking_repository
+
+        if not task_id:
+            # Check for active timer
+            repo = get_time_tracking_repository()
+            active = await repo.get_active_timer(user_id)
+
+            if active:
+                return f"""⏱️ **Active Timer**
+
+**Task:** {active['task_ref']}
+**Running:** {active['duration_formatted']}
+**Started:** {active['started_at'].strftime('%H:%M')}
+
+Use `/stop` to stop the timer."""
+            return "Usage: `/time TASK-001`"
+
+        repo = get_time_tracking_repository()
+        result = await repo.get_task_time(task_id.upper())
+
+        if result.get("error") == "task_not_found":
+            return f"❌ Task {task_id} not found"
+
+        lines = [f"⏱️ **Time on {result['task_id']}**", ""]
+        lines.append(f"**{result['task_title'][:50]}**")
+        lines.append(f"**Total:** {result['total_formatted']}")
+        lines.append(f"**Entries:** {result['entry_count']}")
+
+        if result['is_running']:
+            lines.append(f"🔴 Timer running: +{result['running_duration']}m")
+
+        if result.get('entries'):
+            lines.append("")
+            lines.append("**Recent entries:**")
+            for entry in result['entries'][:5]:
+                lines.append(f"• {entry['duration']} by {entry['user_name']} ({entry['date']})")
+
+        return "\n".join(lines)
+
+    async def handle_timesheet(self, user_id: str, user_name: str, args: str) -> str:
+        """Handle /timesheet command - show time summary."""
+        from ..database.repositories.time_tracking import get_time_tracking_repository
+        from datetime import date, timedelta
+
+        repo = get_time_tracking_repository()
+
+        # Parse arguments
+        args = args.strip().lower() if args else ""
+
+        # Determine date range
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday())
+        end_of_week = start_of_week + timedelta(days=6)
+
+        if args == "month":
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+        elif args.startswith("@"):
+            # Get specific user's timesheet (for boss)
+            target_user = args[1:]
+            result = await repo.get_team_timesheet(start_of_week, end_of_week)
+            # Filter for specific user
+            for member in result.get("members", []):
+                if member["user_name"].lower() == target_user.lower():
+                    return self._format_user_timesheet(member, start_of_week, end_of_week)
+            return f"No time entries found for @{target_user}"
+        elif args == "team" or args == "week":
+            # Full team timesheet
+            result = await repo.get_team_timesheet(start_of_week, end_of_week)
+            return self._format_team_timesheet(result)
+        else:
+            # Current user's timesheet
+            start = start_of_week
+            end = end_of_week
+            result = await repo.get_user_timesheet(user_id, start, end)
+            return self._format_personal_timesheet(result, user_name)
+
+    def _format_personal_timesheet(self, result: dict, user_name: str) -> str:
+        """Format personal timesheet."""
+        lines = [f"📊 **Timesheet: {user_name}**"]
+        lines.append(f"_{result['start_date']} to {result['end_date']}_")
+        lines.append("")
+
+        if not result.get('tasks'):
+            lines.append("No time entries for this period.")
+            return "\n".join(lines)
+
+        for task in result['tasks']:
+            lines.append(f"• **{task['task_id']}**: {task['title'][:35]}")
+            lines.append(f"   {task['duration']}")
+
+        lines.append("")
+        lines.append(f"**Total:** {result['total_formatted']}")
+
+        return "\n".join(lines)
+
+    def _format_user_timesheet(self, member: dict, start: date, end: date) -> str:
+        """Format a specific user's timesheet."""
+        lines = [f"📊 **Timesheet: {member['user_name']}**"]
+        lines.append(f"_{start.isoformat()} to {end.isoformat()}_")
+        lines.append("")
+
+        for task in member.get('tasks', []):
+            lines.append(f"• **{task['task_id']}**: {task['title'][:35]}")
+            lines.append(f"   {task['duration']}")
+
+        lines.append("")
+        lines.append(f"**Total:** {member['total_formatted']}")
+
+        return "\n".join(lines)
+
+    def _format_team_timesheet(self, result: dict) -> str:
+        """Format team timesheet."""
+        lines = ["📊 **Team Timesheet**"]
+        lines.append(f"_{result['start_date']} to {result['end_date']}_")
+        lines.append("")
+
+        if not result.get('members'):
+            lines.append("No time entries for this period.")
+            return "\n".join(lines)
+
+        for member in result['members']:
+            lines.append(f"👤 **{member['user_name']}** - {member['total_formatted']}")
+            for task in member['tasks'][:3]:
+                lines.append(f"   • {task['task_id']}: {task['duration']}")
+            if len(member['tasks']) > 3:
+                lines.append(f"   ... and {len(member['tasks']) - 3} more tasks")
+            lines.append("")
+
+        lines.append("═══════════════════")
+        lines.append(f"**Team Total:** {result['team_total_formatted']}")
+
+        return "\n".join(lines)
+
+    # ==================== SUBTASKS ====================
+
+    async def handle_subtask(self, user_id: str, task_id: str, subtask_title: str, assignee: str = None) -> str:
+        """Handle /subtask command - add a subtask to a task."""
+        from ..database.repositories.tasks import get_task_repository
+
+        if not task_id or not subtask_title:
+            return "Usage: `/subtask TASK-001 \"Subtask title\" [@assignee]`"
+
+        repo = get_task_repository()
+        subtask = await repo.add_subtask(task_id.upper(), subtask_title, assignee)
+
+        if not subtask:
+            return f"❌ Task {task_id} not found"
+
+        # Get updated task for progress
+        task = await repo.get_by_id(task_id.upper())
+
+        # Calculate progress
+        subtasks = await repo.get_subtasks(task_id.upper())
+        total = len(subtasks)
+        completed = sum(1 for s in subtasks if s.completed)
+        progress = int((completed / total) * 100) if total > 0 else 0
+
+        return f"""✅ **Subtask Added!**
+
+**Task:** {task_id.upper()}
+**#{subtask.order}:** {subtask_title}
+{f'**Assignee:** {assignee}' if assignee else ''}
+
+**Progress:** {progress}% ({completed}/{total} subtasks)"""
+
+    async def handle_subtasks(self, user_id: str, task_id: str) -> str:
+        """Handle /subtasks command - list subtasks for a task."""
+        from ..database.repositories.tasks import get_task_repository
+
+        if not task_id:
+            return "Usage: `/subtasks TASK-001`"
+
+        repo = get_task_repository()
+        task = await repo.get_by_id(task_id.upper())
+
+        if not task:
+            return f"❌ Task {task_id} not found"
+
+        subtasks = await repo.get_subtasks(task_id.upper())
+
+        if not subtasks:
+            return f"No subtasks for {task_id}. Use `/subtask {task_id} \"Title\"` to add one."
+
+        total = len(subtasks)
+        completed = sum(1 for s in subtasks if s.completed)
+        progress = int((completed / total) * 100) if total > 0 else 0
+
+        lines = [f"📋 **Subtasks for {task_id.upper()}**"]
+        lines.append(f"_{task.title[:50]}_")
+        lines.append("")
+
+        for st in subtasks:
+            status = "✅" if st.completed else "⬜"
+            assignee = f" @{st.completed_by}" if st.completed and st.completed_by else ""
+            lines.append(f"{status} {st.order}. {st.title}{assignee}")
+
+        lines.append("")
+        lines.append(f"**Progress:** {progress}% ({completed}/{total})")
+        lines.append("")
+        lines.append(f"Mark complete: `/subdone {task_id} 1` or `/subdone {task_id} 1,2,3`")
+
+        return "\n".join(lines)
+
+    async def handle_subdone(self, user_id: str, user_name: str, task_id: str, subtask_nums: str) -> str:
+        """Handle /subdone command - mark subtasks as complete."""
+        from ..database.repositories.tasks import get_task_repository
+
+        if not task_id or not subtask_nums:
+            return "Usage: `/subdone TASK-001 1` or `/subdone TASK-001 1,2,3`"
+
+        repo = get_task_repository()
+        task = await repo.get_by_id(task_id.upper())
+
+        if not task:
+            return f"❌ Task {task_id} not found"
+
+        # Parse subtask numbers
+        try:
+            nums = [int(n.strip()) for n in subtask_nums.split(",")]
+        except ValueError:
+            return "Invalid subtask numbers. Use: `/subdone TASK-001 1,2,3`"
+
+        completed = []
+        for num in nums:
+            success = await repo.complete_subtask_by_order(task_id.upper(), num, user_name)
+            if success:
+                completed.append(num)
+
+        if not completed:
+            return "❌ No subtasks were completed. Check the numbers."
+
+        # Get updated progress
+        subtasks = await repo.get_subtasks(task_id.upper())
+        total = len(subtasks)
+        done = sum(1 for s in subtasks if s.completed)
+        progress = int((done / total) * 100) if total > 0 else 0
+
+        result = f"✅ Completed subtask(s): {', '.join(map(str, completed))}\n"
+        result += f"**Progress:** {progress}% ({done}/{total})"
+
+        # Check if all subtasks done
+        if done == total and total > 0:
+            result += f"\n\n🎉 All subtasks complete! Consider marking {task_id} as done."
+
+        return result
+
+    # ==================== AI TASK BREAKDOWN ====================
+
+    async def handle_breakdown(self, user_id: str, task_id: str, auto_create: bool = False) -> Tuple[str, Optional[Dict]]:
+        """
+        Handle /breakdown command - AI-powered task breakdown into subtasks.
+
+        Args:
+            user_id: User requesting the breakdown
+            task_id: Task ID to break down
+            auto_create: If True, automatically create subtasks without confirmation
+
+        Returns:
+            Tuple of (response message, action dict if confirmation needed)
+        """
+        from ..database.repositories.tasks import get_task_repository
+
+        if not task_id:
+            return "Usage: `/breakdown TASK-001`\n\nI'll analyze the task and suggest subtasks.", None
+
+        repo = get_task_repository()
+        task = await repo.get_by_id(task_id.upper())
+
+        if not task:
+            return f"❌ Task {task_id} not found", None
+
+        # Check if task already has subtasks
+        existing_subtasks = await repo.get_subtasks(task_id.upper())
+        if existing_subtasks:
+            return f"⚠️ Task {task_id} already has {len(existing_subtasks)} subtasks.\n\nUse `/subtasks {task_id}` to view them.", None
+
+        # Get task details
+        title = task.title
+        description = task.description or ""
+        task_type = task.task_type or "task"
+        priority = task.priority or "medium"
+        effort = task.estimated_effort
+
+        # Get acceptance criteria if available
+        criteria = []
+        if hasattr(task, 'acceptance_criteria') and task.acceptance_criteria:
+            criteria = task.acceptance_criteria
+
+        # Call AI to break down the task
+        result = await self.ai.breakdown_task(
+            title=title,
+            description=description,
+            task_type=task_type,
+            priority=priority,
+            estimated_effort=effort,
+            acceptance_criteria=criteria
+        )
+
+        # Check if task is complex enough
+        if not result.get("is_complex_enough", True):
+            return f"""📋 **Task Analysis: {task_id}**
+
+This task appears simple enough to complete without breaking it down.
+
+**Reason:** {result.get('reason', 'Task is straightforward')}
+
+If you still want to add subtasks manually:
+`/subtask {task_id} "Subtask title"`""", None
+
+        # Check if breakdown is recommended
+        if not result.get("recommended", True):
+            return f"""📋 **Task Analysis: {task_id}**
+
+**Not Recommended:** {result.get('reason', 'See analysis')}
+
+**Analysis:** {result.get('analysis', 'N/A')}
+
+If you still want to add subtasks manually:
+`/subtask {task_id} "Subtask title"`""", None
+
+        # Build the response
+        subtasks = result.get("subtasks", [])
+
+        if not subtasks:
+            return "❌ Could not generate subtasks for this task. Try adding them manually.", None
+
+        lines = [f"🔍 **AI Task Breakdown: {task_id}**"]
+        lines.append(f"_{title[:60]}_")
+        lines.append("")
+        lines.append(f"**Analysis:** {result.get('analysis', 'N/A')}")
+        lines.append("")
+        lines.append("**Suggested Subtasks:**")
+
+        for i, st in enumerate(subtasks, 1):
+            dep = f" (after #{st.get('depends_on')})" if st.get('depends_on') else ""
+            effort_str = f" ~{st.get('estimated_effort')}" if st.get('estimated_effort') else ""
+            lines.append(f"{i}. {st.get('title')}{effort_str}{dep}")
+
+        lines.append("")
+        lines.append(f"**Total Estimated Effort:** {result.get('total_estimated_effort', 'N/A')}")
+        lines.append("")
+
+        if auto_create:
+            # Automatically create subtasks
+            created = 0
+            for st in subtasks:
+                subtask = await repo.add_subtask(task_id.upper(), st.get('title'))
+                if subtask:
+                    created += 1
+
+            lines.append(f"✅ **Created {created} subtasks!**")
+            lines.append(f"\nUse `/subtasks {task_id}` to view them.")
+            return "\n".join(lines), None
+        else:
+            # Ask for confirmation
+            lines.append("**Create these subtasks?**")
+            lines.append("Reply `yes` or `create` to add them all.")
+            lines.append("Reply `no` to cancel.")
+
+            # Return action for handler to process confirmation
+            action = {
+                "type": "breakdown_confirm",
+                "task_id": task_id.upper(),
+                "subtasks": subtasks
+            }
+            return "\n".join(lines), action
+
+    async def handle_breakdown_confirm(self, user_id: str, task_id: str, subtasks: list) -> str:
+        """Create subtasks after user confirms breakdown."""
+        from ..database.repositories.tasks import get_task_repository
+
+        repo = get_task_repository()
+        created = 0
+
+        for st in subtasks:
+            subtask = await repo.add_subtask(task_id, st.get('title'))
+            if subtask:
+                created += 1
+
+        if created == 0:
+            return "❌ Failed to create subtasks. Please try again."
+
+        return f"""✅ **Created {created} subtasks for {task_id}!**
+
+Use `/subtasks {task_id}` to view them.
+Use `/subdone {task_id} 1` to mark them complete."""
 
 
 # Singleton instance

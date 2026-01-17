@@ -20,6 +20,18 @@ from ..models.task import Task, TaskStatus, TaskPriority
 logger = logging.getLogger(__name__)
 
 
+def _register_message_task_mapping(message_id: str, task_id: str):
+    """Register a Discord message ID -> task ID mapping for reaction tracking."""
+    try:
+        from .discord_bot import get_discord_bot
+        bot = get_discord_bot()
+        if bot:
+            bot.register_message_task(int(message_id), task_id)
+            logger.debug(f"Registered Discord message {message_id} -> task {task_id}")
+    except Exception as e:
+        logger.debug(f"Could not register message-task mapping: {e}")
+
+
 class ReviewAction(str, Enum):
     """Possible actions for submission review."""
     ACCEPT_SUGGESTIONS = "accept_suggestions"  # Apply AI suggestions
@@ -34,6 +46,10 @@ class DiscordIntegration:
     Primary use: Post rich task embeds to Discord channels.
     Optional: Track reactions for status updates.
     """
+
+    # Reaction guide for status updates
+    REACTION_GUIDE = "React: ✅ Done | 🚧 In Progress | 🚫 Blocked | ⏸️ On Hold | 🔄 In Review"
+    REACTION_HELP = "React to update status: ✅=Done 🚧=Working 🚫=Blocked ⏸️=Paused 🔄=Review"
 
     def __init__(self):
         self.tasks_webhook = settings.discord_tasks_channel_webhook
@@ -58,6 +74,12 @@ class DiscordIntegration:
 
         embed = task.to_discord_embed_dict()
 
+        # Add reaction guide to footer
+        if "footer" in embed:
+            embed["footer"]["text"] = f"{embed['footer']['text']} | {self.REACTION_HELP}"
+        else:
+            embed["footer"] = {"text": self.REACTION_HELP}
+
         payload = {
             "embeds": [embed],
             "username": "Boss Workflow Bot",
@@ -74,6 +96,11 @@ class DiscordIntegration:
                         data = await response.json()
                         message_id = data.get("id")
                         logger.info(f"Posted task {task.id} to Discord: {message_id}")
+
+                        # Register message-task mapping for reaction tracking
+                        if message_id:
+                            _register_message_task_mapping(message_id, task.id)
+
                         return message_id
                     else:
                         error = await response.text()
@@ -138,7 +165,7 @@ class DiscordIntegration:
             "description": summary,
             "color": 0x3498DB,  # Blue
             "timestamp": datetime.now().isoformat(),
-            "footer": {"text": "Boss Workflow Automation"}
+            "footer": {"text": f"Boss Workflow | {self.REACTION_HELP}"}
         }
 
         payload = {
@@ -307,6 +334,52 @@ class DiscordIntegration:
         elif channel == "standup":
             return self.standup_webhook or self.default_webhook
         return self.default_webhook
+
+    async def post_help(self, channel: str = "tasks") -> bool:
+        """Post a help message with reaction guide and available commands."""
+        webhook_url = self._get_webhook_url(channel)
+        if not webhook_url:
+            return False
+
+        embed = {
+            "title": "📖 Boss Workflow Help",
+            "description": """**React to Update Task Status:**
+✅ Complete task
+🚧 Mark as in progress
+🚫 Block task (can't proceed)
+⏸️ Put on hold
+🔄 Send for review
+
+**Available via Telegram:**
+• `/status` - View current tasks
+• `/search @name` - Find tasks by assignee
+• `/complete ID` - Mark task done
+• `/help` - Full command list
+
+**Natural Language:**
+• "What's John working on?"
+• "Show blocked tasks"
+• "Mark TASK-001 as done"
+
+_Reactions sync task status automatically!_""",
+            "color": 0x3498DB,  # Blue
+            "timestamp": datetime.now().isoformat(),
+            "footer": {"text": "Boss Workflow Automation | Send /help in Telegram for full commands"}
+        }
+
+        payload = {
+            "embeds": [embed],
+            "username": "Boss Workflow Bot"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(webhook_url, json=payload) as response:
+                    return response.status == 200 or response.status == 204
+
+        except Exception as e:
+            logger.error(f"Error posting help: {e}")
+            return False
 
     # ==================== SUBMISSION REVIEW FLOW ====================
 

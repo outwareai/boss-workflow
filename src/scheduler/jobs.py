@@ -28,6 +28,7 @@ from ..ai.deepseek import get_deepseek_client
 from ..ai.email_summarizer import get_email_summarizer
 from ..memory.context import get_conversation_context
 from ..models.task import TaskStatus
+from ..database.repositories.recurring import get_recurring_repository, RecurrenceCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,15 @@ class SchedulerManager:
             IntervalTrigger(minutes=15),
             id="conversation_timeout",
             name="Conversation Timeout Check",
+            replace_existing=True
+        )
+
+        # Recurring tasks check every 5 minutes
+        self.scheduler.add_job(
+            self._recurring_tasks_job,
+            IntervalTrigger(minutes=5),
+            id="recurring_tasks",
+            name="Recurring Tasks Check",
             replace_existing=True
         )
 
@@ -360,6 +370,64 @@ Keep up the great work!"""
 
         except Exception as e:
             logger.error(f"Error in archive tasks job: {e}")
+
+    async def _recurring_tasks_job(self) -> None:
+        """Check and create recurring task instances."""
+        logger.debug("Running recurring tasks check")
+
+        try:
+            recurring_repo = get_recurring_repository()
+
+            # Get tasks that are due to run
+            due_tasks = await recurring_repo.get_due_now()
+
+            if not due_tasks:
+                return
+
+            logger.info(f"Found {len(due_tasks)} recurring tasks due")
+
+            from ..database.repositories import get_task_repository
+            task_repo = get_task_repository()
+
+            for recurring in due_tasks:
+                try:
+                    # Create task instance
+                    task_data = {
+                        "title": recurring.title,
+                        "description": recurring.description or f"Auto-created from recurring task {recurring.recurring_id}",
+                        "assignee": recurring.assignee,
+                        "priority": recurring.priority,
+                        "task_type": recurring.task_type,
+                        "estimated_effort": recurring.estimated_effort,
+                        "tags": recurring.tags,
+                        "created_by": recurring.created_by,
+                        "source": "recurring",
+                        "recurring_id": recurring.recurring_id,
+                    }
+
+                    new_task = await task_repo.create(task_data)
+
+                    if new_task:
+                        logger.info(f"Created task {new_task.task_id} from recurring {recurring.recurring_id}")
+
+                        # Post to Discord
+                        try:
+                            await self.discord.post_alert(
+                                title=f"🔄 Recurring Task: {recurring.title[:40]}",
+                                message=f"Assignee: {recurring.assignee or 'Unassigned'}\nPriority: {recurring.priority}",
+                                alert_type="info"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to post recurring task to Discord: {e}")
+
+                        # Update recurring task with next run time
+                        await recurring_repo.update_after_run(recurring.recurring_id)
+
+                except Exception as e:
+                    logger.error(f"Error creating task from recurring {recurring.recurring_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in recurring tasks job: {e}")
 
     async def _morning_email_digest_job(self) -> None:
         """Generate and send morning email digest."""

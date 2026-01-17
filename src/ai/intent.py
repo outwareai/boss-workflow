@@ -46,6 +46,8 @@ class UserIntent(str, Enum):
     DELAY_TASK = "delay_task"                # "delay the landing page to tomorrow"
     ADD_NOTE = "add_note"                    # "note on TASK-001: talked to client"
     CANCEL_TASK = "cancel_task"              # "cancel that task"
+    CLEAR_TASKS = "clear_tasks"              # "clear all tasks", "delete all tasks"
+    ARCHIVE_TASKS = "archive_tasks"          # "archive completed tasks"
 
     # Team management
     ADD_TEAM_MEMBER = "add_team"             # "john is our backend dev"
@@ -226,11 +228,37 @@ class IntentDetector:
         if message.startswith("when i say") or message.startswith("when i mention") or "always ask" in message or "default" in message:
             return UserIntent.TEACH_PREFERENCE, {"message": message}
 
+        # Clear/delete/archive tasks - BEFORE general task creation matching
+        # Check for specific task IDs first
+        import re
+        task_ids = re.findall(r'TASK-[\w\-]+', message, re.IGNORECASE)
+
+        clear_keywords = ["clear", "delete", "remove", "cancel", "wipe"]
+        if task_ids and any(kw in message for kw in clear_keywords):
+            # Clearing specific tasks
+            return UserIntent.CLEAR_TASKS, {"task_ids": task_ids, "message": message}
+
+        # Clear all tasks
+        clear_phrases = [
+            "clear all", "clear the", "clear tasks", "clear existing",
+            "delete all", "delete the tasks", "delete tasks", "delete existing",
+            "remove all tasks", "remove all the tasks", "remove existing",
+            "wipe all", "wipe tasks", "reset tasks", "reset all"
+        ]
+        if any(phrase in message for phrase in clear_phrases):
+            return UserIntent.CLEAR_TASKS, {"task_ids": [], "message": message}
+
+        archive_phrases = ["archive completed", "archive done", "archive old", "archive tasks"]
+        if any(phrase in message for phrase in archive_phrases):
+            return UserIntent.ARCHIVE_TASKS, {"message": message}
+
         # If message mentions a person and an action, likely a task
-        action_words = ["needs to", "should", "must", "has to", "can you", "please",
-                       "fix", "build", "create", "make", "update", "add", "remove", "check"]
+        action_words = ["needs to", "should", "must", "has to", "can you",
+                       "fix", "build", "create", "make", "update", "add", "check"]
         if any(word in message for word in action_words):
-            return UserIntent.CREATE_TASK, {"message": message}
+            # But not if it's about clearing/deleting
+            if not any(w in message for w in ["clear", "delete", "remove", "wipe", "reset"]):
+                return UserIntent.CREATE_TASK, {"message": message}
 
         return UserIntent.UNKNOWN, {}
 

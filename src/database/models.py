@@ -477,6 +477,106 @@ class TeamMemberDB(Base):
     )
 
 
+# ==================== RECURRING TASKS ====================
+
+class RecurringTaskDB(Base):
+    """Templates for recurring tasks."""
+    __tablename__ = "recurring_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    recurring_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # REC-YYYYMMDD-XXX
+
+    # Task template
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assignee: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    priority: Mapped[str] = mapped_column(String(20), default="medium")
+    task_type: Mapped[str] = mapped_column(String(50), default="task")
+    estimated_effort: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    tags: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Schedule
+    pattern: Mapped[str] = mapped_column(String(100), nullable=False)  # every:monday, every:day, etc.
+    time: Mapped[str] = mapped_column(String(10), nullable=False)  # 09:00, 18:30
+    timezone: Mapped[str] = mapped_column(String(50), default="Asia/Bangkok")
+
+    # Control
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_run: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Stats
+    instances_created: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Metadata
+    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_recurring_active", "is_active"),
+        Index("idx_recurring_next_run", "next_run"),
+    )
+
+
+# ==================== TIME TRACKING ====================
+
+class TimeEntryDB(Base):
+    """Individual time tracking entries."""
+    __tablename__ = "time_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entry_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # TIME-YYYYMMDD-XXX
+
+    # Links
+    task_id: Mapped[int] = mapped_column(Integer, ForeignKey("tasks.id"), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    user_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # Time data
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Entry type
+    entry_type: Mapped[str] = mapped_column(String(20), default="timer")  # timer, manual
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Status
+    is_running: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Metadata
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    task: Mapped["TaskDB"] = relationship("TaskDB", backref="time_entries")
+
+    __table_args__ = (
+        Index("idx_time_task", "task_id"),
+        Index("idx_time_user", "user_id"),
+        Index("idx_time_running", "is_running"),
+        Index("idx_time_started", "started_at"),
+    )
+
+
+class ActiveTimerDB(Base):
+    """Track currently running timer per user (only one allowed)."""
+    __tablename__ = "active_timers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    time_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("time_entries.id"), nullable=False)
+    task_ref: Mapped[str] = mapped_column(String(50), nullable=False)  # TASK-XXX for quick reference
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    # Relationship
+    time_entry: Mapped["TimeEntryDB"] = relationship("TimeEntryDB")
+
+    __table_args__ = (
+        Index("idx_active_user", "user_id"),
+    )
+
+
 # ==================== WEBHOOK EVENTS ====================
 
 class WebhookEventDB(Base):

@@ -276,6 +276,66 @@ class DeepSeekClient:
         logger.warning("Voice transcription not implemented - using placeholder")
         return "[Voice message - transcription not available]"
 
+    async def breakdown_task(
+        self,
+        title: str,
+        description: str,
+        task_type: str = "task",
+        priority: str = "medium",
+        estimated_effort: Optional[str] = None,
+        acceptance_criteria: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Break down a task into smaller subtasks using AI.
+
+        Args:
+            title: Task title
+            description: Task description
+            task_type: Type of task (bug, feature, task, research)
+            priority: Task priority
+            estimated_effort: Estimated effort for the task
+            acceptance_criteria: List of acceptance criteria
+
+        Returns:
+            Dictionary with analysis and suggested subtasks
+        """
+        prompt = self.prompts.breakdown_task_prompt(
+            title=title,
+            description=description,
+            task_type=task_type,
+            priority=priority,
+            estimated_effort=estimated_effort,
+            acceptance_criteria=acceptance_criteria
+        )
+
+        messages = [
+            {"role": "system", "content": """You are a project management expert who breaks down complex tasks into smaller, actionable subtasks.
+You understand software development, design, testing, and general business tasks.
+Your breakdowns are practical, realistic, and help teams work more efficiently."""},
+            {"role": "user", "content": prompt}
+        ]
+
+        response = await self._call_api(
+            messages=messages,
+            temperature=0.5,
+            max_tokens=2000,
+            response_format={"type": "json_object"}
+        )
+
+        try:
+            result = json.loads(response)
+            logger.info(f"Generated {len(result.get('subtasks', []))} subtasks for task breakdown")
+            return result
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse breakdown response: {response}")
+            return {
+                "analysis": "Failed to analyze task",
+                "is_complex_enough": False,
+                "subtasks": [],
+                "recommended": False,
+                "reason": "AI response parsing failed"
+            }
+
 
 # Singleton instance
 deepseek_client = DeepSeekClient()

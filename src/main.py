@@ -13,6 +13,8 @@ from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import asyncio
+
 from config import settings
 from .bot.telegram_simple import get_telegram_bot_simple
 from .scheduler.jobs import get_scheduler_manager
@@ -21,6 +23,12 @@ from .memory.context import get_conversation_context
 from .integrations.sheets import get_sheets_integration
 from .integrations.discord import get_discord_integration
 from .integrations.calendar import get_calendar_integration
+from .integrations.discord_bot import (
+    get_discord_bot,
+    start_discord_bot,
+    stop_discord_bot,
+    setup_status_callback,
+)
 from .database import init_database, close_database, get_database
 from .database.sync import get_sheets_sync
 
@@ -100,12 +108,87 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Scheduler failed: {e}")
 
+    # Start Discord bot for reactions
+    discord_bot_task = None
+    try:
+        if settings.discord_bot_token:
+            # Set up status update callback
+            async def handle_status_update(task_id: str, new_status: str, changed_by: str, source: str):
+                """Handle status update from Discord reaction."""
+                logger.info(f"Discord reaction status update: {task_id} -> {new_status} by {changed_by}")
+                try:
+                    # Update in PostgreSQL
+                    from .database.repositories import get_task_repository, get_audit_repository
+                    task_repo = get_task_repository()
+                    audit_repo = get_audit_repository()
+
+                    task = await task_repo.get_by_id(task_id)
+                    if task:
+                        old_status = task.status
+                        await task_repo.update(task_id, {"status": new_status})
+
+                        # Log audit
+                        await audit_repo.log_change(
+                            task_id=task_id,
+                            action="status_change",
+                            field_changed="status",
+                            old_value=old_status,
+                            new_value=new_status,
+                            changed_by=changed_by,
+                            reason=f"Via {source}"
+                        )
+                        logger.info(f"Task {task_id} status updated to {new_status} in database")
+
+                    # Update in Google Sheets
+                    sheets = get_sheets_integration()
+                    await sheets.update_task_status(task_id, new_status)
+                    logger.info(f"Task {task_id} status updated to {new_status} in sheets")
+
+                except Exception as e:
+                    logger.error(f"Error updating task status from Discord: {e}")
+
+            async def handle_priority_update(task_id: str, new_priority: str, changed_by: str, source: str):
+                """Handle priority update from Discord reaction."""
+                logger.info(f"Discord reaction priority update: {task_id} -> {new_priority} by {changed_by}")
+                try:
+                    from .database.repositories import get_task_repository
+                    task_repo = get_task_repository()
+                    await task_repo.update(task_id, {"priority": new_priority})
+                    logger.info(f"Task {task_id} priority updated to {new_priority}")
+                except Exception as e:
+                    logger.error(f"Error updating task priority from Discord: {e}")
+
+            setup_status_callback(handle_status_update)
+            from .integrations.discord_bot import setup_priority_callback
+            setup_priority_callback(handle_priority_update)
+
+            # Start bot in background
+            discord_bot_task = asyncio.create_task(start_discord_bot())
+            logger.info("Discord bot starting in background...")
+        else:
+            logger.info("Discord bot token not configured, skipping bot startup")
+    except Exception as e:
+        logger.warning(f"Discord bot failed to start: {e}")
+
     logger.info("Boss Workflow Automation started successfully!")
 
     yield
 
     # Shutdown
     logger.info("Shutting down Boss Workflow Automation...")
+
+    # Stop Discord bot
+    try:
+        await stop_discord_bot()
+        if discord_bot_task:
+            discord_bot_task.cancel()
+            try:
+                await discord_bot_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Discord bot stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping Discord bot: {e}")
 
     try:
         scheduler = get_scheduler_manager()
@@ -172,13 +255,20 @@ async def health_check():
     except Exception as e:
         db_health = {"status": "error", "error": str(e)}
 
+    # Check Discord bot status
+    discord_bot = get_discord_bot()
+    discord_bot_status = "not_configured"
+    if discord_bot:
+        discord_bot_status = "connected" if not discord_bot.is_closed() else "disconnected"
+
     return {
         "status": "healthy",
         "timestamp": __import__('datetime').datetime.now().isoformat(),
         "services": {
             "telegram": bool(settings.telegram_bot_token),
             "deepseek": bool(settings.deepseek_api_key),
-            "discord": bool(settings.discord_webhook_url),
+            "discord_webhook": bool(settings.discord_webhook_url),
+            "discord_bot": discord_bot_status,
             "sheets": bool(settings.google_sheet_id),
             "redis": bool(settings.redis_url),
             "database": db_health.get("status", "unknown"),

@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-17
-> **Version:** 1.0.0
+> **Version:** 1.3.1
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -85,6 +85,71 @@ Scheduler ──► Reminders/Reports ──────────────
 |---------|-------------|---------|
 | `/note [task-id] [content]` | Add note to task | `/note TASK-001 Waiting for API docs` |
 | `/delay [task-id] [deadline] [reason]` | Postpone task | `/delay TASK-001 tomorrow Client request` |
+| `/templates` | View available task templates | `/templates` |
+
+### Search & Filter (NEW in v1.1)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/search [query]` | Search tasks by keyword | `/search login bug` |
+| `/search @name` | Find tasks by assignee | `/search @John` |
+| `/search #priority` | Filter by priority | `/search #urgent` |
+| `/search status:X` | Filter by status | `/search status:blocked` |
+| `/search due:X` | Filter by deadline | `/search due:today` |
+
+### Bulk Operations (NEW in v1.1)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/complete ID ID ID` | Mark multiple tasks done | `/complete TASK-001 TASK-002` |
+| `/block ID ID [reason]` | Block multiple tasks | `/block TASK-001 TASK-002 API down` |
+| `/assign @name ID ID` | Assign tasks to someone | `/assign @Sarah TASK-003 TASK-004` |
+
+### Recurring Tasks (NEW in v1.2)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/recurring "title" pattern time` | Create recurring task | `/recurring "Weekly standup" every:monday 9am` |
+| `/recurring list` | List all recurring tasks | `/recurring list` |
+| `/recurring pause REC-ID` | Pause a recurring task | `/recurring pause REC-001` |
+| `/recurring resume REC-ID` | Resume paused recurring | `/recurring resume REC-001` |
+| `/recurring delete REC-ID` | Delete recurring task | `/recurring delete REC-001` |
+
+**Recurrence Patterns:**
+- Daily: `every:day`
+- Weekdays only: `every:weekday`
+- Weekly: `every:monday`, `every:monday,wednesday,friday`
+- Monthly: `every:1st`, `every:15th`, `every:last`
+- Interval: `every:2weeks`, `every:3days`
+
+### Time Tracking (NEW in v1.2)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/start TASK-ID` | Start timer on a task | `/start TASK-001` |
+| `/stop` | Stop current timer | `/stop` |
+| `/log TASK-ID duration` | Log time manually | `/log TASK-001 2h30m` |
+| `/time TASK-ID` | Show time spent on task | `/time TASK-001` |
+| `/timesheet` | Your weekly timesheet | `/timesheet` |
+| `/timesheet week` | This week's timesheet | `/timesheet week` |
+| `/timesheet @name` | Someone's timesheet | `/timesheet @John` |
+| `/timesheet team` | Team timesheet | `/timesheet team` |
+
+**Duration Formats:**
+- Hours and minutes: `2h30m`
+- Hours with decimal: `1.5h`
+- Minutes only: `45m`
+- Days: `1d` (= 8 hours)
+
+### Subtasks (NEW in v1.2)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/subtask TASK-ID "title"` | Add subtask to a task | `/subtask TASK-001 "Design mockup"` |
+| `/subtasks TASK-ID` | List subtasks for a task | `/subtasks TASK-001` |
+| `/subdone TASK-ID #num` | Mark subtask complete | `/subdone TASK-001 1` |
+| `/subdone TASK-ID all` | Mark all subtasks done | `/subdone TASK-001 all` |
+| `/breakdown TASK-ID` | AI-powered task breakdown (NEW v1.3) | `/breakdown TASK-001` |
 
 ### Validation (Team Members)
 
@@ -116,6 +181,9 @@ The bot understands natural language without requiring slash commands:
 | `CHECK_STATUS` | "what's pending?", "status" | Shows task overview |
 | `CHECK_OVERDUE` | "anything overdue?" | Lists overdue tasks |
 | `EMAIL_RECAP` | "check my emails" | Generates email summary |
+| `SEARCH_TASKS` | "What's John working on?" | Searches and filters tasks |
+| `BULK_COMPLETE` | "Mark these 3 as done" | Bulk status update |
+| `LIST_TEMPLATES` | "What templates are available?" | Shows task templates |
 | `DELAY_TASK` | "delay this to tomorrow" | Postpones task |
 | `ADD_TEAM_MEMBER` | "John is our backend dev" | Registers team member |
 | `TEACH_PREFERENCE` | "when I say ASAP, deadline is 4 hours" | Saves preference |
@@ -153,6 +221,8 @@ The bot understands natural language without requiring slash commands:
 - Preference-based question filtering
 - Information extraction (priority, deadline, assignee)
 - Answer processing with multi-format support
+- **Task Template Detection** (NEW v1.1): Auto-detects keywords like "bug:", "hotfix:", "feature:" and applies template defaults
+- **Smart Dependency Detection** (NEW v1.1): AI analyzes existing tasks to suggest potential dependencies before task creation
 
 ### Email Summarizer (`src/ai/email_summarizer.py`)
 
@@ -169,6 +239,96 @@ The bot understands natural language without requiring slash commands:
 - Notes completeness check
 - AI-powered improvement suggestions
 - Configurable threshold (default 70)
+
+### Voice Transcription (NEW in v1.2) (`src/ai/transcriber.py`)
+
+| Function | Description |
+|----------|-------------|
+| `transcribe()` | Convert audio to text using OpenAI Whisper |
+| `transcribe_with_context()` | Transcribe with context prompt for better accuracy |
+| `transcribe_voice_message()` | Convenience wrapper for Telegram voice messages |
+
+**Features:**
+- OpenAI Whisper API integration
+- Task management context prompts ("assignments, deadlines, priorities")
+- Automatic temp file handling
+- Supports OGG, MP3, WAV, and other audio formats
+- Requires `OPENAI_API_KEY` environment variable
+
+**Usage:**
+1. Send voice message in Telegram
+2. Bot transcribes using Whisper
+3. Shows transcription: `📝 "Create urgent task for John"`
+4. Processes as normal text command
+
+### Image Vision Analysis (NEW in v1.3) (`src/ai/vision.py`)
+
+| Function | Description |
+|----------|-------------|
+| `analyze_image()` | Analyze image with custom prompt |
+| `analyze_screenshot()` | Extract structured info from screenshots |
+| `analyze_proof()` | Validate proof images for task completion |
+| `extract_text()` | OCR text extraction from images |
+| `describe_for_task()` | Analyze image in task creation context |
+
+**Features:**
+- DeepSeek VL (Vision-Language) model integration
+- Automatic base64 encoding for API calls
+- Context-aware analysis prompts
+- Proof validation with relevance assessment
+- Integration with auto-review system
+
+**Usage:**
+1. Send photo in Telegram
+2. Bot shows: `🔍 Analyzing image...`
+3. Vision AI describes what's in the image
+4. Analysis is included in task context or proof review
+
+**Proof Analysis:**
+When submitting proof screenshots:
+1. Send screenshot as proof
+2. Vision AI analyzes what the screenshot shows
+3. Analysis preview shown: `🔍 _AI Analysis: Shows completed login page..._`
+4. Analysis included in boss notification
+5. Auto-reviewer uses vision analysis for quality scoring
+
+### AI Task Breakdown (NEW in v1.3) (`src/ai/deepseek.py`)
+
+| Function | Description |
+|----------|-------------|
+| `breakdown_task()` | Analyze task and generate subtask suggestions |
+
+**Features:**
+- Analyzes task title, description, type, and acceptance criteria
+- Generates 3-8 logical subtasks with effort estimates
+- Detects if task is too simple for breakdown
+- Shows dependencies between subtasks
+- Confirms before creating subtasks
+
+**Usage:**
+```
+/breakdown TASK-001
+```
+
+**Example Output:**
+```
+AI Task Breakdown: TASK-001
+"Build user authentication system"
+
+Analysis: This is a multi-step feature requiring backend, frontend, and testing work.
+
+Suggested Subtasks:
+1. Design auth flow diagram ~30min
+2. Create database schema for users ~1h
+3. Implement login/register API ~2h (after #2)
+4. Build frontend login form ~2h (after #3)
+5. Add password reset flow ~1h (after #3)
+6. Write integration tests ~1h (after #4, #5)
+
+Total Estimated Effort: 7h 30m
+
+Create these subtasks? Reply yes or no.
+```
 
 ---
 
@@ -204,6 +364,9 @@ The bot understands natural language without requiring slash commands:
 | `update_team_member()` | Add/update team member |
 | `archive_task()` | Move to archive |
 | `archive_old_completed()` | Archive tasks older than X days |
+| `search_tasks()` | Search with filters (query, assignee, status, priority, due) |
+| `bulk_update_status()` | Update status for multiple tasks at once |
+| `bulk_assign()` | Assign multiple tasks to a person |
 
 ### Formatting Features
 
@@ -232,6 +395,44 @@ The bot understands natural language without requiring slash commands:
 | `post_alert()` | Urgent notifications |
 | `post_review_feedback()` | Quality assessment for developer |
 | `post_submission_approved()` | Approval notification |
+| `post_help()` | Discord help message with reaction guide |
+
+### Discord Bot Reaction Listener (NEW in v1.2)
+
+The system now includes a full Discord bot (`src/integrations/discord_bot.py`) that listens for reactions on task messages and automatically updates task status in both PostgreSQL and Google Sheets.
+
+**Setup Requirements:**
+- `DISCORD_BOT_TOKEN` - Bot token from Discord Developer Portal
+- Bot needs `MESSAGE_CONTENT`, `GUILD_REACTIONS`, `GUILDS`, `GUILD_MEMBERS` intents enabled
+
+**Reaction to Status Mapping:**
+
+| Reaction | Status |
+|----------|--------|
+| ✅ | completed |
+| 🚧 | in_progress |
+| 🚫 | blocked |
+| ⏸️ | on_hold |
+| 🔄 | in_review |
+| ❌ | cancelled |
+| ⏳ | pending |
+| 👀 | in_review |
+| 🔴 | urgent (changes priority) |
+
+**How It Works:**
+1. Task is posted to Discord via webhook
+2. Discord message ID is saved to task (PostgreSQL + mapping cache)
+3. Bot listens for `on_raw_reaction_add` events
+4. When reaction detected, bot looks up task by message ID
+5. Callback updates status in PostgreSQL and Google Sheets
+6. Audit log records the change with Discord user who reacted
+
+**Bot Features:**
+- Automatic message-task mapping registration
+- Database lookup fallback if mapping not in cache
+- Extract task ID from embed footer as last resort
+- Visual feedback (thumbs up reaction briefly appears to confirm update)
+- Priority change support via 🔴 reaction
 
 ### Embed Format
 
@@ -308,6 +509,7 @@ The bot understands natural language without requiring slash commands:
 | `deadline_reminder` | 2 hours before | Reminder to assignee and boss |
 | `overdue_alert` | Every 4 hours | Lists overdue tasks with days count |
 | `conversation_cleanup` | Every 5 minutes | Auto-finalize timed-out conversations |
+| `recurring_tasks_job` | Every 5 minutes | Create task instances from recurring templates (NEW v1.2) |
 | `morning_digest` | 7 AM | Email summary for morning |
 | `evening_digest` | 8 PM | Email summary for evening |
 
@@ -345,6 +547,21 @@ The bot understands natural language without requiring slash commands:
 **Custom Triggers:**
 - Pattern → Action mapping
 - Example: "ASAP" → deadline: 4 hours
+
+**Task Templates (NEW in v1.1):**
+
+| Template | Auto-fills |
+|----------|------------|
+| `bug` | type=bug, priority=high, tags=["bugfix"] |
+| `hotfix` | type=bug, priority=urgent, deadline=4 hours |
+| `feature` | type=feature, effort="1 day", tags=["feature"] |
+| `research` | type=research, priority=low |
+| `meeting` | type=meeting, effort="1 hour" |
+| `docs` | type=task, priority=low, tags=["documentation"] |
+| `refactor` | type=task, priority=low, tags=["refactor", "tech-debt"] |
+| `test` | type=task, priority=medium, tags=["testing"] |
+
+Templates are auto-detected from natural language (e.g., "bug: login crashes" triggers bug template).
 
 ### Learning System (`src/memory/learning.py`)
 
@@ -521,6 +738,9 @@ PostgreSQL serves as the **source of truth** for all data. Google Sheets remains
 | `ai_memory` | User context | user_id, preferences, team_knowledge, custom_triggers |
 | `team_members` | Team roster | name, telegram_id, discord_id, email, role, skills |
 | `webhook_events` | Event log | source, event_type, payload, processed |
+| `recurring_tasks` | Recurring task templates (NEW v1.2) | recurring_id, title, pattern, time, next_run, is_active, instances_created |
+| `time_entries` | Time tracking log (NEW v1.2) | entry_id, task_id, user_id, started_at, ended_at, duration_minutes, entry_type |
+| `active_timers` | Currently running timers (NEW v1.2) | user_id, time_entry_id, task_ref, started_at |
 
 ### Task Relationships
 
@@ -690,6 +910,8 @@ project_repo = get_project_repository()
 | `TELEGRAM_BOSS_CHAT_ID` | Boss's Telegram chat ID |
 | `DEEPSEEK_API_KEY` | DeepSeek AI API key |
 | `DEEPSEEK_BASE_URL` | DeepSeek API endpoint |
+| `OPENAI_API_KEY` | OpenAI API key for Whisper voice transcription (NEW v1.2) |
+| `DISCORD_BOT_TOKEN` | Discord bot token for reaction listener (NEW v1.2) |
 | `DISCORD_WEBHOOK_URL` | Main Discord webhook |
 | `DISCORD_TASKS_CHANNEL_WEBHOOK` | Tasks channel webhook |
 | `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Standup channel webhook |
@@ -718,7 +940,9 @@ boss-workflow/
 │   │   ├── email_summarizer.py
 │   │   ├── intent.py        # Intent detection
 │   │   ├── prompts.py       # AI prompts
-│   │   └── reviewer.py      # Auto-review
+│   │   ├── reviewer.py      # Auto-review
+│   │   ├── transcriber.py   # Voice transcription (Whisper) [NEW v1.2]
+│   │   └── vision.py        # Image analysis (DeepSeek VL) [NEW v1.3]
 │   ├── bot/
 │   │   ├── commands.py      # Slash commands
 │   │   ├── conversation.py  # Conversation flow
@@ -729,6 +953,7 @@ boss-workflow/
 │   ├── integrations/
 │   │   ├── calendar.py      # Google Calendar
 │   │   ├── discord.py       # Discord webhooks
+│   │   ├── discord_bot.py   # Discord bot for reactions [NEW v1.2]
 │   │   ├── drive.py         # Google Drive
 │   │   ├── gmail.py         # Gmail
 │   │   ├── meet.py          # Google Meet
@@ -753,7 +978,9 @@ boss-workflow/
 │   │       ├── conversations.py  # Chat history
 │   │       ├── ai_memory.py # AI context persistence
 │   │       ├── team.py      # Team member operations
-│   │       └── projects.py  # Project operations
+│   │       ├── projects.py  # Project operations
+│   │       ├── recurring.py # Recurring tasks [NEW v1.2]
+│   │       └── time_tracking.py # Time tracking [NEW v1.2]
 │   ├── scheduler/
 │   │   ├── jobs.py          # Scheduled jobs
 │   │   └── reminders.py     # Reminder service
@@ -771,189 +998,109 @@ boss-workflow/
 
 ## Future Upgrades & Roadmap
 
-### Phase 1: Quick Wins (Ready to Implement)
+### Phase 1: Quick Wins - COMPLETED in v1.1 ✅
 
-#### 1. Task Templates
-**Status:** 🟡 Planned
-**Complexity:** Low
-**Files:** `src/bot/commands.py`, `src/memory/preferences.py`
+#### 1. Task Templates ✅
+**Status:** ✅ Implemented (v1.1)
+**Files:** `src/memory/preferences.py`, `src/ai/clarifier.py`, `src/bot/commands.py`
 
-Pre-defined templates for common task types that auto-fill fields:
+8 built-in templates with auto-detection: bug, hotfix, feature, research, meeting, docs, refactor, test.
 
-| Template | Auto-fills |
-|----------|------------|
-| `bug` | type=bug, priority=high, tags=["bugfix"] |
-| `feature` | type=feature, effort="1 day", tags=["feature"] |
-| `hotfix` | type=bug, priority=urgent, deadline=4 hours |
-| `meeting` | type=meeting, effort="1 hour" |
-| `research` | type=research, priority=low |
-
-**Usage:** `/task bug: Login page crashes on Safari`
-
-**Implementation:**
-- Store templates in preferences or Settings sheet
-- Parse template prefix from task description
-- Merge template defaults with extracted info
-- Allow custom templates via `/addtemplate`
+**Usage:**
+- Natural: "bug: Login page crashes" → Auto-applies bug template
+- Command: `/templates` → View all templates
 
 ---
 
-#### 2. Discord Reaction Status Updates
-**Status:** 🟡 Planned
-**Complexity:** Low
-**Files:** `src/integrations/discord.py`, `src/main.py`
+#### 2. Discord Reaction Status Updates ✅
+**Status:** ✅ Implemented (v1.1)
+**Files:** `src/integrations/discord.py`
 
-Team members react to task embeds to update status without commands:
+All task embeds now include reaction guide in footer:
+- ✅ = Done, 🚧 = Working, 🚫 = Blocked, ⏸️ = Paused, 🔄 = Review
 
-| Reaction | Action |
-|----------|--------|
-| ✅ | Mark as completed |
-| 🚧 | Set to in_progress |
-| 🚫 | Set to blocked |
-| ⏸️ | Set to on_hold |
-| 🔄 | Set to in_review |
-| ❌ | Set to cancelled |
-
-**Implementation:**
-- Add Discord bot (not just webhooks) to read reactions
-- Store Discord message ID with task
-- Listen for reaction events via Discord gateway or interactions
-- Map reaction emoji to status change
-- Update Sheets and notify boss
+Added `post_help()` method for Discord-side help.
 
 ---
 
-#### 3. Task Search Command
-**Status:** 🟡 Planned
-**Complexity:** Low
+#### 3. Task Search ✅
+**Status:** ✅ Implemented (v1.1)
+**Files:** `src/bot/commands.py`, `src/bot/handler.py`, `src/integrations/sheets.py`
+
+Natural language + command support:
+- "What's John working on?" → AI-parsed search
+- `/search @John` → Tasks for John
+- `/search #urgent status:blocked due:today` → Multiple filters
+
+---
+
+#### 4. Bulk Status Update ✅
+**Status:** ✅ Implemented (v1.1)
 **Files:** `src/bot/commands.py`, `src/integrations/sheets.py`
 
-Search tasks by keyword, assignee, status, or date:
+Commands:
+- `/complete TASK-001 TASK-002` → Mark multiple done
+- `/block TASK-001 TASK-002 reason` → Block with reason
+- `/assign @Sarah TASK-003 TASK-004` → Bulk assign
 
-```
-/search login bug        → Tasks containing "login" or "bug"
-/search @John            → Tasks assigned to John
-/search #urgent          → Tasks with urgent priority
-/search status:blocked   → All blocked tasks
-/search due:today        → Tasks due today
-/search created:week     → Tasks created this week
-```
-
-**Implementation:**
-- Add `search_tasks()` to sheets.py with filters
-- Parse search query for special operators (@, #, status:, due:)
-- Return formatted results with task IDs
-- Limit to 10 results with pagination hint
+Natural language: "Mark these 3 as done"
 
 ---
 
-#### 4. Bulk Status Update
-**Status:** 🟡 Planned
-**Complexity:** Low
-**Files:** `src/bot/commands.py`, `src/integrations/sheets.py`
+#### 5. Smart Dependencies ✅
+**Status:** ✅ Implemented (v1.1)
+**Files:** `src/ai/clarifier.py`, `src/bot/handler.py`
 
-Update multiple tasks at once:
-
-```
-/complete TASK-001 TASK-002 TASK-003
-/block TASK-004 TASK-005 "Waiting for API"
-/assign @Sarah TASK-006 TASK-007
-/priority urgent TASK-008 TASK-009
-```
-
-**Implementation:**
-- Parse multiple task IDs from command
-- Batch update in Sheets (single API call)
-- Post summary to Discord
-- Return count of updated tasks
+AI automatically:
+- Scans active tasks for potential dependencies
+- Shows "Potential Dependencies" in task preview
+- Asks before final confirmation if dependencies found
+- Suggests adding `blocked_by` relationship
 
 ---
 
-#### 5. Task Dependencies (Blocked By)
-**Status:** 🟡 Planned
-**Complexity:** Medium
-**Files:** `src/models/task.py`, `src/integrations/sheets.py`, `src/scheduler/jobs.py`
+### Phase 2: Medium Effort (High Value) - COMPLETED in v1.2 ✅
 
-Enforce task dependencies with auto-unblock:
+#### 6. Recurring Tasks ✅
+**Status:** ✅ Implemented (v1.2)
+**Files:** `src/database/models.py`, `src/database/repositories/recurring.py`, `src/bot/commands.py`, `src/scheduler/jobs.py`
 
-```
-/task Fix payment flow blocked_by:TASK-001
-/block TASK-002 depends:TASK-001
-/deps TASK-001                          → Show dependency tree
-```
+Tasks that auto-recreate on schedule. Scheduler checks every 5 minutes for due recurring tasks.
 
-**Features:**
-- `blocked_by` field links to other task IDs
-- When blocker completes → auto-unblock dependent tasks
-- Prevent completing task if dependencies incomplete
-- Visual dependency tree in `/deps` command
-- Circular dependency detection
-
-**Implementation:**
-- Add `blocked_by_ids` field to task model
-- Scheduler job checks completed tasks for dependents
-- Auto-update status from `blocked` to `pending`
-- Notify assignee when unblocked
-
----
-
-### Phase 2: Medium Effort (High Value)
-
-#### 6. Recurring Tasks
-**Status:** 🔴 Not Started
-**Complexity:** Medium
-**Files:** `src/models/task.py`, `src/scheduler/jobs.py`, `src/bot/commands.py`
-
-Tasks that auto-recreate on schedule:
-
-```
-/recurring "Weekly standup" every:monday 9am assign:@team
-/recurring "Monthly report" every:1st 10am
-/recurring "Daily backup check" every:day 6pm
-```
+**Commands:**
+- `/recurring "title" pattern time` - Create recurring task
+- `/recurring list` - View all recurring tasks
+- `/recurring pause/resume ID` - Control recurring tasks
+- `/recurring delete ID` - Remove recurring task
 
 **Recurrence Patterns:**
-- Daily: `every:day [time]`
-- Weekly: `every:monday,wednesday,friday [time]`
-- Monthly: `every:1st` or `every:15th` or `every:last`
-- Custom: `every:2weeks`, `every:3days`
-
-**Implementation:**
-- New `RecurringTask` model with schedule pattern
-- Scheduler job creates instances from templates
-- Link instances to parent recurring task
-- `/recurring list` to see all recurring tasks
-- `/recurring pause/resume [id]` to control
+- Daily: `every:day`
+- Weekdays: `every:weekday`
+- Weekly: `every:monday`, `every:monday,wednesday,friday`
+- Monthly: `every:1st`, `every:15th`, `every:last`
+- Interval: `every:2weeks`, `every:3days`
 
 ---
 
-#### 7. Time Tracking
-**Status:** 🔴 Not Started
-**Complexity:** Medium
-**Files:** `src/models/task.py`, `src/bot/commands.py`, `src/integrations/sheets.py`
+#### 7. Time Tracking ✅
+**Status:** ✅ Implemented (v1.2)
+**Files:** `src/database/models.py`, `src/database/repositories/time_tracking.py`, `src/bot/commands.py`
 
-Track actual time spent on tasks:
+Full time tracking with timers and manual logging:
 
-```
-/start TASK-001          → Start timer
-/stop                    → Stop current timer
-/log TASK-001 2h30m      → Manual time entry
-/time TASK-001           → Show time spent
-/timesheet               → Weekly time summary
-/timesheet @John         → Person's timesheet
-```
+**Commands:**
+- `/start TASK-ID` - Start timer
+- `/stop` - Stop active timer
+- `/log TASK-ID 2h30m` - Manual time entry
+- `/time TASK-ID` - Show time on task
+- `/timesheet` - Personal timesheet
+- `/timesheet team` - Team timesheet
 
-**Data Tracked:**
-- Start/stop timestamps per session
-- Total time per task
-- Actual vs estimated comparison
-- Time per person per week
-
-**Implementation:**
-- Add `time_entries` list to task model
-- Track active timer in user context
-- New "Time Tracking" sheet for detailed logs
-- Calculate actual vs estimated in reports
+**Duration Parsing:**
+- `2h30m` → 150 minutes
+- `1.5h` → 90 minutes
+- `45m` → 45 minutes
+- `1d` → 480 minutes (8 hours)
 
 ---
 
@@ -976,59 +1123,44 @@ Bot: "Based on skills and workload, I suggest:
       Who should I assign?"
 ```
 
-**Implementation:**
-- Enhance team member profiles with skills
-- Calculate workload score per person
-- AI matches task keywords to skills
-- Present ranked suggestions
-
 ---
 
-#### 9. Subtasks
-**Status:** 🔴 Not Started
-**Complexity:** Medium
-**Files:** `src/models/task.py`, `src/bot/commands.py`, `src/integrations/sheets.py`
+#### 9. Subtasks ✅
+**Status:** ✅ Implemented (v1.2)
+**Files:** `src/database/models.py`, `src/database/repositories/tasks.py`, `src/bot/commands.py`
 
-Break tasks into smaller items:
+Break tasks into smaller items with progress tracking:
 
-```
-/subtask TASK-001 "Design mockup"
-/subtask TASK-001 "Implement frontend"
-/subtask TASK-001 "Write tests"
-/subtasks TASK-001                    → List subtasks
-```
+**Commands:**
+- `/subtask TASK-ID "title"` - Add subtask
+- `/subtasks TASK-ID` - List subtasks
+- `/subdone TASK-ID 1` - Complete subtask #1
+- `/subdone TASK-ID all` - Complete all subtasks
 
 **Features:**
-- Parent task tracks subtask completion %
-- Parent auto-completes when all subtasks done
-- Subtasks can have own assignee/deadline
-- Nested view in Discord embed
-
-**Implementation:**
-- Add `parent_id` and `subtask_ids` to task model
-- Calculate completion % from subtasks
-- Indented display in task lists
-- Subtasks inherit parent priority by default
+- Automatic ordering (order number auto-assigned)
+- Parent task tracks completion percentage
+- Mark complete by order number
+- List shows checkbox status (☐/☑)
 
 ---
 
-#### 10. Voice Commands (Whisper)
-**Status:** 🔴 Not Started
-**Complexity:** Medium
-**Files:** `src/ai/deepseek.py`, `src/bot/telegram.py`
+#### 10. Voice Commands (Whisper) ✅
+**Status:** ✅ Implemented (v1.2)
+**Files:** `src/ai/transcriber.py`, `src/bot/telegram_simple.py`
 
-Transcribe voice messages for hands-free task creation:
+Hands-free task creation via voice messages:
 
-```
-[Voice] "Create urgent task for John to fix the server, deadline tomorrow"
-Bot: "I understood: Urgent task for John - Fix the server, due tomorrow. Create it?"
-```
+1. Send voice message in Telegram
+2. Bot transcribes using OpenAI Whisper API
+3. Shows transcription: `📝 "Create task for John"`
+4. Processes as normal text command
 
-**Implementation:**
-- Integrate OpenAI Whisper API or local whisper
-- Transcribe voice message to text
-- Process transcription through normal intent flow
-- Confirm understanding before creating
+**Features:**
+- OpenAI Whisper API integration
+- Context-aware prompts for task management terms
+- Supports OGG, MP3, WAV audio formats
+- Requires `OPENAI_API_KEY` environment variable
 
 ---
 
@@ -1088,22 +1220,41 @@ Mirror Discord functionality to Slack:
 
 ---
 
-#### 15. AI Task Breakdown
-**Status:** 🔴 Not Started
-**Complexity:** Medium
+#### 15. AI Task Breakdown ✅
+**Status:** ✅ Implemented (v1.3)
+**Files:** `src/ai/deepseek.py`, `src/ai/prompts.py`, `src/bot/commands.py`
 
-AI auto-splits large tasks:
+AI-powered task breakdown into subtasks:
 
+**Command:** `/breakdown TASK-001`
+
+**Features:**
+- Analyzes task complexity and suggests 3-8 subtasks
+- Shows effort estimates and dependencies
+- Detects if task is too simple for breakdown
+- Confirms before creating subtasks
+- Integrates with existing subtask system
+
+**Example:**
 ```
-Boss: "Build user authentication system"
-Bot: "This is a large task. Suggested breakdown:
-      1. Design auth flow (2h)
-      2. Set up database schema (1h)
-      3. Implement login/register API (4h)
-      4. Build frontend forms (3h)
-      5. Add password reset (2h)
-      6. Write tests (2h)
-      Create as subtasks?"
+Boss: /breakdown TASK-001
+
+Bot: "AI Task Breakdown: TASK-001
+      Build user authentication system
+
+      Analysis: Multi-step feature requiring backend and frontend work.
+
+      Suggested Subtasks:
+      1. Design auth flow ~30min
+      2. Create database schema ~1h
+      3. Implement login/register API ~2h (after #2)
+      4. Build frontend forms ~2h (after #3)
+      5. Add password reset ~1h
+      6. Write tests ~1h
+
+      Total Estimated Effort: 7h 30m
+
+      Create these subtasks? Reply yes or no."
 ```
 
 ---
@@ -1129,18 +1280,21 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 ### Implementation Priority
 
-| Priority | Feature | Effort | Impact |
-|----------|---------|--------|--------|
-| 1 | Task Templates | Low | High |
-| 2 | Discord Reactions | Low | High |
-| 3 | Task Search | Low | Medium |
-| 4 | Bulk Updates | Low | Medium |
-| 5 | Task Dependencies | Medium | High |
-| 6 | Recurring Tasks | Medium | High |
-| 7 | Time Tracking | Medium | Medium |
-| 8 | Team Bot Access | High | Very High |
-| 9 | PostgreSQL | High | High |
-| 10 | Web Dashboard | High | Very High |
+| Priority | Feature | Effort | Impact | Status |
+|----------|---------|--------|--------|--------|
+| 1 | Task Templates | Low | High | ✅ Done |
+| 2 | Discord Reactions | Low | High | ✅ Done |
+| 3 | Task Search | Low | Medium | ✅ Done |
+| 4 | Bulk Updates | Low | Medium | ✅ Done |
+| 5 | Smart Dependencies | Medium | High | ✅ Done |
+| 6 | Recurring Tasks | Medium | High | ✅ Done |
+| 7 | Time Tracking | Medium | Medium | ✅ Done |
+| 8 | Team Bot Access | High | Very High | 🔴 Planned |
+| 9 | PostgreSQL | High | High | ✅ Done |
+| 10 | Subtasks Commands | Medium | Medium | ✅ Done |
+| 11 | Voice Commands | Medium | Medium | ✅ Done |
+| 12 | Web Dashboard | High | Very High | 🔴 Planned |
+| 13 | AI Task Breakdown | Medium | High | ✅ Done |
 
 ---
 
@@ -1148,7 +1302,11 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.1.0 | 2026-01-17 | PostgreSQL database layer with relationships, audit logs, AI memory |
+| 1.3.1 | 2026-01-17 | Image Vision Analysis: DeepSeek VL integration for photo analysis, proof screenshot validation, OCR text extraction. Vision analysis integrated with auto-review and boss notifications. |
+| 1.3.0 | 2026-01-17 | AI Task Breakdown: `/breakdown TASK-ID` analyzes tasks and suggests subtasks with effort estimates |
+| 1.2.1 | 2026-01-17 | Discord Bot Reaction Listener: Full bot integration that listens for emoji reactions and auto-updates task status in PostgreSQL + Sheets |
+| 1.2.0 | 2026-01-17 | Phase 2 features: Recurring Tasks (auto-schedule), Time Tracking (timers + timesheets), Subtasks Commands, Voice Commands (OpenAI Whisper) |
+| 1.1.0 | 2026-01-17 | PostgreSQL database with full relationships, Quick Wins: Task Templates (8 built-in), Search (NL + command), Bulk Updates, Smart Dependencies, Discord Reaction Guide |
 | 1.0.0 | 2026-01-17 | Initial release with full feature set |
 
 ---

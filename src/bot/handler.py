@@ -54,6 +54,7 @@ class UnifiedHandler:
         self._validation_sessions: Dict[str, Dict] = {}
         self._pending_validations: Dict[str, Dict] = {}  # task_id -> validation info
         self._pending_reviews: Dict[str, Dict] = {}  # user_id -> review session
+        self._pending_actions: Dict[str, Dict] = {}  # user_id -> pending dangerous action
 
     async def handle_message(
         self,
@@ -61,6 +62,7 @@ class UnifiedHandler:
         message: str,
         photo_file_id: Optional[str] = None,
         photo_caption: Optional[str] = None,
+        photo_analysis: Optional[str] = None,
         user_name: str = "User",
         is_boss: bool = False,
         source: str = "telegram"  # "telegram" or "discord"
@@ -96,13 +98,20 @@ class UnifiedHandler:
         # Handle photos
         if photo_file_id:
             if context.get("collecting_proof"):
-                return await self._handle_proof_photo(user_id, photo_file_id, photo_caption)
+                return await self._handle_proof_photo(user_id, photo_file_id, photo_caption, photo_analysis)
             else:
                 # Photo outside of proof collection - just acknowledge
                 if photo_caption:
                     message = f"[Photo] {photo_caption}"
                 else:
                     return "Got the photo! What's this for?", None
+
+        # Check for pending dangerous actions first (like clear tasks confirmation)
+        pending_action = self._pending_actions.get(user_id)
+        if pending_action:
+            action_type = pending_action.get("type")
+            if action_type == "clear_tasks":
+                return await self._handle_clear_tasks(user_id, message, {}, context, user_name)
 
         # Detect intent
         intent, data = await self.intent.detect_intent(message, context)
@@ -129,6 +138,8 @@ class UnifiedHandler:
             UserIntent.DELAY_TASK: self._handle_delay,
             UserIntent.ADD_TEAM_MEMBER: self._handle_add_team,
             UserIntent.TEACH_PREFERENCE: self._handle_teach,
+            UserIntent.CLEAR_TASKS: self._handle_clear_tasks,
+            UserIntent.ARCHIVE_TASKS: self._handle_archive_tasks,
             UserIntent.CANCEL: self._handle_cancel,
             UserIntent.SKIP: self._handle_skip,
             UserIntent.UNKNOWN: self._handle_unknown,
@@ -196,29 +207,45 @@ What would you like to do?""", None
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
     ) -> Tuple[str, None]:
         """Handle help requests."""
-        return """**Boss Command Center** 🎯
+        return """📖 **Boss Workflow Help**
 
-**Create & Assign Tasks:**
-• "Mayank needs to build the checkout page by Friday"
-• "Assign Sarah to fix the mobile menu - urgent"
+**Natural Language (just chat!):**
+• "John needs to fix the login bug by tomorrow"
+• "What's pending?" / "Show blocked tasks"
+• "Mark TASK-001 as done"
+• "What's Sarah working on?"
 
-**Check Status:**
-• "What's pending?"
-• "Anything overdue?"
-• "Status" or "Overview"
+**Task Creation:**
+• `/task` or `/urgent` - Start task creation
+• Templates: "bug: crash on login" auto-applies defaults
+• `/templates` - View all templates
 
-**Email:**
-• "Check my emails"
-• "Email recap"
+**Task Management:**
+• `/status` - Overview
+• `/search @John` or `/search #urgent`
+• `/complete ID ID` - Bulk complete
+• `/note TASK-001 notes here`
 
-**Manage Team:**
-• "Mayank is our frontend dev"
-• "When I say ASAP, deadline is 4 hours"
+**Subtasks & Time:**
+• `/subtask TASK-001 "Design mockup"`
+• `/start TASK-001` / `/stop` - Timer
+• `/log TASK-001 2h30m` - Log time
+• `/timesheet` - View timesheet
 
-**Review Submissions:**
-When staff complete tasks on Discord, you'll get notifications here to approve/reject.
+**Recurring Tasks:**
+• `/recurring "Standup" every:monday 9am`
+• `/recurring list`
 
-Just chat naturally - no commands needed!""", None
+**Team & Reports:**
+• `/team` / `/weekly` / `/daily`
+• `/pending` - Review submissions
+• `/approve` / `/reject`
+
+**Discord Integration:**
+React on Discord to update status:
+✅ Done | 🚧 Working | 🚫 Blocked | ⏸️ Hold | 🔄 Review
+
+Voice messages work too - just send audio!""", None
 
     async def _handle_create_task(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
@@ -261,7 +288,7 @@ Just chat naturally - no commands needed!""", None
     async def _create_task_directly(
         self, conversation: ConversationState, preferences: Dict
     ) -> Tuple[str, Optional[Dict]]:
-        """Create task without questions."""
+        """Create task without questions, with smart dependency check."""
         preview, spec = await self.clarifier.generate_spec_preview(
             conversation=conversation,
             preferences=preferences
@@ -271,7 +298,40 @@ Just chat naturally - no commands needed!""", None
         conversation.stage = ConversationStage.PREVIEW
         await self.context.save_conversation(conversation)
 
-        return f"{preview}\n\nLook good? (yes/no)", None
+        # Build response with template info if applied
+        response_parts = []
+
+        # Check if template was applied
+        template_name = conversation.extracted_info.get("_template_applied")
+        if template_name:
+            response_parts.append(f"📋 *Template applied: {template_name.upper()}*\n")
+
+        response_parts.append(preview)
+
+        # Smart dependency check
+        try:
+            dependencies = await self.clarifier.find_potential_dependencies(
+                task_description=spec.get("title", "") + " " + spec.get("description", ""),
+                assignee=spec.get("assignee")
+            )
+
+            if dependencies:
+                dep_msg = "\n\n⚠️ **Potential Dependencies:**"
+                for dep in dependencies[:3]:  # Limit to 3
+                    dep_msg += f"\n• {dep['task_id']}: {dep['reason'][:50]}"
+                dep_msg += "\n\n_Add as blocked_by? Reply 'yes' to create, 'block:TASK-ID' to add dependency_"
+                response_parts.append(dep_msg)
+
+                # Store potential dependencies in conversation
+                conversation.extracted_info["_potential_deps"] = [d["task_id"] for d in dependencies]
+                await self.context.save_conversation(conversation)
+            else:
+                response_parts.append("\n\nLook good? (yes/no)")
+        except Exception as e:
+            logger.warning(f"Dependency check failed: {e}")
+            response_parts.append("\n\nLook good? (yes/no)")
+
+        return "".join(response_parts), None
 
     async def _handle_task_done(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
@@ -330,9 +390,9 @@ When you're done sending, just say "that's all\"""", None
         return f"{emoji} Got it! ({count} item{'s' if count > 1 else ''} so far)\n\nMore proof, or say \"that's all\"", None
 
     async def _handle_proof_photo(
-        self, user_id: str, file_id: str, caption: Optional[str]
+        self, user_id: str, file_id: str, caption: Optional[str], analysis: Optional[str] = None
     ) -> Tuple[str, None]:
-        """Handle photo as proof."""
+        """Handle photo as proof with AI vision analysis."""
         session = self._validation_sessions.get(user_id)
         if not session:
             return "What's this screenshot for?", None
@@ -341,11 +401,18 @@ When you're done sending, just say "that's all\"""", None
             "type": "screenshot",
             "file_id": file_id,
             "caption": caption,
+            "analysis": analysis,  # Store vision analysis
             "timestamp": datetime.now().isoformat()
         }
         session["proof_items"].append(proof)
 
         count = len(session["proof_items"])
+
+        # Include analysis summary in response if available
+        if analysis:
+            analysis_preview = analysis[:100] + "..." if len(analysis) > 100 else analysis
+            return f"📸 Screenshot received! ({count} item{'s' if count > 1 else ''})\n\n🔍 _AI Analysis: {analysis_preview}_\n\nMore, or \"that's all\"", None
+
         return f"📸 Screenshot received! ({count} item{'s' if count > 1 else ''})\n\nMore, or \"that's all\"", None
 
     async def _handle_done_proof(
@@ -491,7 +558,7 @@ Send to boss for review? (yes/no)"""
             f"📎 **Proof:** {len(session.get('proof_items', []))} item(s)",
         ]
 
-        # List proof items
+        # List proof items with AI analysis
         for i, proof in enumerate(session.get("proof_items", [])[:5], 1):
             ptype = proof.get("type", "item")
             emoji = {"screenshot": "🖼️", "link": "🔗", "note": "📝"}.get(ptype, "📎")
@@ -499,6 +566,10 @@ Send to boss for review? (yes/no)"""
                 lines.append(f"  {emoji} {proof.get('content', '')[:50]}")
             elif ptype == "screenshot":
                 lines.append(f"  {emoji} Screenshot {i}")
+                # Include AI analysis if available
+                if proof.get("analysis"):
+                    analysis_preview = proof["analysis"][:80]
+                    lines.append(f"     🔍 _{analysis_preview}..._")
             else:
                 lines.append(f"  {emoji} {proof.get('content', '')[:30]}...")
 
@@ -727,6 +798,130 @@ Make the changes and submit again when ready!"""
         if failed:
             return f"✅ Completed {success_count} task(s)\n❌ Not found: {', '.join(failed)}", None
         return f"✅ Marked {success_count} task(s) as done!", None
+
+    async def _handle_clear_tasks(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle request to clear/delete tasks (specific or all)."""
+        task_ids = data.get("task_ids", [])
+
+        # If specific task IDs provided, cancel them directly
+        if task_ids:
+            return await self._clear_specific_tasks(task_ids, user_name)
+
+        # For "clear all" - this is dangerous, confirm with the user
+        pending_action = self._pending_actions.get(user_id)
+
+        if pending_action and pending_action.get("type") == "clear_tasks":
+            # User is confirming
+            if any(w in message.lower() for w in ["yes", "confirm", "do it", "proceed"]):
+                # Actually clear the tasks
+                try:
+                    # Get all tasks and mark as cancelled
+                    tasks = await self.sheets.get_tasks()
+                    count = 0
+
+                    for task in tasks:
+                        if task.get("status") not in ["completed", "cancelled"]:
+                            await self.sheets.update_task_status(
+                                task_id=task.get("id"),
+                                new_status="cancelled"
+                            )
+                            count += 1
+
+                    del self._pending_actions[user_id]
+
+                    await self.discord.post_alert(
+                        title="Tasks Cleared",
+                        message=f"{count} task(s) marked as cancelled by {user_name}",
+                        alert_type="warning"
+                    )
+
+                    return f"✅ Cleared {count} task(s). They've been marked as cancelled.", None
+
+                except Exception as e:
+                    logger.error(f"Error clearing tasks: {e}")
+                    del self._pending_actions[user_id]
+                    return "❌ Error clearing tasks. Please try again.", None
+            else:
+                del self._pending_actions[user_id]
+                return "Cancelled. No tasks were cleared.", None
+
+        # First time - ask for confirmation
+        try:
+            tasks = await self.sheets.get_tasks()
+            active_count = sum(1 for t in tasks if t.get("status") not in ["completed", "cancelled"])
+        except Exception:
+            active_count = "unknown number of"
+
+        self._pending_actions[user_id] = {"type": "clear_tasks"}
+
+        return f"""⚠️ **Clear All Tasks?**
+
+This will mark {active_count} active task(s) as cancelled.
+
+**This action cannot be undone.**
+
+Reply **yes** to confirm or **no** to cancel.""", None
+
+    async def _clear_specific_tasks(
+        self, task_ids: list, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Clear/cancel specific tasks by ID."""
+        cancelled = []
+        not_found = []
+
+        for task_id in task_ids:
+            task_id = task_id.upper()
+            try:
+                success = await self.sheets.update_task_status(
+                    task_id=task_id,
+                    new_status="cancelled"
+                )
+                if success:
+                    cancelled.append(task_id)
+                else:
+                    not_found.append(task_id)
+            except Exception as e:
+                logger.error(f"Error cancelling task {task_id}: {e}")
+                not_found.append(task_id)
+
+        # Post to Discord
+        if cancelled:
+            await self.discord.post_alert(
+                title="Tasks Cancelled",
+                message=f"{len(cancelled)} task(s) cancelled by {user_name}: {', '.join(cancelled)}",
+                alert_type="warning"
+            )
+
+        # Build response
+        if cancelled and not_found:
+            return f"✅ Cancelled: {', '.join(cancelled)}\n❌ Not found: {', '.join(not_found)}", None
+        elif cancelled:
+            return f"✅ Cancelled {len(cancelled)} task(s): {', '.join(cancelled)}", None
+        else:
+            return f"❌ Could not find: {', '.join(not_found)}", None
+
+    async def _handle_archive_tasks(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle request to archive completed tasks."""
+        try:
+            count = await self.sheets.archive_completed_tasks(days_old=0)  # Archive all completed
+
+            if count > 0:
+                await self.discord.post_alert(
+                    title="Tasks Archived",
+                    message=f"{count} completed task(s) archived by {user_name}",
+                    alert_type="info"
+                )
+                return f"✅ Archived {count} completed task(s).", None
+            else:
+                return "No completed tasks to archive.", None
+
+        except Exception as e:
+            logger.error(f"Error archiving tasks: {e}")
+            return "❌ Error archiving tasks. Please try again.", None
 
     async def _handle_templates(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
@@ -1024,8 +1219,8 @@ Ready to send to boss? (yes/no)""", None
         for c in spec.get("acceptance_criteria", []):
             task.acceptance_criteria.append(AcceptanceCriteria(description=c))
 
-        # Post to integrations
-        await self.discord.post_task(task)
+        # Post to integrations and capture Discord message ID
+        discord_message_id = await self.discord.post_task(task)
 
         # Convert task to dict for sheets
         task_dict = {
@@ -1042,8 +1237,29 @@ Ready to send to boss? (yes/no)""", None
             'effort': task.estimated_effort or '',
             'tags': ', '.join(task.tags) if task.tags else '',
             'created_by': task.created_by or 'Boss',
+            'discord_message_id': discord_message_id or '',
         }
         await self.sheets.add_task(task_dict)
+
+        # Save to PostgreSQL with discord_message_id
+        try:
+            from ..database.repositories import get_task_repository
+            task_repo = get_task_repository()
+            db_task_data = {
+                'task_id': task.id,
+                'title': task.title,
+                'description': task.description,
+                'assignee': task.assignee,
+                'priority': task.priority.value,
+                'status': task.status.value,
+                'task_type': task.task_type,
+                'deadline': task.deadline,
+                'discord_message_id': discord_message_id,
+            }
+            await task_repo.create(db_task_data)
+            logger.info(f"Task {task.id} saved to PostgreSQL")
+        except Exception as e:
+            logger.warning(f"Failed to save task to PostgreSQL: {e}")
 
         if task.deadline:
             await self.calendar.create_task_event(task)

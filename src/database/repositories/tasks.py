@@ -305,8 +305,8 @@ class TaskRepository:
         self,
         task_id: str,
         title: str,
+        assignee: Optional[str] = None,
         description: Optional[str] = None,
-        order: int = 0
     ) -> Optional[SubtaskDB]:
         """Add a subtask to a task."""
         async with self.db.session() as session:
@@ -319,11 +319,18 @@ class TaskRepository:
             if not task:
                 return None
 
+            # Get next order number
+            order_result = await session.execute(
+                select(func.max(SubtaskDB.order)).where(SubtaskDB.task_id == task.id)
+            )
+            max_order = order_result.scalar() or 0
+            next_order = max_order + 1
+
             subtask = SubtaskDB(
                 task_id=task.id,
                 title=title,
                 description=description,
-                order=order,
+                order=next_order,
             )
             session.add(subtask)
             await session.flush()
@@ -333,6 +340,56 @@ class TaskRepository:
 
             logger.info(f"Added subtask to {task_id}: {title}")
             return subtask
+
+    async def complete_subtask_by_order(
+        self,
+        task_id: str,
+        order: int,
+        completed_by: str
+    ) -> bool:
+        """Mark a subtask as completed by its order number."""
+        async with self.db.session() as session:
+            # Get parent task first
+            task_result = await session.execute(
+                select(TaskDB).where(TaskDB.task_id == task_id)
+            )
+            task = task_result.scalar_one_or_none()
+
+            if not task:
+                return False
+
+            # Find subtask by order
+            subtask_result = await session.execute(
+                select(SubtaskDB).where(
+                    and_(
+                        SubtaskDB.task_id == task.id,
+                        SubtaskDB.order == order
+                    )
+                )
+            )
+            subtask = subtask_result.scalar_one_or_none()
+
+            if not subtask:
+                return False
+
+            subtask.completed = True
+            subtask.completed_at = datetime.now()
+            subtask.completed_by = completed_by
+
+            # Update parent task progress
+            all_subtasks = await session.execute(
+                select(SubtaskDB).where(SubtaskDB.task_id == task.id)
+            )
+            subtasks = list(all_subtasks.scalars().all())
+            completed = sum(1 for s in subtasks if s.completed)
+            progress = int((completed / len(subtasks)) * 100) if subtasks else 0
+
+            task.progress = progress
+            task.needs_sheet_sync = True
+
+            await session.flush()
+            logger.info(f"Completed subtask {order} of {task_id}")
+            return True
 
     async def complete_subtask(
         self,

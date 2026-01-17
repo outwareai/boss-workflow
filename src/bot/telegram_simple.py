@@ -81,21 +81,51 @@ class TelegramBotSimple:
             await update.message.reply_text("Oops, something went wrong. Try again?")
 
     async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle photo messages."""
+        """Handle photo messages with AI vision analysis."""
         user_id = str(update.effective_user.id)
         user_name = update.effective_user.first_name or "User"
-        photo = update.message.photo[-1]
+        photo = update.message.photo[-1]  # Get highest resolution
         file_id = photo.file_id
         caption = update.message.caption
 
         is_boss = str(update.effective_chat.id) == str(self.boss_chat_id)
 
         try:
+            # Download the photo for vision analysis
+            photo_file = await context.bot.get_file(file_id)
+            photo_bytes = await photo_file.download_as_bytearray()
+
+            # Analyze with DeepSeek Vision
+            from ..ai.vision import get_vision
+            vision = get_vision()
+
+            await update.message.reply_text("🔍 Analyzing image...")
+
+            # Choose analysis type based on context
+            if caption:
+                # User provided context, use it
+                analysis = await vision.analyze_image(
+                    bytes(photo_bytes),
+                    prompt=f"The user sent this image with the message: '{caption}'\n\nAnalyze the image in this context. What does it show? What action might be needed?"
+                )
+            else:
+                # No caption, do general analysis
+                analysis = await vision.describe_for_task(bytes(photo_bytes))
+
+            # Build message with analysis
+            if analysis:
+                message_with_analysis = f"[Image Analysis: {analysis}]"
+                if caption:
+                    message_with_analysis = f"{caption}\n\n{message_with_analysis}"
+            else:
+                message_with_analysis = caption or "[Photo received]"
+
             response, action = await self.handler.handle_message(
                 user_id=user_id,
-                message=caption or "",
+                message=message_with_analysis,
                 photo_file_id=file_id,
                 photo_caption=caption,
+                photo_analysis=analysis,  # Pass vision analysis
                 user_name=user_name,
                 is_boss=is_boss
             )
@@ -106,33 +136,30 @@ class TelegramBotSimple:
                 await self._handle_action(action, context)
 
         except Exception as e:
-            logger.error(f"Error handling photo: {e}")
+            logger.error(f"Error handling photo: {e}", exc_info=True)
             await update.message.reply_text("Got the photo! What's it for?")
 
     async def _handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle voice messages - transcribe and process."""
+        """Handle voice messages - transcribe using OpenAI Whisper and process."""
         user_id = str(update.effective_user.id)
         user_name = update.effective_user.first_name or "User"
 
-        await update.message.reply_text("🎤 Got your voice message, processing...")
+        await update.message.reply_text("🎤 Got your voice message, transcribing...")
 
         try:
-            # Download and transcribe
+            # Download voice file
             voice = update.message.voice
             voice_file = await context.bot.get_file(voice.file_id)
 
-            import tempfile
-            import os
+            # Download to bytes
+            voice_bytes = await voice_file.download_as_bytearray()
 
-            with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as f:
-                await voice_file.download_to_drive(f.name)
-                temp_path = f.name
-
-            # Transcribe (would use Whisper or similar)
-            from ..ai.deepseek import get_deepseek_client
-            ai = get_deepseek_client()
-            transcription = await ai.transcribe_voice(temp_path)
-            os.unlink(temp_path)
+            # Transcribe using Whisper
+            from ..ai.transcriber import transcribe_voice_message
+            transcription = await transcribe_voice_message(
+                audio_data=bytes(voice_bytes),
+                filename=f"voice_{voice.file_id}.ogg"
+            )
 
             if transcription and not transcription.startswith("["):
                 await update.message.reply_text(f"📝 \"{transcription}\"")
@@ -151,10 +178,10 @@ class TelegramBotSimple:
                 if action:
                     await self._handle_action(action, context)
             else:
-                await update.message.reply_text("Couldn't catch that. Try typing instead?")
+                await update.message.reply_text("Couldn't catch that. Try typing instead?\n\n_Voice transcription requires OPENAI_API_KEY to be set._", parse_mode='Markdown')
 
         except Exception as e:
-            logger.error(f"Error with voice: {e}")
+            logger.error(f"Error with voice: {e}", exc_info=True)
             await update.message.reply_text("Couldn't process voice. Try typing?")
 
     async def _handle_action(self, action: dict, context: ContextTypes.DEFAULT_TYPE) -> None:

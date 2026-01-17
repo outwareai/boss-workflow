@@ -251,3 +251,67 @@ Create a comprehensive but readable weekly report that:
 5. Is formatted for Discord/Telegram
 
 Make it insightful and actionable."""
+
+    @staticmethod
+    def breakdown_task_prompt(
+        title: str,
+        description: str,
+        task_type: str,
+        priority: str,
+        estimated_effort: Optional[str] = None,
+        acceptance_criteria: Optional[List[str]] = None
+    ) -> str:
+        """Generate prompt to break down a task into subtasks."""
+
+        criteria_str = "\n".join([f"- {c}" for c in acceptance_criteria]) if acceptance_criteria else "None specified"
+
+        return f"""Analyze this task and break it down into smaller, actionable subtasks.
+
+TASK DETAILS:
+Title: {title}
+Description: {description}
+Type: {task_type}
+Priority: {priority}
+Estimated Effort: {estimated_effort or "Not specified"}
+
+Acceptance Criteria:
+{criteria_str}
+
+Break this task into 3-8 logical subtasks that:
+1. Are specific and actionable
+2. Can be completed independently (where possible)
+3. Follow a logical sequence
+4. Cover all aspects of the task
+5. Each takes roughly equal effort
+
+Respond with a JSON object:
+{{
+    "analysis": "Brief explanation of why this breakdown makes sense",
+    "is_complex_enough": true/false,
+    "subtasks": [
+        {{
+            "title": "Subtask title (clear and actionable)",
+            "description": "Brief description of what this involves",
+            "order": 1,
+            "estimated_effort": "30 minutes",
+            "depends_on": null
+        }},
+        {{
+            "title": "Second subtask",
+            "description": "Description",
+            "order": 2,
+            "estimated_effort": "1 hour",
+            "depends_on": 1
+        }}
+    ],
+    "total_estimated_effort": "4 hours",
+    "recommended": true/false,
+    "reason": "Why this breakdown is or isn't recommended"
+}}
+
+Rules:
+- If the task is simple (can be done in under 30 minutes), set is_complex_enough=false
+- Order subtasks logically (dependencies first)
+- Use depends_on to indicate which subtask must be done first (by order number)
+- Keep subtask titles under 80 characters
+- Be specific, not generic (avoid "Research", "Plan" unless truly needed)"""

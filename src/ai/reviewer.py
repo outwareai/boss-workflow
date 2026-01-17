@@ -238,7 +238,7 @@ Be constructive but honest. Help the developer submit better work."""
             return None
 
     def _summarize_proof(self, proof_items: List[Dict]) -> str:
-        """Summarize proof items for AI review."""
+        """Summarize proof items for AI review, including vision analysis."""
         if not proof_items:
             return "(No proof provided)"
 
@@ -246,7 +246,14 @@ Be constructive but honest. Help the developer submit better work."""
         for i, item in enumerate(proof_items, 1):
             ptype = item.get("type", "unknown")
             if ptype == "screenshot":
-                lines.append(f"{i}. Screenshot" + (f": {item.get('caption')}" if item.get('caption') else ""))
+                line = f"{i}. Screenshot"
+                if item.get('caption'):
+                    line += f" (caption: {item.get('caption')})"
+                lines.append(line)
+                # Include vision analysis if available
+                if item.get('analysis'):
+                    analysis = item['analysis'][:300]  # Limit length
+                    lines.append(f"   AI Vision Analysis: {analysis}")
             elif ptype == "link":
                 lines.append(f"{i}. Link: {item.get('content', 'URL')}")
             else:
