@@ -262,6 +262,73 @@ Create a comprehensive but readable weekly report that:
 Make it insightful and actionable."""
 
     @staticmethod
+    def generate_detailed_spec_prompt(
+        task_id: str,
+        title: str,
+        description: str,
+        assignee: Optional[str],
+        priority: str,
+        deadline: Optional[str],
+        task_type: str,
+        existing_notes: Optional[str] = None,
+        team_context: Optional[str] = None
+    ) -> str:
+        """Generate prompt to create a detailed spec sheet for team members."""
+
+        return f"""Create a detailed specification sheet for this task that team members can use as their guide.
+
+TASK INFORMATION:
+- Task ID: {task_id}
+- Title: {title}
+- Description: {description}
+- Assignee: {assignee or "Not assigned"}
+- Priority: {priority}
+- Deadline: {deadline or "Not set"}
+- Type: {task_type}
+{f"- Existing Notes: {existing_notes}" if existing_notes else ""}
+{f"- Team Context: {team_context}" if team_context else ""}
+
+Generate a comprehensive spec with the following sections:
+
+1. EXPANDED DESCRIPTION: Rewrite the description to be clearer and more detailed. Include:
+   - What exactly needs to be done
+   - Why this task matters (business context)
+   - Any constraints or limitations
+
+2. ACCEPTANCE CRITERIA: List 3-7 specific, testable criteria. Each should be:
+   - Clear and unambiguous
+   - Measurable or verifiable
+   - Written as "The system should..." or "User can..."
+
+3. TECHNICAL DETAILS (if applicable): Include:
+   - Files/components likely affected
+   - Suggested approach (if obvious)
+   - Potential edge cases to handle
+
+4. DEPENDENCIES: List any:
+   - Tasks that must be completed first
+   - External resources needed
+   - People to consult
+
+5. ESTIMATED EFFORT: Provide a time estimate
+
+Respond with JSON:
+{{
+    "expanded_description": "Detailed description...",
+    "acceptance_criteria": [
+        "Criterion 1",
+        "Criterion 2",
+        "Criterion 3"
+    ],
+    "technical_details": "Technical implementation notes or null if not applicable",
+    "dependencies": ["Dependency 1"] or null if none,
+    "estimated_effort": "2 hours" or "1 day" etc.,
+    "additional_notes": "Any other relevant notes or null"
+}}
+
+Be specific and practical. This spec will be read by developers/team members who need to understand exactly what to do."""
+
+    @staticmethod
     def breakdown_task_prompt(
         title: str,
         description: str,

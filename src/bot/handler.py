@@ -154,6 +154,7 @@ class UnifiedHandler:
             UserIntent.TEACH_PREFERENCE: self._handle_teach,
             UserIntent.CLEAR_TASKS: self._handle_clear_tasks,
             UserIntent.ARCHIVE_TASKS: self._handle_archive_tasks,
+            UserIntent.GENERATE_SPEC: self._handle_generate_spec,
             UserIntent.CANCEL: self._handle_cancel,
             UserIntent.SKIP: self._handle_skip,
             UserIntent.UNKNOWN: self._handle_unknown,
@@ -1037,6 +1038,110 @@ Reply **yes** to confirm or **no** to cancel.""", None
         except Exception as e:
             logger.error(f"Error archiving tasks: {e}")
             return "❌ Error archiving tasks. Please try again.", None
+
+    async def _handle_generate_spec(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle request to generate a detailed spec sheet for a task."""
+        from ..ai.prompts import PromptTemplates
+        import json
+
+        task_id = data.get("task_id")
+
+        # If no task ID provided, ask for one
+        if not task_id:
+            return "Please specify a task ID. Usage: `/spec TASK-001` or \"generate spec for TASK-001\"", None
+
+        try:
+            # Find the task in Google Sheets
+            task_data = await self.sheets.get_task(task_id)
+
+            if not task_data:
+                return f"❌ Task `{task_id}` not found. Check the ID and try again.", None
+
+            # Extract task info
+            title = task_data.get("Title", task_data.get("title", "Unknown"))
+            description = task_data.get("Description", task_data.get("description", ""))
+            assignee = task_data.get("Assignee", task_data.get("assignee", ""))
+            priority = task_data.get("Priority", task_data.get("priority", "medium"))
+            deadline = task_data.get("Deadline", task_data.get("deadline", ""))
+            task_type = task_data.get("Type", task_data.get("type", "task"))
+            notes = task_data.get("Notes", task_data.get("notes", ""))
+
+            # Generate detailed spec using AI
+            prompt = PromptTemplates.generate_detailed_spec_prompt(
+                task_id=task_id,
+                title=title,
+                description=description,
+                assignee=assignee,
+                priority=priority,
+                deadline=deadline,
+                task_type=task_type,
+                existing_notes=notes if notes else None
+            )
+
+            response = await self.ai.chat(
+                messages=[
+                    {"role": "system", "content": "You create detailed, practical task specifications. Respond only with JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3
+            )
+
+            try:
+                # Parse JSON response
+                content = response.choices[0].message.content
+                # Handle markdown code blocks
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+
+                spec_data = json.loads(content.strip())
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse spec JSON: {e}")
+                return "❌ Failed to generate spec. AI response format error.", None
+
+            # Post spec to Discord
+            discord_msg_id = await self.discord.post_spec_sheet(
+                task_id=task_id,
+                title=title,
+                assignee=assignee or "Unassigned",
+                priority=priority,
+                deadline=deadline if deadline else None,
+                description=spec_data.get("expanded_description", description),
+                acceptance_criteria=spec_data.get("acceptance_criteria", []),
+                technical_details=spec_data.get("technical_details"),
+                dependencies=spec_data.get("dependencies"),
+                notes=spec_data.get("additional_notes"),
+                estimated_effort=spec_data.get("estimated_effort")
+            )
+
+            if discord_msg_id:
+                # Build response with preview
+                response_lines = [
+                    f"✅ **Spec sheet posted for {task_id}**",
+                    "",
+                    f"📋 **{title}**",
+                    f"👤 {assignee or 'Unassigned'} | ⏱️ {spec_data.get('estimated_effort', 'Unknown')}",
+                    "",
+                    "**Acceptance Criteria:**"
+                ]
+                for i, criterion in enumerate(spec_data.get("acceptance_criteria", [])[:3], 1):
+                    response_lines.append(f"  {i}. {criterion}")
+                if len(spec_data.get("acceptance_criteria", [])) > 3:
+                    response_lines.append(f"  ... and {len(spec_data.get('acceptance_criteria', [])) - 3} more")
+
+                response_lines.append("")
+                response_lines.append("📤 Posted to #specs channel")
+
+                return "\n".join(response_lines), None
+            else:
+                return "⚠️ Spec generated but failed to post to Discord. Check webhook configuration.", None
+
+        except Exception as e:
+            logger.error(f"Error generating spec for {task_id}: {e}")
+            return f"❌ Error generating spec: {str(e)}", None
 
     async def _handle_templates(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str

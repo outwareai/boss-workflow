@@ -54,6 +54,7 @@ class DiscordIntegration:
     def __init__(self):
         self.tasks_webhook = settings.discord_tasks_channel_webhook
         self.standup_webhook = settings.discord_standup_channel_webhook
+        self.specs_webhook = settings.discord_specs_channel_webhook
         self.default_webhook = settings.discord_webhook_url
 
     async def post_task(self, task: Task, channel: str = "tasks") -> Optional[str]:
@@ -213,6 +214,145 @@ class DiscordIntegration:
             logger.error(f"Error posting weekly summary: {e}")
             return False
 
+    async def post_spec_sheet(
+        self,
+        task_id: str,
+        title: str,
+        assignee: str,
+        priority: str,
+        deadline: Optional[str],
+        description: str,
+        acceptance_criteria: List[str],
+        technical_details: Optional[str] = None,
+        dependencies: Optional[List[str]] = None,
+        notes: Optional[str] = None,
+        estimated_effort: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Post a detailed spec sheet for a task to the specs channel.
+
+        This is a comprehensive document for team members to understand
+        exactly what needs to be done.
+
+        Returns:
+            Discord message ID if successful, None otherwise
+        """
+        webhook_url = self._get_webhook_url("specs")
+        if not webhook_url:
+            logger.warning("No webhook configured for specs channel")
+            return None
+
+        # Priority colors and emojis
+        priority_colors = {
+            "urgent": 0xE74C3C,   # Red
+            "high": 0xE67E22,     # Orange
+            "medium": 0xF1C40F,   # Yellow
+            "low": 0x3498DB,      # Blue
+        }
+        priority_emoji = {
+            "urgent": "🔴",
+            "high": "🟠",
+            "medium": "🟡",
+            "low": "🔵",
+        }
+
+        color = priority_colors.get(priority.lower(), 0x95A5A6)
+        p_emoji = priority_emoji.get(priority.lower(), "⚪")
+
+        # Build acceptance criteria as checklist
+        criteria_text = "\n".join([f"☐ {c}" for c in acceptance_criteria]) if acceptance_criteria else "None specified"
+
+        # Build the embed with multiple fields for clarity
+        embed = {
+            "title": f"📋 SPEC: {title}",
+            "description": f"**Task ID:** `{task_id}`\n\n{description}",
+            "color": color,
+            "fields": [
+                {
+                    "name": "👤 Assignee",
+                    "value": assignee or "Unassigned",
+                    "inline": True
+                },
+                {
+                    "name": f"{p_emoji} Priority",
+                    "value": priority.upper(),
+                    "inline": True
+                },
+                {
+                    "name": "📅 Deadline",
+                    "value": deadline or "Not set",
+                    "inline": True
+                },
+            ],
+            "timestamp": datetime.now().isoformat(),
+            "footer": {"text": f"Spec Sheet | {task_id}"}
+        }
+
+        # Add estimated effort if provided
+        if estimated_effort:
+            embed["fields"].append({
+                "name": "⏱️ Estimated Effort",
+                "value": estimated_effort,
+                "inline": True
+            })
+
+        # Add acceptance criteria (important!)
+        embed["fields"].append({
+            "name": "✅ Acceptance Criteria",
+            "value": criteria_text[:1024],  # Discord field limit
+            "inline": False
+        })
+
+        # Add technical details if provided
+        if technical_details:
+            embed["fields"].append({
+                "name": "🔧 Technical Details",
+                "value": technical_details[:1024],
+                "inline": False
+            })
+
+        # Add dependencies if any
+        if dependencies:
+            deps_text = "\n".join([f"• {d}" for d in dependencies])
+            embed["fields"].append({
+                "name": "🔗 Dependencies",
+                "value": deps_text[:1024],
+                "inline": False
+            })
+
+        # Add notes if any
+        if notes:
+            embed["fields"].append({
+                "name": "📝 Additional Notes",
+                "value": notes[:1024],
+                "inline": False
+            })
+
+        payload = {
+            "embeds": [embed],
+            "username": "Boss Workflow - Specs"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{webhook_url}?wait=true",
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        message_id = data.get("id")
+                        logger.info(f"Posted spec sheet for {task_id} to Discord: {message_id}")
+                        return message_id
+                    else:
+                        error = await response.text()
+                        logger.error(f"Discord specs webhook error: {response.status} - {error}")
+                        return None
+
+        except Exception as e:
+            logger.error(f"Error posting spec sheet to Discord: {e}")
+            return None
+
     async def post_alert(
         self,
         title: str,
@@ -333,6 +473,8 @@ class DiscordIntegration:
             return self.tasks_webhook or self.default_webhook
         elif channel == "standup":
             return self.standup_webhook or self.default_webhook
+        elif channel == "specs":
+            return self.specs_webhook or self.default_webhook
         return self.default_webhook
 
     async def post_help(self, channel: str = "tasks") -> bool:

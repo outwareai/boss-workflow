@@ -58,6 +58,9 @@ class UserIntent(str, Enum):
     # Templates
     LIST_TEMPLATES = "list_templates"        # "/templates", "what templates are there?"
 
+    # Spec generation
+    GENERATE_SPEC = "generate_spec"          # "/spec TASK-001", "generate spec for task"
+
     # Conversation control
     SKIP = "skip"                            # "skip", "whatever", "default"
     CANCEL = "cancel"                        # "cancel", "nevermind", "stop"
@@ -164,6 +167,10 @@ class IntentDetector:
                 return UserIntent.CLEAR_TASKS, {"task_ids": task_ids}
             if cmd == "archive":
                 return UserIntent.ARCHIVE_TASKS, {}
+            if cmd == "spec" and args:
+                # Extract task ID from args
+                task_id = args.strip().upper()
+                return UserIntent.GENERATE_SPEC, {"task_id": task_id}
 
             # If command not recognized, let it fall through to AI detection
 
@@ -239,6 +246,15 @@ class IntentDetector:
         # Templates
         if any(w in message for w in ["templates", "what templates", "show templates", "list templates"]):
             return UserIntent.LIST_TEMPLATES, {}
+
+        # Spec generation - natural language
+        spec_phrases = ["generate spec", "create spec", "spec sheet", "make spec", "spec for"]
+        if any(phrase in message for phrase in spec_phrases):
+            # Try to extract task ID
+            import re
+            task_id_match = re.search(r'TASK-[\w\-]+', message, re.IGNORECASE)
+            task_id = task_id_match.group(0).upper() if task_id_match else None
+            return UserIntent.GENERATE_SPEC, {"task_id": task_id, "message": message}
 
         # Bulk operations - natural language
         bulk_complete_phrases = [

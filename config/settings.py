@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     discord_webhook_url: str = Field(default="", env="DISCORD_WEBHOOK_URL")
     discord_tasks_channel_webhook: str = Field(default="", env="DISCORD_TASKS_CHANNEL_WEBHOOK")
     discord_standup_channel_webhook: str = Field(default="", env="DISCORD_STANDUP_CHANNEL_WEBHOOK")
+    discord_specs_channel_webhook: str = Field(default="", env="DISCORD_SPECS_CHANNEL_WEBHOOK")
     discord_bot_token: Optional[str] = Field(default=None, env="DISCORD_BOT_TOKEN")
 
     # Google Sheets
