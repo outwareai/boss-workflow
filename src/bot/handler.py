@@ -207,45 +207,49 @@ What would you like to do?""", None
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
     ) -> Tuple[str, None]:
         """Handle help requests."""
-        return """📖 **Boss Workflow Help**
+        return """📖 **Boss Command Center**
 
-**Natural Language (just chat!):**
+**Just Chat Naturally:**
 • "John needs to fix the login bug by tomorrow"
-• "What's pending?" / "Show blocked tasks"
+• "What's pending?" / "Show overdue"
 • "Mark TASK-001 as done"
 • "What's Sarah working on?"
 
 **Task Creation:**
-• `/task` or `/urgent` - Start task creation
-• Templates: "bug: crash on login" auto-applies defaults
-• `/templates` - View all templates
+• `/task` or `/urgent` - Start task
+• Templates: "bug: crash" auto-applies defaults
+• `/templates` - View templates
 
 **Task Management:**
 • `/status` - Overview
 • `/search @John` or `/search #urgent`
 • `/complete ID ID` - Bulk complete
-• `/note TASK-001 notes here`
+• `/note TASK-001 notes`
+• `/delay TASK-001 tomorrow`
 
-**Subtasks & Time:**
+**Subtasks:**
 • `/subtask TASK-001 "Design mockup"`
-• `/start TASK-001` / `/stop` - Timer
-• `/log TASK-001 2h30m` - Log time
-• `/timesheet` - View timesheet
+• `/subtasks TASK-001` - List
+• `/subdone TASK-001 1,2` - Complete
 
-**Recurring Tasks:**
+**Time Tracking:**
+• `/start TASK-001` / `/stop`
+• `/log TASK-001 2h30m`
+• `/timesheet` or `/timesheet team`
+
+**Recurring:**
 • `/recurring "Standup" every:monday 9am`
 • `/recurring list`
 
-**Team & Reports:**
-• `/team` / `/weekly` / `/daily`
+**Reports:**
+• `/daily` / `/weekly` / `/overdue`
+
+**Team:**
+• `/team` / `/addteam Name Role`
 • `/pending` - Review submissions
-• `/approve` / `/reject`
+• `/approve ID` / `/reject ID`
 
-**Discord Integration:**
-React on Discord to update status:
-✅ Done | 🚧 Working | 🚫 Blocked | ⏸️ Hold | 🔄 Review
-
-Voice messages work too - just send audio!""", None
+**Voice:** Send audio message - I'll transcribe it!""", None
 
     async def _handle_create_task(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
