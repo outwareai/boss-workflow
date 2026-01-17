@@ -2140,14 +2140,15 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 deadline = spec.get("deadline", "")
                 deadline_str = f" | Due: {deadline[:10]}" if deadline else ""
 
-                # Build response with subtasks if present
-                priority_text = priority.upper()
+                # Build response in card format
+                priority_text = priority.capitalize()
                 effort = spec.get("estimated_effort", "")
-                effort_str = f" | Effort: {effort}" if effort else ""
+                deadline_display = f" | Due: {deadline[:10]}" if deadline else ""
+                effort_display = f" | Effort: {effort}" if effort else ""
 
                 task_lines = [
-                    f"**{task_entry['index']}.** {p_emoji} **{title}**",
-                    f"   → {assignee} | Priority: {priority_text}{deadline_str}{effort_str}"
+                    f"**{task_entry['index']}. Task:** {title}",
+                    f"   Assignee: {assignee}{effort_display} | Priority: {priority_text} {p_emoji}{deadline_display}"
                 ]
 
                 # Show subtasks
@@ -2304,10 +2305,14 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             effort = spec.get("estimated_effort", "")
             effort_str = f" | Effort: {effort}" if effort else ""
 
-            # Build detailed preview
+            # Build detailed preview in card format
+            priority_text = priority.capitalize()
+            deadline_display = f" | Due: {deadline[:10]}" if deadline else ""
+            effort_display = f" | Effort: {effort}" if effort else ""
+
             preview_lines = [
-                f"**{task_entry['index']}.** {priority_emoji} **{title}**",
-                f"   → {assignee} | Priority: {priority_text}{deadline_str}{effort_str}"
+                f"**{task_entry['index']}. Task:** {title}",
+                f"   Assignee: {assignee}{effort_display} | Priority: {priority_text} {priority_emoji}{deadline_display}"
             ]
 
             # Show subtasks
