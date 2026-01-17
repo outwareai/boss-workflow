@@ -2106,7 +2106,7 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 task_entry["conversation"].stage = ConversationStage.PREVIEW
                 task_entry["spec"] = spec
 
-                # Create clean summary (not truncated mid-word)
+                # Create detailed summary with subtasks
                 title = spec.get("title", "Untitled")
                 assignee = spec.get("assignee") or "Unassigned"
                 priority = spec.get("priority", "medium")
@@ -2114,7 +2114,25 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 deadline = spec.get("deadline", "")
                 deadline_str = f" | Due: {deadline[:10]}" if deadline else ""
 
-                responses.append(f"**{task_entry['index']}.** {p_emoji} **{title}**\n   → {assignee}{deadline_str}")
+                # Build response with subtasks if present
+                task_lines = [f"**{task_entry['index']}.** {p_emoji} **{title}**", f"   → {assignee}{deadline_str}"]
+
+                # Show subtasks
+                subtasks = spec.get("subtasks", [])
+                if subtasks:
+                    task_lines.append(f"   📝 **Subtasks ({len(subtasks)}):**")
+                    for i, st in enumerate(subtasks[:5], 1):  # Show max 5 subtasks
+                        st_title = st.get("title", str(st)) if isinstance(st, dict) else str(st)
+                        task_lines.append(f"      {i}. {st_title[:60]}{'...' if len(st_title) > 60 else ''}")
+                    if len(subtasks) > 5:
+                        task_lines.append(f"      ... and {len(subtasks) - 5} more")
+
+                # Show notes if present
+                notes = spec.get("notes")
+                if notes and notes != "null" and str(notes).strip():
+                    task_lines.append(f"   📌 Note: {str(notes)[:80]}{'...' if len(str(notes)) > 80 else ''}")
+
+                responses.append("\n".join(task_lines))
 
             batch["awaiting_confirm"] = True
             self._batch_tasks[user_id] = batch
