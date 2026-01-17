@@ -341,7 +341,7 @@ class GoogleCalendarIntegration:
             for m in reminder_minutes.get(task.priority, [60])
         ]
 
-        return {
+        event = {
             'summary': f"[TASK] {status_prefix}{task.title}",
             'description': description,
             'start': {
@@ -358,6 +358,36 @@ class GoogleCalendarIntegration:
                 'overrides': overrides,
             },
         }
+
+        # Add assignee as attendee if they have an email
+        if task.assignee:
+            assignee_email = self._get_assignee_email(task.assignee)
+            if assignee_email:
+                event['attendees'] = [
+                    {'email': assignee_email, 'displayName': task.assignee}
+                ]
+                # Send notifications to attendees
+                event['sendUpdates'] = 'all'
+
+        return event
+
+    def _get_assignee_email(self, assignee_name: str) -> Optional[str]:
+        """Look up assignee's email from team configuration."""
+        try:
+            from config.team import get_default_team
+            team = get_default_team()
+
+            assignee_lower = assignee_name.lower()
+            for member in team:
+                if member.get('name', '').lower() == assignee_lower:
+                    return member.get('email')
+                if member.get('username', '').lower() == assignee_lower:
+                    return member.get('email')
+
+            return None
+        except Exception as e:
+            logger.debug(f"Could not look up assignee email: {e}")
+            return None
 
     def _extract_task_id(self, description: str) -> Optional[str]:
         """Extract task ID from event description."""

@@ -95,6 +95,11 @@ class UnifiedHandler:
         # Build context for intent detection
         context = await self._build_context(user_id, is_boss)
 
+        # Check for multi-action message (e.g., "clear all tasks then create...")
+        multi_action_result = await self._handle_multi_action(user_id, message, user_name, context)
+        if multi_action_result:
+            return multi_action_result
+
         # Handle photos
         if photo_file_id:
             if context.get("collecting_proof"):
@@ -185,6 +190,93 @@ class UnifiedHandler:
             context["has_active_conversation"] = True
 
         return context
+
+    async def _handle_multi_action(
+        self, user_id: str, message: str, user_name: str, context: Dict
+    ) -> Optional[Tuple[str, Optional[Dict]]]:
+        """
+        Detect and handle messages with multiple actions.
+
+        E.g., "Clear all tasks then create a new task for Mayank..."
+
+        Returns None if not a multi-action message.
+        """
+        message_lower = message.lower()
+
+        # Check for action separators
+        separators = [" then ", " and then ", " after that ", " also ", " and also "]
+
+        found_separator = None
+        for sep in separators:
+            if sep in message_lower:
+                found_separator = sep
+                break
+
+        if not found_separator:
+            return None
+
+        # Split into parts
+        parts = message_lower.split(found_separator, 1)
+        if len(parts) < 2:
+            return None
+
+        first_part = parts[0].strip()
+        second_part = parts[1].strip()
+
+        # Check if first part is a clear/delete action
+        clear_keywords = ["clear", "delete", "remove", "wipe", "reset"]
+        is_clear_first = any(kw in first_part for kw in clear_keywords)
+
+        # Check if second part is a create action
+        create_keywords = ["create", "make", "add", "new task", "assign"]
+        is_create_second = any(kw in second_part for kw in create_keywords)
+
+        if not (is_clear_first and is_create_second):
+            # Not a recognized multi-action pattern, let normal flow handle
+            return None
+
+        logger.info(f"Detected multi-action: CLEAR then CREATE")
+
+        responses = []
+
+        # Step 1: Handle clear action
+        clear_response, _ = await self._handle_clear_tasks(
+            user_id, first_part, {"task_ids": []}, context, user_name
+        )
+
+        # Check if clear needs confirmation
+        if "confirm" in clear_response.lower() or "yes" in clear_response.lower():
+            # Auto-confirm the clear for multi-action
+            confirm_response, _ = await self._handle_clear_tasks(
+                user_id, "yes", {"task_ids": []}, context, user_name
+            )
+            responses.append(confirm_response)
+        else:
+            responses.append(clear_response)
+
+        # Step 2: Handle create action(s)
+        # The second part might contain multiple tasks separated by "and another"
+        task_parts = [second_part]
+        if " and another " in second_part:
+            task_parts = second_part.split(" and another ")
+        elif " another one " in second_part:
+            idx = second_part.find(" another one ")
+            task_parts = [second_part[:idx], second_part[idx + 13:]]
+
+        for task_desc in task_parts:
+            task_desc = task_desc.strip()
+            if not task_desc:
+                continue
+
+            # Reconstruct full message for task creation
+            create_response, _ = await self._handle_create_task(
+                user_id, task_desc, {"message": task_desc}, context, user_name
+            )
+            responses.append(create_response)
+
+        # Combine responses
+        combined = "\n\n---\n\n".join(responses)
+        return combined, None
 
     # ==================== INTENT HANDLERS ====================
 
