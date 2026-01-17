@@ -449,52 +449,70 @@ What would you like to do?""", None
     async def _handle_task_correction(
         self, user_id: str, conversation: ConversationState, correction: str, user_name: str
     ) -> Tuple[str, Optional[Dict]]:
-        """Handle user correction after task preview (they said 'no, [changes]')."""
+        """Handle user correction after task preview (they said 'no, [changes]' or 'edit X')."""
         import json
 
-        # Get current spec
-        current_spec = conversation.generated_spec or {}
+        # Get current spec - if None, rebuild from extracted_info
+        current_spec = conversation.generated_spec
+        if not current_spec:
+            current_spec = conversation.extracted_info.copy() if conversation.extracted_info else {}
+            logger.warning(f"generated_spec was None for conversation {conversation.conversation_id}, using extracted_info")
 
-        # Use AI to apply the correction
-        prompt = f"""The boss rejected a task preview and provided a correction.
+        # If still empty, we can't correct - need to regenerate
+        if not current_spec or not current_spec.get('title'):
+            logger.error(f"No spec to correct for conversation {conversation.conversation_id}")
+            # Try to regenerate from original message + correction
+            prefs = await self.prefs.get_preferences(user_id)
+            conversation.original_message = f"{conversation.original_message}. Also: {correction}"
+            return await self._create_task_directly(conversation, prefs.to_dict())
+
+        # Use AI to apply the correction - more robust prompt
+        prompt = f"""You are updating a task specification based on user feedback.
 
 CURRENT TASK:
-- Title: {current_spec.get('title', '')}
-- Assignee: {current_spec.get('assignee', '')}
+- Title: {current_spec.get('title', 'Untitled')}
+- Assignee: {current_spec.get('assignee', 'Unassigned')}
 - Priority: {current_spec.get('priority', 'medium')}
-- Deadline: {current_spec.get('deadline', '')}
-- Description: {current_spec.get('description', '')}
+- Deadline: {current_spec.get('deadline', 'Not set')}
+- Description: {current_spec.get('description', 'No description')}
+- Acceptance Criteria: {current_spec.get('acceptance_criteria', [])}
 
-BOSS'S CORRECTION: "{correction}"
+USER'S CORRECTION/ADDITION: "{correction}"
 
-Apply their correction to the task. They might be:
-- Changing the title/description
-- Changing the assignee
-- Adjusting the deadline
-- Clarifying what needs to be done
+The user wants to modify the task. Understand what they mean:
+- "add favicon" = add to description/acceptance criteria
+- "make it urgent" = change priority to urgent
+- "assign to X" = change assignee
+- "also X" or "don't forget X" = add X to description/criteria
+- "change title to X" = update title
+- etc.
 
-Return the UPDATED task as JSON:
+Return the COMPLETE updated task as JSON (include all fields, even unchanged ones):
 {{
-    "title": "Updated title",
-    "assignee": "name or null",
+    "title": "Task title",
+    "assignee": "person name or null",
     "priority": "urgent/high/medium/low",
-    "deadline": "ISO datetime or null",
-    "description": "Updated description",
-    "estimated_effort": "time estimate"
+    "deadline": "ISO datetime or keep existing",
+    "description": "Full description including any additions",
+    "estimated_effort": "time estimate",
+    "acceptance_criteria": ["criterion 1", "criterion 2"]
 }}
 
-Be smart - understand what they want changed from their words."""
+IMPORTANT: Merge the user's request INTO the existing task. Don't remove information, add to it."""
 
         try:
             response = await self.ai.chat(
                 messages=[
-                    {"role": "system", "content": "You update task specifications based on user feedback. Return only JSON."},
+                    {"role": "system", "content": "You update task specifications based on user feedback. Always return valid JSON. Be smart about understanding what users want to change or add."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.2
+                temperature=0.3
             )
 
             content = response.choices[0].message.content
+            logger.info(f"AI correction response: {content[:200]}...")
+
+            # Extract JSON from response
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
             elif "```" in content:
@@ -502,7 +520,7 @@ Be smart - understand what they want changed from their words."""
 
             updated_spec = json.loads(content.strip())
 
-            # Merge with existing spec (keep fields AI didn't mention)
+            # Merge with existing spec (keep fields AI didn't return)
             for key, value in current_spec.items():
                 if key not in updated_spec or updated_spec[key] is None:
                     updated_spec[key] = value
@@ -512,7 +530,6 @@ Be smart - understand what they want changed from their words."""
             await self.context.save_conversation(conversation)
 
             # Show new preview
-            prefs = await self.prefs.get_preferences(user_id)
             preview = self._format_task_preview(updated_spec)
 
             return f"""📋 **Updated Task:**
@@ -521,9 +538,28 @@ Be smart - understand what they want changed from their words."""
 
 Look good now? (yes/no)""", None
 
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error in correction: {e}, content: {content[:200] if 'content' in dir() else 'N/A'}")
+            # Fallback: just append correction to description
+            if current_spec.get('description'):
+                current_spec['description'] += f"\n\nAdditional: {correction}"
+            else:
+                current_spec['description'] = correction
+
+            conversation.generated_spec = current_spec
+            await self.context.save_conversation(conversation)
+
+            preview = self._format_task_preview(current_spec)
+            return f"""📋 **Updated Task** (added your note):
+
+{preview}
+
+Look good now? (yes/no)""", None
+
         except Exception as e:
-            logger.error(f"Error applying correction: {e}")
-            return f"Sorry, I couldn't understand that correction. Please describe what you want changed more clearly.", None
+            logger.error(f"Error applying correction: {type(e).__name__}: {e}")
+            # Last resort: ask for clearer instruction
+            return f"I had trouble applying that change. Could you be more specific?\n\nFor example:\n• \"change title to X\"\n• \"add X to the description\"\n• \"make it urgent\"\n• \"assign to John\"", None
 
     def _format_task_preview(self, spec: Dict) -> str:
         """Format a task spec as a preview string."""
