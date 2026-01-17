@@ -2141,7 +2141,6 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 deadline_str = f" | Due: {deadline[:10]}" if deadline else ""
 
                 # Build response in card format
-                from datetime import datetime
                 import random
                 task_id_preview = f"TASK-{datetime.now().strftime('%Y%m%d')}-{random.randint(100,999)}"
 
@@ -2312,7 +2311,6 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             effort_str = f" | Effort: {effort}" if effort else ""
 
             # Build detailed preview in card format
-            from datetime import datetime
             import random
             task_id_preview = f"TASK-{datetime.now().strftime('%Y%m%d')}-{random.randint(100,999)}"
 
