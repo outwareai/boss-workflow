@@ -294,7 +294,8 @@ Contact boss directly on Telegram.""",
         message_id: int,
         task_id: str,
         task_title: str,
-        assignee: str = None
+        assignee: str = None,
+        assignee_discord_id: str = None
     ) -> Optional[discord.Thread]:
         """
         Create a thread on a task message for discussion.
@@ -304,7 +305,8 @@ Contact boss directly on Telegram.""",
             message_id: Discord message ID to create thread on
             task_id: Task ID for thread name
             task_title: Task title for thread name
-            assignee: Optional assignee to mention in thread
+            assignee: Optional assignee name to display in thread
+            assignee_discord_id: Optional Discord user ID for @mention (numeric ID like '123456789')
 
         Returns:
             Created thread or None if failed
@@ -353,7 +355,13 @@ Contact boss directly on Telegram.""",
             ]
 
             if assignee:
-                intro_lines.insert(2, f"Assigned to: **{assignee}**")
+                # Try to @mention if we have a numeric Discord user ID
+                if assignee_discord_id and assignee_discord_id.isdigit():
+                    # Proper Discord mention format: <@USER_ID>
+                    intro_lines.insert(2, f"Assigned to: <@{assignee_discord_id}> ({assignee})")
+                else:
+                    # Fallback to just showing the name
+                    intro_lines.insert(2, f"Assigned to: **{assignee}**")
 
             await thread.send("\n".join(intro_lines))
 
@@ -436,13 +444,22 @@ async def create_task_thread(
     message_id: int,
     task_id: str,
     task_title: str,
-    assignee: str = None
+    assignee: str = None,
+    assignee_discord_id: str = None
 ) -> bool:
     """
     Create a thread for a task message.
 
     This is a helper function that can be called from discord.py integration
     after posting a task via webhook.
+
+    Args:
+        channel_id: Discord channel ID
+        message_id: Discord message ID to create thread on
+        task_id: Task ID
+        task_title: Task title
+        assignee: Assignee name
+        assignee_discord_id: Numeric Discord user ID for @mention
 
     Returns:
         True if thread created successfully, False otherwise
@@ -457,7 +474,8 @@ async def create_task_thread(
         message_id=message_id,
         task_id=task_id,
         task_title=task_title,
-        assignee=assignee
+        assignee=assignee,
+        assignee_discord_id=assignee_discord_id
     )
 
     return thread is not None

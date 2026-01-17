@@ -148,7 +148,8 @@ class DiscordIntegration:
                         message_id=message_id,
                         task_id=task.id,
                         task_title=task.title,
-                        assignee=task.assignee
+                        assignee=task.assignee,
+                        assignee_discord_id=task.assignee_discord_id
                     )
 
                     if result:
