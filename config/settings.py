@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     discord_standup_channel_webhook: str = Field(default="", env="DISCORD_STANDUP_CHANNEL_WEBHOOK")
     discord_specs_channel_webhook: str = Field(default="", env="DISCORD_SPECS_CHANNEL_WEBHOOK")
     discord_bot_token: Optional[str] = Field(default=None, env="DISCORD_BOT_TOKEN")
+    discord_forum_channel_id: Optional[str] = Field(default=None, env="DISCORD_FORUM_CHANNEL_ID")  # Forum channel for organized task posts
 
     # Google Sheets
     google_credentials_json: str = Field(default="", env="GOOGLE_CREDENTIALS_JSON")

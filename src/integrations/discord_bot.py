@@ -388,6 +388,143 @@ Contact boss directly on Telegram.""",
             logger.error(f"Error creating thread for task {task_id}: {type(e).__name__}: {e}")
             return None
 
+    async def create_forum_post(
+        self,
+        forum_channel_id: int,
+        task_id: str,
+        task_title: str,
+        task_embed: dict,
+        assignee: str = None,
+        assignee_discord_id: str = None,
+        priority: str = None,
+        status: str = None
+    ) -> Optional[discord.Thread]:
+        """
+        Create a forum post for a task in a Discord Forum channel.
+
+        Args:
+            forum_channel_id: Discord Forum channel ID
+            task_id: Task ID for post title
+            task_title: Task title
+            task_embed: Discord embed dict for the task
+            assignee: Assignee name
+            assignee_discord_id: Numeric Discord user ID for @mention
+            priority: Task priority for tag (urgent, high, medium, low)
+            status: Task status for tag
+
+        Returns:
+            Created thread (forum post) or None if failed
+        """
+        try:
+            channel = self.get_channel(forum_channel_id)
+            if not channel:
+                channel = await self.fetch_channel(forum_channel_id)
+
+            if not channel:
+                logger.error(f"Could not find forum channel {forum_channel_id}")
+                return None
+
+            # Verify it's a forum channel
+            if not isinstance(channel, discord.ForumChannel):
+                logger.error(f"Channel {forum_channel_id} is not a Forum channel (type: {type(channel).__name__})")
+                return None
+
+            # Create post title: "TASK-XXX | Short title"
+            short_title = task_title[:80] if len(task_title) > 80 else task_title
+            post_name = f"{task_id} | {short_title}"
+            if len(post_name) > 100:
+                post_name = post_name[:97] + "..."
+
+            # Build the initial message content
+            content_lines = []
+
+            # Add assignee mention at the top
+            if assignee:
+                if assignee_discord_id and assignee_discord_id.isdigit():
+                    content_lines.append(f"**Assigned to:** <@{assignee_discord_id}>")
+                else:
+                    content_lines.append(f"**Assigned to:** {assignee}")
+
+            content_lines.extend([
+                "",
+                "**Quick Actions:**",
+                "• Share updates and progress in this thread",
+                "• Post screenshots or links as proof of completion",
+                "• Ask questions about the task",
+                "",
+                "React to update status: ✅=Done 🚧=Working 🚫=Blocked ⏸️=Paused 🔄=Review"
+            ])
+
+            # Find applicable tags from the forum channel
+            applied_tags = []
+            if channel.available_tags:
+                # Look for priority tag
+                if priority:
+                    priority_lower = priority.lower()
+                    for tag in channel.available_tags:
+                        tag_name_lower = tag.name.lower()
+                        if priority_lower in tag_name_lower or tag_name_lower in priority_lower:
+                            applied_tags.append(tag)
+                            break
+
+                # Look for status tag
+                if status:
+                    status_lower = status.lower().replace("_", " ")
+                    for tag in channel.available_tags:
+                        tag_name_lower = tag.name.lower()
+                        if status_lower in tag_name_lower or tag_name_lower in status_lower:
+                            applied_tags.append(tag)
+                            break
+
+            # Create the forum post
+            thread_with_message = await channel.create_thread(
+                name=post_name,
+                content="\n".join(content_lines),
+                embed=discord.Embed.from_dict(task_embed),
+                applied_tags=applied_tags[:5] if applied_tags else None,  # Max 5 tags
+                auto_archive_duration=10080  # 7 days
+            )
+
+            # thread_with_message is a tuple (Thread, Message) in newer discord.py
+            if isinstance(thread_with_message, tuple):
+                thread = thread_with_message[0]
+                message = thread_with_message[1]
+            else:
+                thread = thread_with_message
+                message = None
+
+            logger.info(f"Created forum post '{post_name}' for task {task_id} in forum {forum_channel_id}")
+
+            # Add status reactions to the first message
+            if message:
+                await self.add_status_reactions(message)
+            else:
+                # Try to get the first message
+                try:
+                    async for msg in thread.history(limit=1, oldest_first=True):
+                        await self.add_status_reactions(msg)
+                        # Register for reaction tracking
+                        self.register_message_task(msg.id, task_id)
+                        break
+                except Exception as e:
+                    logger.warning(f"Could not add reactions to forum post: {e}")
+
+            return thread
+
+        except discord.Forbidden as e:
+            logger.error(f"Bot lacks permission to create forum posts. Error: {e}")
+            try:
+                if channel:
+                    perms = channel.permissions_for(channel.guild.me)
+                    logger.error(f"Bot permissions: send_messages={perms.send_messages}, "
+                                f"create_public_threads={perms.create_public_threads}")
+            except Exception as perm_err:
+                logger.error(f"Could not check permissions: {perm_err}")
+            return None
+        except Exception as e:
+            logger.error(f"Error creating forum post for task {task_id}: {type(e).__name__}: {e}")
+            return None
+
 
 # Singleton instance
 _bot: Optional[TaskingBot] = None
@@ -479,3 +616,48 @@ async def create_task_thread(
     )
 
     return thread is not None
+
+
+async def create_forum_post(
+    forum_channel_id: int,
+    task_id: str,
+    task_title: str,
+    task_embed: dict,
+    assignee: str = None,
+    assignee_discord_id: str = None,
+    priority: str = None,
+    status: str = None
+) -> Optional[int]:
+    """
+    Create a forum post for a task.
+
+    Args:
+        forum_channel_id: Discord Forum channel ID
+        task_id: Task ID
+        task_title: Task title
+        task_embed: Discord embed dict
+        assignee: Assignee name
+        assignee_discord_id: Numeric Discord user ID for @mention
+        priority: Task priority for tags
+        status: Task status for tags
+
+    Returns:
+        Thread ID if created successfully, None otherwise
+    """
+    bot = get_discord_bot()
+    if not bot or not bot.is_ready():
+        logger.warning("Discord bot not ready, cannot create forum post")
+        return None
+
+    thread = await bot.create_forum_post(
+        forum_channel_id=forum_channel_id,
+        task_id=task_id,
+        task_title=task_title,
+        task_embed=task_embed,
+        assignee=assignee,
+        assignee_discord_id=assignee_discord_id,
+        priority=priority,
+        status=status
+    )
+
+    return thread.id if thread else None

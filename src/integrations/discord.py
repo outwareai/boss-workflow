@@ -61,13 +61,21 @@ class DiscordIntegration:
         """
         Post a task to Discord as a rich embed.
 
+        If DISCORD_FORUM_CHANNEL_ID is configured, posts as a forum thread.
+        Otherwise, posts via webhook and creates a thread on the message.
+
         Args:
             task: The task to post
             channel: Which channel to post to ("tasks", "standup")
 
         Returns:
-            Discord message ID if successful, None otherwise
+            Discord message/thread ID if successful, None otherwise
         """
+        # Check if forum channel is configured - use forum posts for better organization
+        if settings.discord_forum_channel_id:
+            return await self._post_task_to_forum(task)
+
+        # Fall back to webhook posting with thread creation
         webhook_url = self._get_webhook_url(channel)
         if not webhook_url:
             logger.warning(f"No webhook configured for channel: {channel}")
@@ -119,6 +127,74 @@ class DiscordIntegration:
 
         except Exception as e:
             logger.error(f"Error posting to Discord: {e}")
+            return None
+
+    async def _post_task_to_forum(self, task: Task) -> Optional[str]:
+        """
+        Post a task as a forum thread for better organization.
+
+        Args:
+            task: The task to post
+
+        Returns:
+            Thread ID if successful, None otherwise
+        """
+        try:
+            from .discord_bot import create_forum_post, get_discord_bot
+            import asyncio
+
+            forum_channel_id = int(settings.discord_forum_channel_id)
+
+            # Check if bot token is configured
+            if not settings.discord_bot_token:
+                logger.warning("Discord bot token required for forum posts, falling back to webhook")
+                return None
+
+            # Build the embed
+            embed = task.to_discord_embed_dict()
+            if "footer" in embed:
+                embed["footer"]["text"] = f"{embed['footer']['text']} | {self.REACTION_HELP}"
+            else:
+                embed["footer"] = {"text": self.REACTION_HELP}
+
+            # Retry up to 3 times (bot might not be ready yet)
+            max_retries = 3
+            for attempt in range(max_retries):
+                bot = get_discord_bot()
+
+                if bot and bot.is_ready():
+                    thread_id = await create_forum_post(
+                        forum_channel_id=forum_channel_id,
+                        task_id=task.id,
+                        task_title=task.title,
+                        task_embed=embed,
+                        assignee=task.assignee,
+                        assignee_discord_id=task.assignee_discord_id,
+                        priority=task.priority.value if task.priority else None,
+                        status=task.status.value if task.status else None
+                    )
+
+                    if thread_id:
+                        logger.info(f"Posted task {task.id} to forum as thread {thread_id}")
+                        return str(thread_id)
+                    else:
+                        logger.warning(f"Forum post creation failed for {task.id}")
+                        return None
+
+                # Bot not ready, wait and retry
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2
+                    logger.debug(f"Discord bot not ready for forum post, waiting {wait_time}s")
+                    await asyncio.sleep(wait_time)
+
+            logger.warning(f"Discord bot not ready after {max_retries} attempts for forum post")
+            return None
+
+        except ValueError as e:
+            logger.error(f"Invalid DISCORD_FORUM_CHANNEL_ID: {settings.discord_forum_channel_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Error posting task to forum: {e}")
             return None
 
     async def _create_thread_for_task(
