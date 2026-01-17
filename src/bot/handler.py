@@ -2009,18 +2009,21 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             if len(tasks) >= 2:
                 return tasks
 
-        # Pattern 2: Explicit separators - order matters (more specific first)
-        separators = [
+        # Pattern 2: Explicit separators - combine into one regex to split on ALL at once
+        # This handles messages with multiple separators like:
+        # "Task 1... Then another task... And another task being..."
+        combined_separator = r'(?:' + '|'.join([
             # "Then another task" patterns
             r'\.\s*[Tt]hen\s+another\s+task\s*',
             r'\s+[Tt]hen\s+another\s+task\s*',
-            # "And another task" patterns
+            # "And another task" patterns (including "being", "with", "for", "is")
+            r'\.\s*[Aa]nd\s+another\s+task\s+(?:being\s+|with\s+|for\s+|is\s+)?',
+            r'\s+[Aa]nd\s+another\s+task\s+(?:being\s+|with\s+|for\s+|is\s+)?',
             r'\.\s*[Aa]nd\s+another\s+task\s*',
             r'\s+[Aa]nd\s+another\s+task\s*',
             # Generic "another task" patterns
             r'\.\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
             r',\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
-            r'\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
             # Also patterns
             r'\.\s+also\s+',
             r',\s+also\s+',
@@ -2028,16 +2031,13 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             # Plus patterns
             r'\.\s+plus\s+',
             r',\s+plus\s+',
-            # Then (not followed by "another" - handled above)
-            r'\s+[Tt]hen\s+(?!another)',
-        ]
+        ]) + r')'
 
-        for sep in separators:
-            if re.search(sep, message, re.IGNORECASE):
-                parts = re.split(sep, message, flags=re.IGNORECASE)
-                tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
-                if len(tasks) >= 2:
-                    return tasks
+        if re.search(combined_separator, message, re.IGNORECASE):
+            parts = re.split(combined_separator, message, flags=re.IGNORECASE)
+            tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
+            if len(tasks) >= 2:
+                return tasks
 
         # Pattern 3: Multiple names with actions - "Name1 action1, Name2 action2"
         # Look for pattern: CapitalName + verb/action, repeated
