@@ -1872,6 +1872,7 @@ Ready to send to boss? (yes/no)""", None
         await self.sheets.add_task(task_dict)
 
         # Save to PostgreSQL with discord_message_id
+        subtask_ids = []
         try:
             from ..database.repositories import get_task_repository
             task_repo = get_task_repository()
@@ -1888,6 +1889,33 @@ Ready to send to boss? (yes/no)""", None
             }
             await task_repo.create(db_task_data)
             logger.info(f"Task {task.id} saved to PostgreSQL")
+
+            # Create subtasks if present in spec
+            subtasks_data = spec.get("subtasks", [])
+            if subtasks_data:
+                for st in subtasks_data:
+                    if isinstance(st, dict):
+                        subtask_title = st.get("title", "Untitled subtask")
+                        subtask_desc = st.get("description", "")
+                    else:
+                        subtask_title = str(st)
+                        subtask_desc = ""
+
+                    try:
+                        subtask = await task_repo.add_subtask(
+                            task.id,
+                            subtask_title,
+                            subtask_desc
+                        )
+                        if subtask:
+                            subtask_ids.append(subtask.title)
+                            logger.info(f"Created subtask '{subtask_title}' for {task.id}")
+                    except Exception as se:
+                        logger.warning(f"Failed to create subtask '{subtask_title}': {se}")
+
+                if subtask_ids:
+                    logger.info(f"Created {len(subtask_ids)} subtasks for {task.id}")
+
         except Exception as e:
             logger.warning(f"Failed to save task to PostgreSQL: {e}")
 
@@ -1903,6 +1931,10 @@ Ready to send to boss? (yes/no)""", None
 
         assignee_text = f" for {task.assignee}" if task.assignee else ""
         response = f"✅ Created{assignee_text}!\n\n**{task.id}**: {task.title}"
+
+        # Add subtask info to response
+        if subtask_ids:
+            response += f"\n📝 + {len(subtask_ids)} subtasks"
 
         # Prepare notification for assignee if they have Telegram ID
         action = None

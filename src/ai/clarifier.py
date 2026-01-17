@@ -501,11 +501,26 @@ Only include tasks that are clearly related. Return empty array if no dependenci
 
         lines.extend(["", f"**Description:**", spec.get("description", "No description"), ""])
 
+        # Show subtasks if present
+        subtasks = spec.get("subtasks", [])
+        if subtasks:
+            lines.append(f"**Subtasks ({len(subtasks)}):**")
+            for i, st in enumerate(subtasks, 1):
+                title = st.get("title", f"Subtask {i}") if isinstance(st, dict) else str(st)
+                lines.append(f"  {i}. {title}")
+            lines.append("")
+
         criteria = spec.get("acceptance_criteria", [])
         if criteria:
             lines.append("**Acceptance Criteria:**")
             for c in criteria:
                 lines.append(f"☐ {c}")
+            lines.append("")
+
+        # Show notes if present
+        notes = spec.get("notes")
+        if notes and notes != "null":
+            lines.append(f"**Notes:** {notes}")
             lines.append("")
 
         lines.extend([

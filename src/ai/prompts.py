@@ -148,10 +148,20 @@ EXTRACTED INFORMATION:
 USER PREFERENCES:
 {preferences}
 
+CRITICAL - DETECT SUBTASKS:
+If the user lists subtasks or items (after "subtasks:", "in it:", "-", "•", numbered items, etc.),
+you MUST extract them as separate subtasks. DON'T merge them into the description or lose them!
+
+Example: "Task for John to fix UI. Subtasks: - Fix header - Update colors"
+→ subtasks: [{{"title": "Fix header", "order": 1}}, {{"title": "Update colors", "order": 2}}]
+
+Example: "Edit Droplet with subtask rate limiter... And another subtask Find solution..."
+→ subtasks: [{{"title": "Set up rate limiter in Digital Ocean", "order": 1}}, {{"title": "Find cloud image storage solution", "order": 2}}]
+
 Generate a complete task specification as JSON:
 {{
-    "title": "Clear, actionable title (under 100 chars)",
-    "description": "Detailed description of the task, including context and any specific requirements",
+    "title": "Clear, actionable title for MAIN task (under 100 chars)",
+    "description": "Description of the main task - NOT the subtasks",
     "assignee": "team member name or null",
     "priority": "low/medium/high/urgent",
     "deadline": "ISO datetime or null",
@@ -161,15 +171,28 @@ Generate a complete task specification as JSON:
         "Clear, testable criterion 1",
         "Clear, testable criterion 2"
     ],
+    "subtasks": [
+        {{
+            "title": "First subtask - specific and actionable",
+            "description": "Details of what this subtask involves",
+            "order": 1
+        }},
+        {{
+            "title": "Second subtask",
+            "description": "Details",
+            "order": 2
+        }}
+    ],
     "tags": ["relevant", "tags"],
-    "notes": "Any additional notes or considerations"
+    "notes": "Any notes mentioned by user (e.g., 'make sure phone is working')"
 }}
 
-Ensure the spec is:
-- Actionable and clear
-- Has specific, testable acceptance criteria
-- Includes all gathered information
-- Uses sensible defaults where information is missing"""
+RULES:
+- If user lists items with "-", numbers, or keywords like "subtasks", "in it", "including" → MUST extract as subtasks
+- Each subtask = separate actionable item with its own title
+- If NO subtasks mentioned → "subtasks": []
+- NEVER lose user's listed items
+- Keep notes separate from description"""
 
     @staticmethod
     def format_preview_prompt(spec: Dict[str, Any]) -> str:
