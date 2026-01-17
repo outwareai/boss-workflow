@@ -148,15 +148,29 @@ EXTRACTED INFORMATION:
 USER PREFERENCES:
 {preferences}
 
-CRITICAL - DETECT SUBTASKS:
+CRITICAL - DETECT AND PRESERVE SUBTASKS:
 If the user lists subtasks or items (after "subtasks:", "in it:", "-", "•", numbered items, etc.),
-you MUST extract them as separate subtasks. DON'T merge them into the description or lose them!
+you MUST extract them as separate subtasks. DON'T oversimplify or lose details!
 
-Example: "Task for John to fix UI. Subtasks: - Fix header - Update colors"
-→ subtasks: [{{"title": "Fix header", "order": 1}}, {{"title": "Update colors", "order": 2}}]
+SUBTASK RULES - VERY IMPORTANT:
+1. PRESERVE the user's original wording and details - don't summarize too much
+2. If user gives a detailed subtask, keep ALL that detail in the title
+3. Complex subtasks should have LONGER, more descriptive titles (up to 150 chars)
+4. Simple subtasks can have short titles
 
-Example: "Edit Droplet with subtask rate limiter... And another subtask Find solution..."
-→ subtasks: [{{"title": "Set up rate limiter in Digital Ocean", "order": 1}}, {{"title": "Find cloud image storage solution", "order": 2}}]
+BAD Example (oversimplified - DON'T DO THIS):
+User: "change design and colors same for affiliate page in the console side also add the tiers and more info"
+❌ "Update affiliate page" (TOO SHORT - lost all the detail!)
+✅ "Update affiliate page design/colors in console, add commission tiers and additional info sections"
+
+BAD Example:
+User: "Third page needs to change design and colors to white for hybrid and flat fee and red for commission only"
+❌ "Update third page colors" (TOO SHORT!)
+✅ "Update third page design: white theme for hybrid/flat fee options, red theme for commission only"
+
+GOOD Examples:
+User: "Fix header" → "Fix header" (simple task, short title is fine)
+User: "Set up rate limiter in Digital Ocean to limit monthly billing" → "Set up rate limiter in Digital Ocean for monthly cost control"
 
 Generate a complete task specification as JSON:
 {{
@@ -173,14 +187,9 @@ Generate a complete task specification as JSON:
     ],
     "subtasks": [
         {{
-            "title": "First subtask - specific and actionable",
-            "description": "Details of what this subtask involves",
+            "title": "DETAILED subtask title preserving user's original wording (up to 150 chars)",
+            "description": "Additional context if the title can't fit everything",
             "order": 1
-        }},
-        {{
-            "title": "Second subtask",
-            "description": "Details",
-            "order": 2
         }}
     ],
     "tags": ["relevant", "tags"],
@@ -189,9 +198,11 @@ Generate a complete task specification as JSON:
 
 RULES:
 - If user lists items with "-", numbers, or keywords like "subtasks", "in it", "including" → MUST extract as subtasks
-- Each subtask = separate actionable item with its own title
+- PRESERVE user's original detail in subtask titles - DON'T over-summarize!
+- Complex requests need LONGER subtask titles (up to 150 chars) - keep the detail!
+- Simple subtasks can have short titles
 - If NO subtasks mentioned → "subtasks": []
-- NEVER lose user's listed items
+- NEVER lose user's listed items or details
 - Keep notes separate from description"""
 
     @staticmethod

@@ -2157,20 +2157,6 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                     f"   Assignee: {assignee}{effort_display} | Priority: {priority_text} {p_emoji}{deadline_display}"
                 ]
 
-                # Show description snippet
-                if description:
-                    desc_preview = description[:120] + "..." if len(description) > 120 else description
-                    task_lines.append(f"   Description: {desc_preview}")
-
-                # Show acceptance criteria
-                if acceptance_criteria:
-                    task_lines.append(f"   **Acceptance Criteria ({len(acceptance_criteria)}):**")
-                    for i, ac in enumerate(acceptance_criteria[:3], 1):
-                        ac_text = ac if isinstance(ac, str) else ac.get("description", str(ac))
-                        task_lines.append(f"      • {ac_text[:70]}{'...' if len(ac_text) > 70 else ''}")
-                    if len(acceptance_criteria) > 3:
-                        task_lines.append(f"      ... and {len(acceptance_criteria) - 3} more")
-
                 # Show subtasks
                 subtasks = spec.get("subtasks", [])
                 if subtasks:
@@ -2340,20 +2326,6 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
                 f"**{task_entry['index']}. [{task_id_preview}] {title}**",
                 f"   Assignee: {assignee}{effort_display} | Priority: {priority_text} {priority_emoji}{deadline_display}"
             ]
-
-            # Show description snippet
-            if description:
-                desc_preview = description[:120] + "..." if len(description) > 120 else description
-                preview_lines.append(f"   Description: {desc_preview}")
-
-            # Show acceptance criteria
-            if acceptance_criteria:
-                preview_lines.append(f"   **Acceptance Criteria ({len(acceptance_criteria)}):**")
-                for i, ac in enumerate(acceptance_criteria[:3], 1):
-                    ac_text = ac if isinstance(ac, str) else ac.get("description", str(ac))
-                    preview_lines.append(f"      • {ac_text[:70]}{'...' if len(ac_text) > 70 else ''}")
-                if len(acceptance_criteria) > 3:
-                    preview_lines.append(f"      ... and {len(acceptance_criteria) - 3} more")
 
             # Show subtasks
             subtasks = spec.get("subtasks", [])
