@@ -1420,9 +1420,9 @@ When done, tell me "I finished {task.id}" and show me proof!"""
         Detect and split multiple tasks in a single message.
 
         Handles patterns like:
+        - "Mayank fix login, Sarah update docs, John test API"
         - "1. Task one 2. Task two 3. Task three"
         - "Task one, also task two, and task three"
-        - "Task one. Another task is two. And three"
         """
         import re
 
@@ -1431,21 +1431,21 @@ When done, tell me "I finished {task.id}" and show me proof!"""
         # Pattern 1: Numbered list (1. 2. 3. or 1) 2) 3))
         numbered_pattern = r'(?:^|\s)(\d+[\.\)]\s*)'
         if re.search(numbered_pattern, message):
-            # Split by numbers
             parts = re.split(r'\s*\d+[\.\)]\s*', message)
             tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
             if len(tasks) >= 2:
                 return tasks
 
-        # Pattern 2: "Also" / "And also" / "Another" separators
+        # Pattern 2: Explicit separators
         separators = [
             r'\.\s+also\s+',
             r',\s+also\s+',
             r'\s+and\s+also\s+',
-            r'\.\s+another\s+(?:task|one)\s+(?:is\s+)?',
-            r',\s+another\s+(?:task|one)\s+(?:is\s+)?',
+            r'\.\s+another\s+(?:task|one)?\s*(?:is\s+)?',
+            r',\s+another\s+(?:task|one)?\s*(?:is\s+)?',
             r'\.\s+plus\s+',
             r',\s+plus\s+',
+            r'\s+then\s+',
         ]
 
         for sep in separators:
@@ -1454,6 +1454,40 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
                 if len(tasks) >= 2:
                     return tasks
+
+        # Pattern 3: Multiple names with actions - "Name1 action1, Name2 action2"
+        # Look for pattern: CapitalName + verb/action, repeated
+        name_action_pattern = r'([A-Z][a-z]+)\s+(?:needs?\s+to\s+|should\s+|must\s+|has\s+to\s+|will\s+)?(\w+)'
+        matches = re.findall(name_action_pattern, message)
+
+        if len(matches) >= 2:
+            # Try to split by comma or "and" between name-action pairs
+            # Split by comma first
+            comma_parts = re.split(r',\s*', message)
+            if len(comma_parts) >= 2:
+                tasks = []
+                for part in comma_parts:
+                    part = part.strip()
+                    # Remove leading "and"
+                    part = re.sub(r'^and\s+', '', part, flags=re.IGNORECASE)
+                    if part and len(part) > 5:
+                        tasks.append(part)
+                if len(tasks) >= 2:
+                    return tasks
+
+            # Try splitting by " and " if commas didn't work
+            and_parts = re.split(r'\s+and\s+', message, flags=re.IGNORECASE)
+            if len(and_parts) >= 2:
+                tasks = [p.strip() for p in and_parts if p.strip() and len(p.strip()) > 5]
+                if len(tasks) >= 2:
+                    return tasks
+
+        # Pattern 4: Semicolon separated
+        if ';' in message:
+            parts = message.split(';')
+            tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
+            if len(tasks) >= 2:
+                return tasks
 
         # No multiple tasks detected
         return [message]
