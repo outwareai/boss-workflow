@@ -213,8 +213,12 @@ class IntentDetector:
             if "title:" in message and any(field in message for field in ["assignee:", "priority:", "deadline:", "description:"]):
                 return UserIntent.CREATE_TASK, {"message": message, "is_formatted_spec": True}
 
-            # "Submit new task" or "create new task" = task creation for boss
-            if any(phrase in message for phrase in ["submit new task", "create new task", "new task:", "add new task", "submit task"]):
+            # "Submit new task", "create new task", "add a task" = task creation for boss
+            task_creation_phrases = [
+                "submit new task", "create new task", "new task:", "add new task", "submit task",
+                "add a task", "add task", "create a task", "create task", "make a task", "make task"
+            ]
+            if any(phrase in message for phrase in task_creation_phrases):
                 return UserIntent.CREATE_TASK, {"message": message}
 
             # Boss saying "submit" with task details = creating a task, NOT proof
@@ -297,8 +301,13 @@ class IntentDetector:
         if " is our " in message or " is the " in message or " handles " in message:
             return UserIntent.ADD_TEAM_MEMBER, {"message": message}
 
-        # Teaching/preferences
-        if message.startswith("when i say") or message.startswith("when i mention") or "always ask" in message or "default" in message:
+        # Teaching/preferences - be more specific to avoid false positives
+        teach_patterns = [
+            "when i say", "when i mention", "always ask about",
+            "my default is", "set default to", "default priority is",
+            "remember that", "learn that", "teach you"
+        ]
+        if any(phrase in message for phrase in teach_patterns):
             return UserIntent.TEACH_PREFERENCE, {"message": message}
 
         # Clear/delete/archive tasks - BEFORE general task creation matching

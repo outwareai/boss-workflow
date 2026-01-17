@@ -34,6 +34,7 @@ async def run_tests():
         ("Sarah needs to update the docs by tomorrow", UserIntent.CREATE_TASK, True, "Task with deadline"),
         ("assign John to review the PR urgent", UserIntent.CREATE_TASK, True, "Urgent task"),
         ("create new task for mayank", UserIntent.CREATE_TASK, True, "Explicit create"),
+        ("Add a task to mayank to fix UI with dropdown by default", UserIntent.CREATE_TASK, True, "Add task with 'by default'"),
 
         # Formatted task spec
         ("submit new task\n\nTitle: Fix bug\nAssignee: mayank", UserIntent.CREATE_TASK, True, "Formatted spec"),
