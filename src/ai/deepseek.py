@@ -265,6 +265,28 @@ class DeepSeekClient:
             max_tokens=2000
         )
 
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 2000
+    ):
+        """
+        Simple chat method for direct API calls.
+        Returns an object with choices[0].message.content like OpenAI SDK.
+        """
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Chat API error: {e}")
+            raise
+
     async def transcribe_voice(self, audio_file_path: str) -> str:
         """
         Transcribe a voice message.

@@ -213,12 +213,18 @@ class IntentDetector:
             if "title:" in message and any(field in message for field in ["assignee:", "priority:", "deadline:", "description:"]):
                 return UserIntent.CREATE_TASK, {"message": message, "is_formatted_spec": True}
 
-            # "Submit new task", "create new task", "add a task" = task creation for boss
+            # "Submit new task", "create new task", "add a task", "task for X:" = task creation for boss
             task_creation_phrases = [
                 "submit new task", "create new task", "new task:", "add new task", "submit task",
                 "add a task", "add task", "create a task", "create task", "make a task", "make task"
             ]
             if any(phrase in message for phrase in task_creation_phrases):
+                return UserIntent.CREATE_TASK, {"message": message}
+
+            # "task for john:" or "task for sarah to" patterns
+            import re
+            task_for_pattern = re.match(r'task for\s+(\w+)\s*[:\-]?\s*(.+)?', message, re.IGNORECASE)
+            if task_for_pattern:
                 return UserIntent.CREATE_TASK, {"message": message}
 
             # Boss saying "submit" with task details = creating a task, NOT proof

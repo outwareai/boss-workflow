@@ -133,8 +133,34 @@ class UnifiedHandler:
         if spec_session and spec_session.get("awaiting_answers"):
             return await self._handle_spec_answer(user_id, message, user_name)
 
-        # Check for active task preview - user may be providing corrections
+        # Check for active task conversation - user may be confirming/cancelling or providing corrections
         active_conv = await self.context.get_active_conversation(user_id)
+
+        # Handle AWAITING_ANSWER stage - user might want to skip questions or cancel
+        if active_conv and active_conv.stage == ConversationStage.AWAITING_ANSWER:
+            msg_lower = message.lower().strip()
+
+            # User says "no" or "cancel" = cancel task creation entirely
+            if msg_lower in ["no", "cancel", "nevermind", "stop"]:
+                await self.context.clear_active_conversation(user_id)
+                return "Task cancelled. What would you like to do?", None
+
+            # User says "yes", "ok", "skip" etc. = skip questions and create task directly
+            skip_phrases = ["yes", "y", "ok", "skip", "just create", "create it", "go ahead", "confirm",
+                           "looks good", "lgtm", "good", "perfect", "fine", "sure"]
+            if msg_lower in skip_phrases:
+                # Generate spec and finalize in one step
+                prefs = await self.prefs.get_preferences(user_id)
+                # First generate the spec
+                _, spec = await self.clarifier.generate_spec_preview(
+                    conversation=active_conv,
+                    preferences=prefs.to_dict()
+                )
+                active_conv.generated_spec = spec
+                # Then finalize directly (skip showing preview again)
+                return await self._finalize_task(active_conv, user_id)
+
+        # Handle PREVIEW stage - user is responding to task preview
         if active_conv and active_conv.stage == ConversationStage.PREVIEW:
             msg_lower = message.lower().strip()
 
@@ -161,7 +187,7 @@ class UnifiedHandler:
 
             # User just says "no" = cancel
             elif msg_lower == "no":
-                await self.context.clear_conversation(user_id)
+                await self.context.clear_active_conversation(user_id)
                 return "Task cancelled. What would you like to do?", None
 
             # User says "yes" = confirm and create
