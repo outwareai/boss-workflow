@@ -2141,21 +2141,41 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 deadline_str = f" | Due: {deadline[:10]}" if deadline else ""
 
                 # Build response in card format
+                from datetime import datetime
+                import random
+                task_id_preview = f"TASK-{datetime.now().strftime('%Y%m%d')}-{random.randint(100,999)}"
+
                 priority_text = priority.capitalize()
                 effort = spec.get("estimated_effort", "")
                 deadline_display = f" | Due: {deadline[:10]}" if deadline else ""
                 effort_display = f" | Effort: {effort}" if effort else ""
+                description = spec.get("description", "")
+                acceptance_criteria = spec.get("acceptance_criteria", [])
 
                 task_lines = [
-                    f"**{task_entry['index']}. Task:** {title}",
+                    f"**{task_entry['index']}. [{task_id_preview}] {title}**",
                     f"   Assignee: {assignee}{effort_display} | Priority: {priority_text} {p_emoji}{deadline_display}"
                 ]
+
+                # Show description snippet
+                if description:
+                    desc_preview = description[:120] + "..." if len(description) > 120 else description
+                    task_lines.append(f"   Description: {desc_preview}")
+
+                # Show acceptance criteria
+                if acceptance_criteria:
+                    task_lines.append(f"   **Acceptance Criteria ({len(acceptance_criteria)}):**")
+                    for i, ac in enumerate(acceptance_criteria[:3], 1):
+                        ac_text = ac if isinstance(ac, str) else ac.get("description", str(ac))
+                        task_lines.append(f"      • {ac_text[:70]}{'...' if len(ac_text) > 70 else ''}")
+                    if len(acceptance_criteria) > 3:
+                        task_lines.append(f"      ... and {len(acceptance_criteria) - 3} more")
 
                 # Show subtasks
                 subtasks = spec.get("subtasks", [])
                 if subtasks:
                     task_lines.append(f"   **Subtasks ({len(subtasks)}):**")
-                    for i, st in enumerate(subtasks[:5], 1):  # Show max 5 subtasks
+                    for i, st in enumerate(subtasks[:5], 1):
                         st_title = st.get("title", str(st)) if isinstance(st, dict) else str(st)
                         task_lines.append(f"      {i}. {st_title[:60]}{'...' if len(st_title) > 60 else ''}")
                     if len(subtasks) > 5:
@@ -2306,14 +2326,34 @@ Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             effort_str = f" | Effort: {effort}" if effort else ""
 
             # Build detailed preview in card format
+            from datetime import datetime
+            import random
+            task_id_preview = f"TASK-{datetime.now().strftime('%Y%m%d')}-{random.randint(100,999)}"
+
             priority_text = priority.capitalize()
             deadline_display = f" | Due: {deadline[:10]}" if deadline else ""
             effort_display = f" | Effort: {effort}" if effort else ""
+            description = spec.get("description", "")
+            acceptance_criteria = spec.get("acceptance_criteria", [])
 
             preview_lines = [
-                f"**{task_entry['index']}. Task:** {title}",
+                f"**{task_entry['index']}. [{task_id_preview}] {title}**",
                 f"   Assignee: {assignee}{effort_display} | Priority: {priority_text} {priority_emoji}{deadline_display}"
             ]
+
+            # Show description snippet
+            if description:
+                desc_preview = description[:120] + "..." if len(description) > 120 else description
+                preview_lines.append(f"   Description: {desc_preview}")
+
+            # Show acceptance criteria
+            if acceptance_criteria:
+                preview_lines.append(f"   **Acceptance Criteria ({len(acceptance_criteria)}):**")
+                for i, ac in enumerate(acceptance_criteria[:3], 1):
+                    ac_text = ac if isinstance(ac, str) else ac.get("description", str(ac))
+                    preview_lines.append(f"      • {ac_text[:70]}{'...' if len(ac_text) > 70 else ''}")
+                if len(acceptance_criteria) > 3:
+                    preview_lines.append(f"      ... and {len(acceptance_criteria) - 3} more")
 
             # Show subtasks
             subtasks = spec.get("subtasks", [])
