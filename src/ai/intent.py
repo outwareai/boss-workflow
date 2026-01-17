@@ -207,6 +207,16 @@ class IntentDetector:
 
         # === GENERAL MATCHING ===
 
+        # Detect formatted task specs (from copy-pasted previews or manual entry)
+        # These look like "Title: X\nAssignee: Y" or "submit new task\n\nTitle: X"
+        if "title:" in message and any(field in message for field in ["assignee:", "priority:", "deadline:", "description:"]):
+            # This is a formatted task spec - extract and create
+            return UserIntent.CREATE_TASK, {"message": message, "is_formatted_spec": True}
+
+        # "Submit new task" or "create new task" followed by details
+        if any(phrase in message for phrase in ["submit new task", "create new task", "new task:", "add new task"]):
+            return UserIntent.CREATE_TASK, {"message": message}
+
         # Greetings
         if message in ["hi", "hello", "hey", "yo", "sup", "morning", "evening"]:
             return UserIntent.GREETING, {}

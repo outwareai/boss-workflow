@@ -1897,11 +1897,13 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             batch["awaiting_confirm"] = True
             self._batch_tasks[user_id] = batch
 
-            return f"""📋 **{len(batch['tasks'])} Tasks Ready**
+            num = len(batch['tasks'])
+            return f"""📋 **{num} Tasks Ready**
 
 {chr(10).join(responses)}
 
-Reply **yes** to create all, or specify changes.""", None
+**yes** = create all | **no** = cancel all
+Or per task: **1 yes 2 no** / **1 yes 2 edit**""", None
 
         # Questions needed - format them with numbers
         batch["awaiting_answers"] = True
@@ -2028,29 +2030,105 @@ Reply **yes** to create all, or specify changes.""", None
 
         self._batch_tasks[user_id] = batch
 
-        return f"""📋 **{len(batch['tasks'])} Tasks Ready:**
+        num_tasks = len(batch['tasks'])
+        return f"""📋 **{num_tasks} Tasks Ready:**
 
 {chr(10).join(previews)}
 
-Reply **yes** to create all, or **cancel** to abort.""", None
+**yes** = create all | **no** = cancel all
+Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
 
     async def _handle_batch_confirm(
         self, user_id: str, message: str, user_name: str
     ) -> Tuple[str, Optional[Dict]]:
-        """Handle confirmation to create all batch tasks."""
+        """Handle confirmation to create batch tasks - supports numbered responses."""
+        import re
+
         batch = self._batch_tasks.get(user_id)
         if not batch:
             return "No pending batch tasks.", None
 
         message_lower = message.lower().strip()
+        num_tasks = len(batch["tasks"])
 
-        # Check for cancel
-        if any(w in message_lower for w in ["cancel", "no", "stop", "abort"]):
+        # Check for cancel all
+        if message_lower in ["cancel", "cancel all", "stop", "abort", "nevermind"]:
             del self._batch_tasks[user_id]
             return "Batch cancelled. No tasks created.", None
 
-        # Check for confirmation
-        if any(w in message_lower for w in ["yes", "ok", "confirm", "create", "go", "do it"]):
+        # Check for numbered responses: "1 yes 2 no" or "1yes 2edit" etc.
+        numbered_pattern = r'(\d+)\s*(yes|no|cancel|edit|skip|ok|confirm)'
+        numbered_matches = re.findall(numbered_pattern, message_lower)
+
+        if numbered_matches:
+            # Process numbered responses
+            created_tasks = []
+            cancelled = []
+            needs_edit = []
+            errors = []
+
+            # Build action map from matches
+            actions = {}
+            for num_str, action in numbered_matches:
+                idx = int(num_str)
+                if 1 <= idx <= num_tasks:
+                    actions[idx] = action
+
+            for task_entry in batch["tasks"]:
+                idx = task_entry["index"]
+                action = actions.get(idx, None)
+
+                if action in ["yes", "ok", "confirm"]:
+                    # Create this task
+                    try:
+                        conv = task_entry["conversation"]
+                        if conv.generated_spec:
+                            response, _ = await self._finalize_task(conv, user_id)
+                            match = re.search(r'(TASK-[\w-]+)', response)
+                            if match:
+                                created_tasks.append(match.group(1))
+                            else:
+                                errors.append(f"Task {idx}: {response[:50]}")
+                    except Exception as e:
+                        errors.append(f"Task {idx}: Error - {str(e)[:30]}")
+
+                elif action in ["no", "cancel", "skip"]:
+                    cancelled.append(idx)
+
+                elif action == "edit":
+                    needs_edit.append(task_entry)
+
+            # Handle tasks needing edit - keep them in session
+            if needs_edit and not created_tasks and not cancelled:
+                # Only edits requested - ask what to change
+                edit_nums = [t["index"] for t in needs_edit]
+                return f"What would you like to change for task {', '.join(map(str, edit_nums))}?", None
+
+            # Clean up or keep for remaining edits
+            if needs_edit:
+                # Keep only tasks that need editing
+                batch["tasks"] = needs_edit
+                for i, t in enumerate(batch["tasks"], 1):
+                    t["index"] = i  # Renumber
+            else:
+                del self._batch_tasks[user_id]
+
+            # Build response
+            response_parts = []
+            if created_tasks:
+                response_parts.append(f"✅ Created: {', '.join(created_tasks)}")
+            if cancelled:
+                response_parts.append(f"❌ Cancelled: Task {', '.join(map(str, cancelled))}")
+            if needs_edit:
+                response_parts.append(f"✏️ Editing: Task {', '.join(map(str, [t['index'] for t in needs_edit]))}")
+                response_parts.append("\nWhat would you like to change?")
+            if errors:
+                response_parts.append(f"⚠️ Errors: {', '.join(errors)}")
+
+            return "\n".join(response_parts), None
+
+        # Check for simple "yes" = confirm all
+        if any(w in message_lower for w in ["yes", "yes all", "ok", "confirm", "create all", "go", "do it"]):
             created_tasks = []
             errors = []
 
@@ -2060,12 +2138,9 @@ Reply **yes** to create all, or **cancel** to abort.""", None
                     if not conv.generated_spec:
                         continue
 
-                    # Create the task
                     response, action = await self._finalize_task(conv, user_id)
 
                     if "Created" in response or "✅" in response:
-                        # Extract task ID from response
-                        import re
                         match = re.search(r'(TASK-[\w-]+)', response)
                         if match:
                             created_tasks.append(match.group(1))
@@ -2076,22 +2151,21 @@ Reply **yes** to create all, or **cancel** to abort.""", None
                     logger.error(f"Error creating batch task {task_entry['index']}: {e}")
                     errors.append(f"Task {task_entry['index']}: Error")
 
-            # Clean up batch session
             del self._batch_tasks[user_id]
 
-            # Build response
             if created_tasks and not errors:
                 return f"✅ **Created {len(created_tasks)} tasks:**\n• " + "\n• ".join(created_tasks), None
             elif created_tasks and errors:
-                return f"""✅ **Created {len(created_tasks)} tasks:**
-• {chr(10).join(created_tasks)}
-
-⚠️ **Issues:**
-• {chr(10).join(errors)}""", None
+                return f"✅ Created: {', '.join(created_tasks)}\n⚠️ Errors: {', '.join(errors)}", None
             else:
                 return "❌ Failed to create tasks. Please try again.", None
 
-        return "Reply **yes** to create all tasks, or **cancel** to abort.", None
+        # Check for simple "no" = cancel all
+        if message_lower == "no":
+            del self._batch_tasks[user_id]
+            return "Batch cancelled. No tasks created.", None
+
+        return f"Reply **yes** to create all {num_tasks} tasks, or use numbers: **1 yes 2 no** / **1 edit**", None
 
 
 # Singleton
