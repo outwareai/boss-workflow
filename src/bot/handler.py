@@ -62,32 +62,33 @@ class UnifiedHandler:
         photo_file_id: Optional[str] = None,
         photo_caption: Optional[str] = None,
         user_name: str = "User",
-        is_boss: bool = False
+        is_boss: bool = False,
+        source: str = "telegram"  # "telegram" or "discord"
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         Handle any incoming message.
+
+        Architecture:
+        - Telegram = Boss only (create tasks, approve, check status)
+        - Discord = Staff (see tasks, react to update status)
 
         Returns:
             Tuple of (response_text, optional_action_data)
             action_data might contain: send_to_boss, notify_user, etc.
         """
-        # Boss protection: Clear any stuck validation sessions
-        # Boss creates/reviews tasks, doesn't submit proof
-        if is_boss and user_id in self._validation_sessions:
-            # Check if boss is trying to do something new (not continue validation flow)
-            lower_msg = message.lower()
-            validation_keywords = ["yes", "no", "approve", "reject", "send"]
-            if not any(kw in lower_msg for kw in validation_keywords):
-                # Boss wants to do something else - clear the stuck session
-                del self._validation_sessions[user_id]
-                logger.info(f"Cleared stuck validation session for boss {user_id}")
+        # IMPORTANT: Telegram is boss-only interface
+        # All Telegram messages are from the boss - force is_boss=True
+        if source == "telegram":
+            is_boss = True
 
-        # Also clear pending reviews for boss
+        # Clear any stuck sessions for boss
+        if is_boss and user_id in self._validation_sessions:
+            del self._validation_sessions[user_id]
+            logger.info(f"Cleared validation session for boss {user_id}")
+
         if is_boss and user_id in self._pending_reviews:
-            lower_msg = message.lower()
-            if not any(kw in lower_msg for kw in ["yes", "no", "edit", "apply"]):
-                del self._pending_reviews[user_id]
-                logger.info(f"Cleared stuck review session for boss {user_id}")
+            del self._pending_reviews[user_id]
+            logger.info(f"Cleared review session for boss {user_id}")
 
         # Build context for intent detection
         context = await self._build_context(user_id, is_boss)
@@ -179,38 +180,42 @@ class UnifiedHandler:
         """Handle greetings."""
         return f"""Hey {user_name}! 👋
 
-Just tell me what you need:
-• Assign a task: "John needs to fix the login bug"
-• Mark done: "I finished the landing page"
+**Your Command Center:**
+• Create tasks: "Mayank needs to fix the login bug"
 • Check status: "What's pending?"
+• Email recap: "Check my emails"
 
-What's up?""", None
+Staff will see tasks on Discord and update their status there.
+
+What would you like to do?""", None
 
     async def _handle_help(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
     ) -> Tuple[str, None]:
         """Handle help requests."""
-        return """**How I work:**
+        return """**Boss Command Center** 🎯
 
-Just talk to me naturally!
+**Create & Assign Tasks:**
+• "Mayank needs to build the checkout page by Friday"
+• "Assign Sarah to fix the mobile menu - urgent"
 
-**Create tasks:**
-"Sarah needs to build the checkout page by Friday"
-"Fix the mobile menu bug - urgent"
+**Check Status:**
+• "What's pending?"
+• "Anything overdue?"
+• "Status" or "Overview"
 
-**Mark done:**
-"I finished the landing page"
-Then send screenshots/links as proof
+**Email:**
+• "Check my emails"
+• "Email recap"
 
-**Check things:**
-"What's pending?"
-"Anything overdue?"
+**Manage Team:**
+• "Mayank is our frontend dev"
+• "When I say ASAP, deadline is 4 hours"
 
-**Teach me:**
-"John is our backend dev"
-"When I say ASAP, deadline is 4 hours"
+**Review Submissions:**
+When staff complete tasks on Discord, you'll get notifications here to approve/reject.
 
-No commands needed - just chat!""", None
+Just chat naturally - no commands needed!""", None
 
     async def _handle_create_task(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
