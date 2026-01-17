@@ -276,19 +276,33 @@ class IntentDetector:
         import re
         task_ids = re.findall(r'TASK-[\w\-]+', message, re.IGNORECASE)
 
-        clear_keywords = ["clear", "delete", "remove", "cancel", "wipe"]
+        clear_keywords = ["clear", "delete", "remove", "wipe", "reset"]
+
+        # Check if message starts with or prominently features clear intent
+        clear_first = message.split()[0] if message.split() else ""
+        is_clear_intent = clear_first in clear_keywords
+
         if task_ids and any(kw in message for kw in clear_keywords):
             # Clearing specific tasks
             return UserIntent.CLEAR_TASKS, {"task_ids": task_ids, "message": message}
 
-        # Clear all tasks
-        clear_phrases = [
-            "clear all", "clear the", "clear tasks", "clear existing",
-            "delete all", "delete the tasks", "delete tasks", "delete existing",
-            "remove all tasks", "remove all the tasks", "remove existing",
-            "wipe all", "wipe tasks", "reset tasks", "reset all"
+        # Clear all tasks - more comprehensive detection
+        clear_patterns = [
+            # Exact phrases
+            "clear all", "clear the", "clear tasks", "clear existing", "clear every",
+            "delete all", "delete the tasks", "delete tasks", "delete existing", "delete every",
+            "remove all tasks", "remove all the tasks", "remove existing", "remove every",
+            "wipe all", "wipe tasks", "wipe everything",
+            "reset tasks", "reset all",
+            # Natural patterns
+            "get rid of all", "get rid of the tasks", "clean up tasks", "clean tasks",
+            "start fresh", "fresh start", "empty the tasks", "empty tasks"
         ]
-        if any(phrase in message for phrase in clear_phrases):
+        if any(phrase in message for phrase in clear_patterns):
+            return UserIntent.CLEAR_TASKS, {"task_ids": [], "message": message}
+
+        # Also catch "clear" at start of message followed by task-related words
+        if is_clear_intent and any(w in message for w in ["task", "all", "everything", "existing"]):
             return UserIntent.CLEAR_TASKS, {"task_ids": [], "message": message}
 
         archive_phrases = ["archive completed", "archive done", "archive old", "archive tasks"]

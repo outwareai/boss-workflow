@@ -914,16 +914,19 @@ Make the changes and submit again when ready!"""
                 # Actually clear the tasks
                 try:
                     # Get all tasks and mark as cancelled
-                    tasks = await self.sheets.get_tasks()
+                    tasks = await self.sheets.get_all_tasks()
                     count = 0
 
                     for task in tasks:
-                        if task.get("status") not in ["completed", "cancelled"]:
-                            await self.sheets.update_task_status(
-                                task_id=task.get("id"),
-                                new_status="cancelled"
+                        status = task.get("Status", task.get("status", ""))
+                        task_id = task.get("ID", task.get("id", ""))
+                        if status.lower() not in ["completed", "cancelled"] and task_id:
+                            success = await self.sheets.update_task(
+                                task_id=task_id,
+                                updates={"Status": "cancelled"}
                             )
-                            count += 1
+                            if success:
+                                count += 1
 
                     del self._pending_actions[user_id]
 
@@ -936,7 +939,7 @@ Make the changes and submit again when ready!"""
                     return f"✅ Cleared {count} task(s). They've been marked as cancelled.", None
 
                 except Exception as e:
-                    logger.error(f"Error clearing tasks: {e}")
+                    logger.error(f"Error clearing tasks: {e}", exc_info=True)
                     del self._pending_actions[user_id]
                     return "❌ Error clearing tasks. Please try again.", None
             else:
@@ -945,8 +948,8 @@ Make the changes and submit again when ready!"""
 
         # First time - ask for confirmation
         try:
-            tasks = await self.sheets.get_tasks()
-            active_count = sum(1 for t in tasks if t.get("status") not in ["completed", "cancelled"])
+            tasks = await self.sheets.get_all_tasks()
+            active_count = sum(1 for t in tasks if t.get("Status", t.get("status", "")).lower() not in ["completed", "cancelled"])
         except Exception:
             active_count = "unknown number of"
 
@@ -970,9 +973,9 @@ Reply **yes** to confirm or **no** to cancel.""", None
         for task_id in task_ids:
             task_id = task_id.upper()
             try:
-                success = await self.sheets.update_task_status(
+                success = await self.sheets.update_task(
                     task_id=task_id,
-                    new_status="cancelled"
+                    updates={"Status": "cancelled"}
                 )
                 if success:
                     cancelled.append(task_id)

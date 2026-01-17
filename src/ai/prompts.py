@@ -34,7 +34,7 @@ You have access to the user's preferences and team information to help fill in g
         pref_str = "\n".join([f"- {k}: {v}" for k, v in preferences.items()]) if preferences else "None set"
         team_str = "\n".join([f"- {name}: {role}" for name, role in team_info.items()]) if team_info else "None defined"
 
-        return f"""Analyze this task request and identify what information is missing or unclear.
+        return f"""Analyze this task request and extract all information. BE DECISIVE - proceed without questions when possible.
 
 USER'S MESSAGE:
 "{user_message}"
@@ -47,37 +47,46 @@ TEAM MEMBERS:
 
 {f"CONVERSATION HISTORY:{chr(10)}{conversation_history}" if conversation_history else ""}
 
-Analyze the message and respond with a JSON object containing:
+CRITICAL RULES:
+1. If an assignee is mentioned (name like "Mayank", "John", etc.), EXTRACT IT - don't ask about it
+2. If a deadline is mentioned ("by tomorrow", "today", "next week"), EXTRACT IT - don't ask about it
+3. If priority signals exist ("urgent", "ASAP", "when you can"), INFER IT - don't ask about it
+4. DEFAULT priority to "medium" if not specified - don't ask unless truly ambiguous
+5. ONLY ask questions if something is TRULY UNCLEAR, not just unspecified
+
+SET can_proceed_without_questions=TRUE when:
+- Assignee is identified (even partially - match against team members)
+- Task action is clear (what needs to be done)
+- Priority can be inferred or defaulted
+
+SET can_proceed_without_questions=FALSE ONLY when:
+- No assignee can be determined AND it's not a general task
+- The action itself is ambiguous (what exactly needs to be done?)
+
+Respond with JSON:
 {{
     "understood": {{
         "title": "extracted or inferred title",
-        "assignee": "extracted or inferred assignee (or null)",
-        "priority": "extracted or inferred priority (low/medium/high/urgent or null)",
+        "assignee": "extracted assignee (match against team members, or null if truly unknown)",
+        "priority": "low/medium/high/urgent (DEFAULT to medium if not explicit)",
         "deadline": "extracted deadline in ISO format (or null)",
         "description": "extracted description",
         "task_type": "bug/feature/task/research",
         "acceptance_criteria": ["inferred criteria..."]
     }},
-    "missing_info": ["list of missing important fields"],
+    "missing_info": ["ONLY truly missing critical fields"],
     "confidence": {{
         "title": 0.9,
-        "assignee": 0.5,
-        "priority": 0.7,
-        "deadline": 0.3
+        "assignee": 0.8,
+        "priority": 0.8,
+        "deadline": 0.5
     }},
-    "can_proceed_without_questions": true/false,
+    "can_proceed_without_questions": true,
     "urgency_signals": ["any urgency indicators found"],
-    "suggested_questions": [
-        {{
-            "field": "priority",
-            "question": "What priority should this have?",
-            "options": ["High - needed today", "Medium - this week", "Low - when possible"]
-        }}
-    ]
+    "suggested_questions": []
 }}
 
-Only include questions for fields with confidence < 0.7 that are important.
-Prioritize questions that significantly impact the task scope or deadline."""
+REMEMBER: The boss is busy. Only ask questions if ABSOLUTELY necessary. Default to proceeding."""
 
     @staticmethod
     def generate_questions_prompt(
