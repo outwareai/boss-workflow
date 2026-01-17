@@ -262,6 +262,145 @@ Create a comprehensive but readable weekly report that:
 Make it insightful and actionable."""
 
     @staticmethod
+    def analyze_spec_readiness_prompt(
+        task_id: str,
+        title: str,
+        description: str,
+        assignee: Optional[str],
+        priority: str,
+        deadline: Optional[str],
+        task_type: str,
+        existing_notes: Optional[str] = None,
+        additional_context: Optional[str] = None
+    ) -> str:
+        """Analyze if we have enough information to create a detailed spec sheet."""
+
+        return f"""Analyze this task and determine if there's enough information to create a comprehensive spec sheet for the team.
+
+TASK INFORMATION:
+- Task ID: {task_id}
+- Title: {title}
+- Description: {description or "Not provided"}
+- Assignee: {assignee or "Not assigned"}
+- Priority: {priority}
+- Deadline: {deadline or "Not set"}
+- Type: {task_type}
+{f"- Notes: {existing_notes}" if existing_notes else ""}
+{f"- Additional Context: {additional_context}" if additional_context else ""}
+
+A GOOD SPEC SHEET needs:
+1. Clear understanding of WHAT needs to be done (specific requirements)
+2. Understanding of WHY (business context/purpose)
+3. Scope boundaries (what's included vs excluded)
+4. Testable acceptance criteria
+5. Technical approach hints (if applicable)
+
+Analyze and determine:
+- Do we have enough to write a detailed spec?
+- If not, what's CRITICALLY missing?
+
+Respond with JSON:
+{{
+    "has_enough_info": true/false,
+    "confidence": 0.8,
+    "missing_critical_info": [
+        "What exactly should happen when...",
+        "Who is the target user for this feature?"
+    ],
+    "questions_to_ask": [
+        {{
+            "question": "What should happen when the user clicks submit?",
+            "options": ["Show confirmation", "Redirect to dashboard", "Stay on page"],
+            "why_needed": "To define the success flow"
+        }},
+        {{
+            "question": "Are there any edge cases to handle?",
+            "options": null,
+            "why_needed": "To ensure completeness"
+        }}
+    ],
+    "can_proceed_with_assumptions": true/false,
+    "assumptions_if_proceed": [
+        "Assuming standard error handling",
+        "Assuming mobile responsive design"
+    ]
+}}
+
+RULES:
+- If description is vague like "fix the bug" or "update the page", you NEED more info
+- If it's a feature, you need to understand the user flow
+- If it's a bug, you need to understand the current vs expected behavior
+- Limit questions to 3 MAX - ask only the most important ones
+- Offer multiple choice options when possible for faster answers"""
+
+    @staticmethod
+    def generate_spec_questions_prompt(
+        task_info: Dict[str, Any],
+        missing_info: List[str],
+        conversation_history: str = ""
+    ) -> str:
+        """Generate natural clarifying questions for spec generation."""
+
+        return f"""Based on this task information and what's missing, generate clarifying questions.
+
+TASK INFO:
+{task_info}
+
+MISSING CRITICAL INFO:
+{missing_info}
+
+CONVERSATION SO FAR:
+{conversation_history if conversation_history else "None yet"}
+
+Generate 1-3 natural, conversational questions that will help create a detailed spec.
+
+Rules:
+1. Be conversational, not formal
+2. Offer options where possible (faster to answer)
+3. Focus on the MOST important missing pieces
+4. Don't ask about things you can reasonably assume
+
+Respond with JSON:
+{{
+    "intro_message": "Brief context before questions",
+    "questions": [
+        {{
+            "text": "The question to ask",
+            "options": ["Option A", "Option B", "Option C"],
+            "field": "what this clarifies (e.g., 'scope', 'flow', 'requirements')"
+        }}
+    ]
+}}"""
+
+    @staticmethod
+    def process_spec_answer_prompt(
+        question: str,
+        answer: str,
+        current_info: Dict[str, Any]
+    ) -> str:
+        """Process user's answer to a spec clarifying question."""
+
+        return f"""Process this answer and extract useful information for the spec.
+
+QUESTION: {question}
+ANSWER: {answer}
+CURRENT TASK INFO: {current_info}
+
+Extract any useful details from the answer that should be included in the spec.
+
+Respond with JSON:
+{{
+    "extracted_info": {{
+        "key": "value"
+    }},
+    "should_add_to_description": "text to append to description if any",
+    "acceptance_criteria": ["any criteria that can be derived"],
+    "technical_notes": "any technical implications",
+    "needs_followup": false,
+    "followup_question": null
+}}"""
+
+    @staticmethod
     def generate_detailed_spec_prompt(
         task_id: str,
         title: str,

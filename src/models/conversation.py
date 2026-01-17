@@ -19,6 +19,10 @@ class ConversationStage(str, Enum):
     COMPLETED = "completed"          # Task created successfully
     ABANDONED = "abandoned"          # Conversation timed out or cancelled
     ERROR = "error"                  # Error occurred
+    # Spec sheet generation stages
+    SPEC_ANALYZING = "spec_analyzing"      # Analyzing if we have enough for a spec
+    SPEC_CLARIFYING = "spec_clarifying"    # Asking questions to build the spec
+    SPEC_GENERATING = "spec_generating"    # Generating the detailed spec
 
 
 class ClarifyingQuestion(BaseModel):

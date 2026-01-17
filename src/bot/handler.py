@@ -56,6 +56,7 @@ class UnifiedHandler:
         self._pending_reviews: Dict[str, Dict] = {}  # user_id -> review session
         self._pending_actions: Dict[str, Dict] = {}  # user_id -> pending dangerous action
         self._batch_tasks: Dict[str, Dict] = {}  # user_id -> batch task session
+        self._spec_sessions: Dict[str, Dict] = {}  # user_id -> spec generation session
 
     async def handle_message(
         self,
@@ -126,6 +127,11 @@ class UnifiedHandler:
                 return await self._handle_batch_answers(user_id, message, user_name)
             elif batch_session.get("awaiting_confirm"):
                 return await self._handle_batch_confirm(user_id, message, user_name)
+
+        # Check for spec generation session (answering clarifying questions)
+        spec_session = self._spec_sessions.get(user_id)
+        if spec_session and spec_session.get("awaiting_answers"):
+            return await self._handle_spec_answer(user_id, message, user_name)
 
         # Detect intent
         intent, data = await self.intent.detect_intent(message, context)
@@ -1068,8 +1074,20 @@ Reply **yes** to confirm or **no** to cancel.""", None
             task_type = task_data.get("Type", task_data.get("type", "task"))
             notes = task_data.get("Notes", task_data.get("notes", ""))
 
-            # Generate detailed spec using AI
-            prompt = PromptTemplates.generate_detailed_spec_prompt(
+            # Store task info for the session
+            task_info = {
+                "task_id": task_id,
+                "title": title,
+                "description": description,
+                "assignee": assignee,
+                "priority": priority,
+                "deadline": deadline,
+                "task_type": task_type,
+                "notes": notes,
+            }
+
+            # Step 1: Analyze if we have enough info for a good spec
+            analysis_prompt = PromptTemplates.analyze_spec_readiness_prompt(
                 task_id=task_id,
                 title=title,
                 description=description,
@@ -1082,66 +1100,257 @@ Reply **yes** to confirm or **no** to cancel.""", None
 
             response = await self.ai.chat(
                 messages=[
+                    {"role": "system", "content": "You analyze task information to determine if there's enough detail for a comprehensive spec. Respond only with JSON."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0.2
+            )
+
+            try:
+                content = response.choices[0].message.content
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                analysis = json.loads(content.strip())
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse analysis JSON: {e}")
+                # Proceed anyway with generation
+                analysis = {"has_enough_info": True}
+
+            # If we have enough info, generate the spec directly
+            if analysis.get("has_enough_info", False) and analysis.get("confidence", 0) >= 0.7:
+                return await self._generate_and_post_spec(task_info, user_name)
+
+            # Not enough info - start a conversation
+            questions = analysis.get("questions_to_ask", [])
+            if not questions:
+                # No questions but not confident - generate anyway with assumptions
+                return await self._generate_and_post_spec(task_info, user_name)
+
+            # Start spec session
+            self._spec_sessions[user_id] = {
+                "task_info": task_info,
+                "questions": questions,
+                "current_question": 0,
+                "answers": [],
+                "additional_context": "",
+                "awaiting_answers": True,
+                "conversation_history": []
+            }
+
+            # Format the first question(s)
+            response_lines = [
+                f"📋 **Generating spec for {task_id}**: {title}",
+                "",
+                "I need a bit more info to create a detailed spec:",
+                ""
+            ]
+
+            # Show questions with numbers for easy answering
+            for i, q in enumerate(questions[:3], 1):
+                question_text = q.get("question", q) if isinstance(q, dict) else q
+                response_lines.append(f"**{i}.** {question_text}")
+
+                options = q.get("options", []) if isinstance(q, dict) else []
+                if options:
+                    for j, opt in enumerate(options, 1):
+                        response_lines.append(f"   {j}) {opt}")
+                response_lines.append("")
+
+            response_lines.append("Reply with your answers (e.g., \"1. option2  2. my custom answer\")")
+            response_lines.append("Or say `/skip` to generate with assumptions.")
+
+            return "\n".join(response_lines), None
+
+        except Exception as e:
+            logger.error(f"Error starting spec generation for {task_id}: {e}")
+            return f"❌ Error: {str(e)}", None
+
+    async def _handle_spec_answer(
+        self, user_id: str, message: str, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle user's answers to spec clarifying questions."""
+        import json
+        from ..ai.prompts import PromptTemplates
+
+        session = self._spec_sessions.get(user_id)
+        if not session:
+            return "No active spec session. Use `/spec TASK-ID` to start.", None
+
+        # Check for skip/cancel
+        msg_lower = message.lower().strip()
+        if msg_lower in ["skip", "/skip", "generate", "just generate", "done"]:
+            # Generate with what we have
+            del self._spec_sessions[user_id]
+            return await self._generate_and_post_spec(session["task_info"], user_name, session.get("additional_context"))
+
+        if msg_lower in ["cancel", "/cancel", "nevermind", "stop"]:
+            del self._spec_sessions[user_id]
+            return "Spec generation cancelled.", None
+
+        # Parse answers - support formats like "1. answer1  2. answer2" or just a single answer
+        questions = session.get("questions", [])
+
+        # Add the user's message to additional context
+        session["additional_context"] = session.get("additional_context", "") + f"\nUser said: {message}"
+        session["conversation_history"].append({"role": "user", "content": message})
+
+        # Process the answer using AI
+        try:
+            task_info = session["task_info"]
+            process_prompt = PromptTemplates.process_spec_answer_prompt(
+                question=str(questions),
+                answer=message,
+                current_info=task_info
+            )
+
+            response = await self.ai.chat(
+                messages=[
+                    {"role": "system", "content": "Extract useful information from user answers for spec generation. Respond with JSON."},
+                    {"role": "user", "content": process_prompt}
+                ],
+                temperature=0.2
+            )
+
+            content = response.choices[0].message.content
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            try:
+                processed = json.loads(content.strip())
+
+                # Update task info with extracted details
+                if processed.get("should_add_to_description"):
+                    task_info["description"] = task_info.get("description", "") + "\n" + processed["should_add_to_description"]
+
+                if processed.get("acceptance_criteria"):
+                    task_info["extra_criteria"] = task_info.get("extra_criteria", []) + processed["acceptance_criteria"]
+
+                if processed.get("technical_notes"):
+                    task_info["technical_notes"] = processed["technical_notes"]
+
+                # Check if we need followup
+                if processed.get("needs_followup") and processed.get("followup_question"):
+                    session["questions"] = [{"question": processed["followup_question"]}]
+                    return f"Got it! One more thing: {processed['followup_question']}", None
+
+            except json.JSONDecodeError:
+                pass  # Continue anyway
+
+        except Exception as e:
+            logger.error(f"Error processing spec answer: {e}")
+
+        # We have the answers - generate the spec
+        del self._spec_sessions[user_id]
+        return await self._generate_and_post_spec(
+            session["task_info"],
+            user_name,
+            session.get("additional_context")
+        )
+
+    async def _generate_and_post_spec(
+        self,
+        task_info: Dict[str, Any],
+        user_name: str,
+        additional_context: str = None
+    ) -> Tuple[str, Optional[Dict]]:
+        """Generate and post the spec sheet to Discord."""
+        from ..ai.prompts import PromptTemplates
+        import json
+
+        task_id = task_info["task_id"]
+        title = task_info["title"]
+        description = task_info["description"]
+        assignee = task_info["assignee"]
+        priority = task_info["priority"]
+        deadline = task_info["deadline"]
+        task_type = task_info["task_type"]
+        notes = task_info.get("notes", "")
+
+        # Combine notes with additional context
+        full_context = notes
+        if additional_context:
+            full_context = f"{notes}\n\nAdditional context from conversation:\n{additional_context}"
+
+        # Generate detailed spec using AI
+        prompt = PromptTemplates.generate_detailed_spec_prompt(
+            task_id=task_id,
+            title=title,
+            description=description,
+            assignee=assignee,
+            priority=priority,
+            deadline=deadline,
+            task_type=task_type,
+            existing_notes=full_context if full_context else None,
+            team_context=str(task_info.get("extra_criteria", []))
+        )
+
+        try:
+            response = await self.ai.chat(
+                messages=[
                     {"role": "system", "content": "You create detailed, practical task specifications. Respond only with JSON."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3
             )
 
-            try:
-                # Parse JSON response
-                content = response.choices[0].message.content
-                # Handle markdown code blocks
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
+            content = response.choices[0].message.content
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
 
-                spec_data = json.loads(content.strip())
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse spec JSON: {e}")
-                return "❌ Failed to generate spec. AI response format error.", None
-
-            # Post spec to Discord
-            discord_msg_id = await self.discord.post_spec_sheet(
-                task_id=task_id,
-                title=title,
-                assignee=assignee or "Unassigned",
-                priority=priority,
-                deadline=deadline if deadline else None,
-                description=spec_data.get("expanded_description", description),
-                acceptance_criteria=spec_data.get("acceptance_criteria", []),
-                technical_details=spec_data.get("technical_details"),
-                dependencies=spec_data.get("dependencies"),
-                notes=spec_data.get("additional_notes"),
-                estimated_effort=spec_data.get("estimated_effort")
-            )
-
-            if discord_msg_id:
-                # Build response with preview
-                response_lines = [
-                    f"✅ **Spec sheet posted for {task_id}**",
-                    "",
-                    f"📋 **{title}**",
-                    f"👤 {assignee or 'Unassigned'} | ⏱️ {spec_data.get('estimated_effort', 'Unknown')}",
-                    "",
-                    "**Acceptance Criteria:**"
-                ]
-                for i, criterion in enumerate(spec_data.get("acceptance_criteria", [])[:3], 1):
-                    response_lines.append(f"  {i}. {criterion}")
-                if len(spec_data.get("acceptance_criteria", [])) > 3:
-                    response_lines.append(f"  ... and {len(spec_data.get('acceptance_criteria', [])) - 3} more")
-
-                response_lines.append("")
-                response_lines.append("📤 Posted to #specs channel")
-
-                return "\n".join(response_lines), None
-            else:
-                return "⚠️ Spec generated but failed to post to Discord. Check webhook configuration.", None
-
+            spec_data = json.loads(content.strip())
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse spec JSON: {e}")
+            return "❌ Failed to generate spec. AI response format error.", None
         except Exception as e:
-            logger.error(f"Error generating spec for {task_id}: {e}")
+            logger.error(f"Error generating spec: {e}")
             return f"❌ Error generating spec: {str(e)}", None
+
+        # Merge any extra criteria from conversation
+        all_criteria = spec_data.get("acceptance_criteria", [])
+        if task_info.get("extra_criteria"):
+            all_criteria.extend(task_info["extra_criteria"])
+
+        # Post spec to Discord
+        discord_msg_id = await self.discord.post_spec_sheet(
+            task_id=task_id,
+            title=title,
+            assignee=assignee or "Unassigned",
+            priority=priority,
+            deadline=deadline if deadline else None,
+            description=spec_data.get("expanded_description", description),
+            acceptance_criteria=all_criteria,
+            technical_details=spec_data.get("technical_details") or task_info.get("technical_notes"),
+            dependencies=spec_data.get("dependencies"),
+            notes=spec_data.get("additional_notes"),
+            estimated_effort=spec_data.get("estimated_effort")
+        )
+
+        if discord_msg_id:
+            response_lines = [
+                f"✅ **Spec sheet posted for {task_id}**",
+                "",
+                f"📋 **{title}**",
+                f"👤 {assignee or 'Unassigned'} | ⏱️ {spec_data.get('estimated_effort', 'Unknown')}",
+                "",
+                "**Acceptance Criteria:**"
+            ]
+            for i, criterion in enumerate(all_criteria[:3], 1):
+                response_lines.append(f"  {i}. {criterion}")
+            if len(all_criteria) > 3:
+                response_lines.append(f"  ... and {len(all_criteria) - 3} more")
+
+            response_lines.append("")
+            response_lines.append("📤 Posted to #specs channel")
+
+            return "\n".join(response_lines), None
+        else:
+            return "⚠️ Spec generated but failed to post to Discord. Check webhook configuration.", None
 
     async def _handle_templates(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
