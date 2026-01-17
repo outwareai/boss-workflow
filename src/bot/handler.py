@@ -273,20 +273,27 @@ class UnifiedHandler:
         # Step 2: Handle create action(s)
         # The second part might contain multiple tasks separated by "and another"
         task_parts = [second_part]
-        if " and another " in second_part:
-            task_parts = second_part.split(" and another ")
-        elif " another one " in second_part:
-            idx = second_part.find(" another one ")
+        second_lower = second_part.lower()
+        if " and another " in second_lower:
+            # Split while preserving original case
+            import re
+            task_parts = re.split(r'\s+and\s+another\s+', second_part, flags=re.IGNORECASE)
+        elif " another one " in second_lower:
+            idx = second_lower.find(" another one ")
             task_parts = [second_part[:idx], second_part[idx + 13:]]
 
-        for task_desc in task_parts:
-            task_desc = task_desc.strip()
-            if not task_desc:
-                continue
+        # Clean up task parts
+        task_parts = [t.strip() for t in task_parts if t.strip()]
 
-            # Reconstruct full message for task creation
+        if len(task_parts) > 1:
+            # Multiple tasks - use batch system to ensure all get created on "yes"
+            prefs = await self.prefs.get_preferences(user_id)
+            batch_response, _ = await self._handle_batch_tasks(user_id, task_parts, prefs, user_name)
+            responses.append(batch_response)
+        elif task_parts:
+            # Single task - normal flow
             create_response, _ = await self._handle_create_task(
-                user_id, task_desc, {"message": task_desc}, context, user_name
+                user_id, task_parts[0], {"message": task_parts[0]}, context, user_name
             )
             responses.append(create_response)
 
