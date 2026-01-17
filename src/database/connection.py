@@ -107,12 +107,14 @@ class Database:
 
     async def health_check(self) -> dict:
         """Perform health check on database."""
+        from sqlalchemy import text
+
         try:
             if not self._initialized:
                 await self.initialize()
 
             async with self.session() as session:
-                result = await session.execute("SELECT 1")
+                result = await session.execute(text("SELECT 1"))
                 result.scalar()
 
             return {

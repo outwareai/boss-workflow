@@ -100,29 +100,45 @@ Just send me a message to get started!"""
 • `/skip` - Skip current question
 • `/done` - Finalize with current info
 • `/cancel` - Cancel task creation
+• `/templates` - View available task templates
 
 **Task Management:**
 • `/status` - Current task overview
 • `/note [task-id] [note]` - Add note to task
-• `/delay [task-id] [new-deadline] [reason]` - Delay a task
-• `/complete [task-id]` - Mark task complete
-• `/undone [task-id] [reason]` - Reopen completed task
+• `/delay [task-id] [deadline] [reason]` - Delay a task
+
+**Search & Filter:**
+• `/search [query]` - Search tasks by keyword
+• `/search @John` - Tasks assigned to John
+• `/search #urgent` - Urgent priority tasks
+• `/search status:blocked` - Blocked tasks
+• `/search due:today` - Tasks due today
+
+**Bulk Operations:**
+• `/complete ID ID ID` - Mark multiple tasks done
+• `/block ID ID ID [reason]` - Block multiple tasks
+• `/assign @Person ID ID` - Assign tasks to someone
 
 **Reports:**
 • `/weekly` - Generate weekly summary
 • `/daily` - Today's task summary
 • `/overdue` - List overdue tasks
 
-**Settings:**
-• `/preferences` - View your preferences
-• `/teach` - Teach me something new
+**Team & Settings:**
 • `/team` - View team members
 • `/addteam [name] [role]` - Add team member
+• `/preferences` - View your preferences
+• `/teach` - Teach me your preferences
+
+**Validation (Boss):**
+• `/pending` - View pending validations
+• `/approve [task-id] [message]` - Approve work
+• `/reject [task-id] [feedback]` - Request changes
 
 **Tips:**
-• You can just send a message without any command
-• Voice messages are supported
-• React to Discord messages to update status
+• Natural language works! "What's John working on?"
+• Templates auto-detect: "bug: login crashes"
+• React on Discord: ✅🚧🚫⏸️🔄
 
 Need more help? Just ask!"""
 
@@ -359,6 +375,161 @@ Or use `/addteam [name] [role]`"""
             lines.append("")
 
         lines.append(f"Total: {len(overdue)} overdue task(s)")
+
+        return "\n".join(lines)
+
+    # ==================== SEARCH & BULK COMMANDS ====================
+
+    async def handle_search(self, user_id: str, query: str) -> str:
+        """Handle /search command - search tasks with filters."""
+        import re
+
+        # Parse special operators
+        assignee = None
+        status = None
+        priority = None
+        due = None
+        text_query = query
+
+        # Extract @mention for assignee
+        assignee_match = re.search(r'@(\w+)', query)
+        if assignee_match:
+            assignee = assignee_match.group(1)
+            text_query = text_query.replace(assignee_match.group(0), '').strip()
+
+        # Extract #priority
+        priority_match = re.search(r'#(urgent|high|medium|low)', query, re.IGNORECASE)
+        if priority_match:
+            priority = priority_match.group(1)
+            text_query = text_query.replace(priority_match.group(0), '').strip()
+
+        # Extract status:value
+        status_match = re.search(r'status:(\w+)', query, re.IGNORECASE)
+        if status_match:
+            status = status_match.group(1)
+            text_query = text_query.replace(status_match.group(0), '').strip()
+
+        # Extract due:value
+        due_match = re.search(r'due:(today|week|overdue)', query, re.IGNORECASE)
+        if due_match:
+            due = due_match.group(1)
+            text_query = text_query.replace(due_match.group(0), '').strip()
+
+        # Search
+        results = await self.sheets.search_tasks(
+            query=text_query if text_query else None,
+            assignee=assignee,
+            status=status,
+            priority=priority,
+            due=due,
+            limit=10
+        )
+
+        if not results:
+            return f"No tasks found matching: {query}"
+
+        lines = [f"🔍 **Search Results** ({len(results)} found)", ""]
+
+        for task in results:
+            priority_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(
+                task.get('Priority', '').lower(), "⚪"
+            )
+            lines.append(f"{priority_emoji} **{task.get('ID', 'N/A')}**: {task.get('Title', 'Untitled')[:40]}")
+            lines.append(f"   {task.get('Assignee', 'Unassigned')} | {task.get('Status', 'pending')}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    async def handle_complete(self, user_id: str, task_ids: list) -> str:
+        """Handle /complete command - mark multiple tasks as completed."""
+        if not task_ids:
+            return "Please provide task IDs: `/complete TASK-001 TASK-002`"
+
+        success_count, failed = await self.sheets.bulk_update_status(
+            task_ids=task_ids,
+            new_status="completed"
+        )
+
+        # Post to Discord
+        if success_count > 0:
+            await self.discord.post_alert(
+                title="Tasks Completed",
+                message=f"{success_count} task(s) marked as completed",
+                alert_type="success"
+            )
+
+        if failed:
+            return f"✅ Completed {success_count} task(s)\n❌ Failed: {', '.join(failed)}"
+        return f"✅ Completed {success_count} task(s)!"
+
+    async def handle_block(self, user_id: str, task_ids: list, reason: str = "") -> str:
+        """Handle /block command - mark multiple tasks as blocked."""
+        if not task_ids:
+            return "Please provide task IDs: `/block TASK-001 TASK-002 [reason]`"
+
+        success_count, failed = await self.sheets.bulk_update_status(
+            task_ids=task_ids,
+            new_status="blocked",
+            note=reason if reason else "Blocked by boss"
+        )
+
+        # Post to Discord
+        if success_count > 0:
+            await self.discord.post_alert(
+                title="Tasks Blocked",
+                message=f"{success_count} task(s) blocked. {reason}",
+                alert_type="warning"
+            )
+
+        if failed:
+            return f"🚫 Blocked {success_count} task(s)\n❌ Failed: {', '.join(failed)}"
+        return f"🚫 Blocked {success_count} task(s)"
+
+    async def handle_assign(self, user_id: str, assignee: str, task_ids: list) -> str:
+        """Handle /assign command - assign multiple tasks to a person."""
+        if not task_ids:
+            return "Please provide task IDs: `/assign @John TASK-001 TASK-002`"
+
+        # Clean assignee
+        assignee = assignee.lstrip('@').strip()
+
+        success_count, failed = await self.sheets.bulk_assign(
+            task_ids=task_ids,
+            assignee=assignee
+        )
+
+        if failed:
+            return f"📋 Assigned {success_count} task(s) to {assignee}\n❌ Failed: {', '.join(failed)}"
+        return f"📋 Assigned {success_count} task(s) to {assignee}"
+
+    async def handle_templates(self, user_id: str) -> str:
+        """Handle /templates command - list available task templates."""
+        from ..memory.preferences import DEFAULT_TEMPLATES
+
+        lines = ["📝 **Task Templates**", ""]
+        lines.append("Templates auto-apply defaults when detected in your message:")
+        lines.append("")
+
+        for template in DEFAULT_TEMPLATES:
+            name = template["name"]
+            defaults = template["defaults"]
+            keywords = template["keywords"][:3]  # Show first 3 keywords
+
+            priority = defaults.get("priority", "medium")
+            priority_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+
+            lines.append(f"**{name.upper()}** {priority_emoji}")
+            lines.append(f"  Keywords: {', '.join(keywords)}")
+            lines.append(f"  Sets: type={defaults.get('task_type', 'task')}, priority={priority}")
+            if defaults.get("deadline_hours"):
+                lines.append(f"  Deadline: {defaults['deadline_hours']} hours")
+            lines.append("")
+
+        lines.append("─────────────────")
+        lines.append("**Usage examples:**")
+        lines.append("• \"bug: login page crashes\" → Bug template")
+        lines.append("• \"hotfix: payment failing\" → Hotfix template")
+        lines.append("• \"feature: add dark mode\" → Feature template")
 
         return "\n".join(lines)
 

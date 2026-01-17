@@ -123,6 +123,9 @@ class UnifiedHandler:
             UserIntent.CHECK_STATUS: self._handle_status,
             UserIntent.CHECK_OVERDUE: self._handle_overdue,
             UserIntent.EMAIL_RECAP: self._handle_email_recap,
+            UserIntent.SEARCH_TASKS: self._handle_search,
+            UserIntent.BULK_COMPLETE: self._handle_bulk_complete,
+            UserIntent.LIST_TEMPLATES: self._handle_templates,
             UserIntent.DELAY_TASK: self._handle_delay,
             UserIntent.ADD_TEAM_MEMBER: self._handle_add_team,
             UserIntent.TEACH_PREFERENCE: self._handle_teach,
@@ -619,6 +622,133 @@ Make the changes and submit again when ready!"""
         lines = ["🚨 **Overdue Tasks**", ""]
         for task in overdue[:5]:
             lines.append(f"• {task.get('Title', 'Task')[:40]} - {task.get('Assignee', '?')}")
+
+        return "\n".join(lines), None
+
+    async def _handle_search(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, None]:
+        """Handle natural language search."""
+        import re
+
+        query = data.get("query", message)
+
+        # Parse natural language search patterns
+        assignee = None
+        status = None
+        priority = None
+
+        # "What's John working on?" -> search by assignee
+        working_on_match = re.search(r"what'?s?\s+(\w+)\s+working\s+on", query, re.IGNORECASE)
+        if working_on_match:
+            assignee = working_on_match.group(1)
+
+        # "tasks for Sarah" -> search by assignee
+        tasks_for_match = re.search(r"tasks?\s+(?:for|assigned\s+to)\s+@?(\w+)", query, re.IGNORECASE)
+        if tasks_for_match:
+            assignee = tasks_for_match.group(1)
+
+        # Extract @mentions
+        mention_match = re.search(r'@(\w+)', query)
+        if mention_match:
+            assignee = mention_match.group(1)
+
+        # "urgent tasks" or "high priority"
+        if any(w in query.lower() for w in ["urgent", "critical"]):
+            priority = "urgent"
+        elif "high priority" in query.lower():
+            priority = "high"
+
+        # "blocked tasks"
+        if "blocked" in query.lower():
+            status = "blocked"
+        elif "pending" in query.lower():
+            status = "pending"
+        elif "in progress" in query.lower() or "in_progress" in query.lower():
+            status = "in_progress"
+
+        # Text search terms (remove special patterns)
+        text_query = query
+        for pattern in [r"what'?s?\s+\w+\s+working\s+on", r"tasks?\s+(?:for|assigned\s+to)\s+@?\w+", r"@\w+"]:
+            text_query = re.sub(pattern, "", text_query, flags=re.IGNORECASE).strip()
+
+        results = await self.sheets.search_tasks(
+            query=text_query if len(text_query) > 2 else None,
+            assignee=assignee,
+            status=status,
+            priority=priority,
+            limit=10
+        )
+
+        if not results:
+            search_desc = []
+            if assignee:
+                search_desc.append(f"assignee: {assignee}")
+            if status:
+                search_desc.append(f"status: {status}")
+            if priority:
+                search_desc.append(f"priority: {priority}")
+            return f"No tasks found{' (' + ', '.join(search_desc) + ')' if search_desc else ''}", None
+
+        lines = [f"🔍 **Found {len(results)} task(s)**", ""]
+
+        for task in results:
+            priority_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(
+                task.get('Priority', '').lower(), "⚪"
+            )
+            status_val = task.get('Status', 'pending')
+            lines.append(f"{priority_emoji} **{task.get('ID', 'N/A')}**: {task.get('Title', '')[:35]}")
+            lines.append(f"   {task.get('Assignee', 'Unassigned')} | {status_val}")
+
+        return "\n".join(lines), None
+
+    async def _handle_bulk_complete(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle bulk task completion via natural language."""
+        task_ids = data.get("task_ids", [])
+
+        if not task_ids:
+            return "Which tasks do you want to mark as done? List their IDs.", None
+
+        success_count, failed = await self.sheets.bulk_update_status(
+            task_ids=task_ids,
+            new_status="completed"
+        )
+
+        # Post to Discord
+        if success_count > 0:
+            await self.discord.post_alert(
+                title="Tasks Completed",
+                message=f"{success_count} task(s) marked as completed by {user_name}",
+                alert_type="success"
+            )
+
+        if failed:
+            return f"✅ Completed {success_count} task(s)\n❌ Not found: {', '.join(failed)}", None
+        return f"✅ Marked {success_count} task(s) as done!", None
+
+    async def _handle_templates(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, None]:
+        """Handle template list request."""
+        from ..memory.preferences import DEFAULT_TEMPLATES
+
+        lines = ["📝 **Task Templates**", ""]
+        lines.append("Say these keywords and I'll auto-apply defaults:")
+        lines.append("")
+
+        for template in DEFAULT_TEMPLATES:
+            name = template["name"]
+            defaults = template["defaults"]
+            priority = defaults.get("priority", "medium")
+            priority_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+
+            keywords_str = ", ".join(template["keywords"][:2])
+            lines.append(f"{priority_emoji} **{name}**: {keywords_str}")
+
+        lines.append("")
+        lines.append("Example: \"bug: login crashes\" → High priority bug")
 
         return "\n".join(lines), None
 
