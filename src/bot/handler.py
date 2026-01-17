@@ -133,6 +133,24 @@ class UnifiedHandler:
         if spec_session and spec_session.get("awaiting_answers"):
             return await self._handle_spec_answer(user_id, message, user_name)
 
+        # Check for active task preview - user may be providing corrections
+        active_conv = await self.context.get_active_conversation(user_id)
+        if active_conv and active_conv.stage == ConversationStage.PREVIEW:
+            msg_lower = message.lower().strip()
+            # User says "no" followed by correction = edit the task
+            if msg_lower.startswith("no ") or msg_lower.startswith("no,"):
+                # This is a correction, not a new task
+                correction = message[3:].strip() if msg_lower.startswith("no ") else message[3:].strip()
+                if correction:
+                    return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+            # User just says "no" = cancel
+            elif msg_lower == "no":
+                await self.context.clear_conversation(user_id)
+                return "Task cancelled. What would you like to do?", None
+            # User says "yes" = confirm and create
+            elif msg_lower in ["yes", "y", "ok", "confirm", "create", "looks good", "lgtm"]:
+                return await self._finalize_task(active_conv, user_id)
+
         # Detect intent
         intent, data = await self.intent.detect_intent(message, context)
         logger.info(f"Detected intent: {intent} for user {user_id}")
@@ -410,6 +428,111 @@ What would you like to do?""", None
         else:
             # Can create directly
             return await self._create_task_directly(conversation, prefs.to_dict())
+
+    async def _handle_task_correction(
+        self, user_id: str, conversation: ConversationState, correction: str, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle user correction after task preview (they said 'no, [changes]')."""
+        import json
+
+        # Get current spec
+        current_spec = conversation.generated_spec or {}
+
+        # Use AI to apply the correction
+        prompt = f"""The boss rejected a task preview and provided a correction.
+
+CURRENT TASK:
+- Title: {current_spec.get('title', '')}
+- Assignee: {current_spec.get('assignee', '')}
+- Priority: {current_spec.get('priority', 'medium')}
+- Deadline: {current_spec.get('deadline', '')}
+- Description: {current_spec.get('description', '')}
+
+BOSS'S CORRECTION: "{correction}"
+
+Apply their correction to the task. They might be:
+- Changing the title/description
+- Changing the assignee
+- Adjusting the deadline
+- Clarifying what needs to be done
+
+Return the UPDATED task as JSON:
+{{
+    "title": "Updated title",
+    "assignee": "name or null",
+    "priority": "urgent/high/medium/low",
+    "deadline": "ISO datetime or null",
+    "description": "Updated description",
+    "estimated_effort": "time estimate"
+}}
+
+Be smart - understand what they want changed from their words."""
+
+        try:
+            response = await self.ai.chat(
+                messages=[
+                    {"role": "system", "content": "You update task specifications based on user feedback. Return only JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2
+            )
+
+            content = response.choices[0].message.content
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            updated_spec = json.loads(content.strip())
+
+            # Merge with existing spec (keep fields AI didn't mention)
+            for key, value in current_spec.items():
+                if key not in updated_spec or updated_spec[key] is None:
+                    updated_spec[key] = value
+
+            # Update conversation
+            conversation.generated_spec = updated_spec
+            await self.context.save_conversation(conversation)
+
+            # Show new preview
+            prefs = await self.prefs.get_preferences(user_id)
+            preview = self._format_task_preview(updated_spec)
+
+            return f"""📋 **Updated Task:**
+
+{preview}
+
+Look good now? (yes/no)""", None
+
+        except Exception as e:
+            logger.error(f"Error applying correction: {e}")
+            return f"Sorry, I couldn't understand that correction. Please describe what you want changed more clearly.", None
+
+    def _format_task_preview(self, spec: Dict) -> str:
+        """Format a task spec as a preview string."""
+        priority_emoji = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(
+            spec.get("priority", "medium"), "⚪"
+        )
+
+        lines = [
+            f"**Title:** {spec.get('title', 'Untitled')}",
+            f"**Assignee:** {spec.get('assignee') or 'Unassigned'}",
+            f"**Priority:** {priority_emoji} {spec.get('priority', 'medium').upper()}",
+        ]
+
+        if spec.get("deadline"):
+            lines.append(f"**Deadline:** {spec.get('deadline')}")
+
+        if spec.get("estimated_effort"):
+            lines.append(f"**Effort:** {spec.get('estimated_effort')}")
+
+        if spec.get("description"):
+            desc = spec.get("description", "")[:200]
+            if len(spec.get("description", "")) > 200:
+                desc += "..."
+            lines.append(f"\n**Description:**\n{desc}")
+
+        return "\n".join(lines)
 
     async def _create_task_directly(
         self, conversation: ConversationState, preferences: Dict
