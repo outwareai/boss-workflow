@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
-> **Last Updated:** 2026-01-17
-> **Version:** 1.3.1
+> **Last Updated:** 2026-01-18
+> **Version:** 1.4.0
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -60,6 +60,44 @@ Scheduler ──► Reminders/Reports ──────────────
 | `/skip` | Skip remaining questions, use defaults | `/skip` |
 | `/done` | Finalize task with current info | `/done` |
 | `/cancel` | Abort current task creation | `/cancel` |
+
+### Multi-Task Handling (NEW in v1.4)
+
+When you send multiple tasks in one message, the bot handles them **sequentially**:
+
+```
+You: "John fix the login bug, then Sarah update the homepage, and Mike review the API"
+
+Bot: "📋 Task 1 of 3
+      [Shows first task preview]
+
+      yes = create & next | skip = skip & next | no = cancel all"
+
+You: "yes"
+
+Bot: "✅ Task 1 created!
+
+      📋 Task 2 of 3
+      [Shows second task preview]..."
+```
+
+**Separators detected:** "then", "and also", "another task", "next task", numbered lists
+
+### SPECSHEETS Mode (NEW in v1.4)
+
+Trigger detailed specification generation with keywords:
+
+```
+You: "SPECSHEETS detailed for: Build authentication system for John"
+```
+
+**Trigger keywords:** `specsheet`, `spec sheet`, `detailed spec`, `detailed for:`, `full spec`, `comprehensive`
+
+**Generates:**
+- Multi-paragraph description (3-5 paragraphs)
+- 4-6 detailed acceptance criteria
+- Comprehensive subtask breakdown with implementation details
+- Technical considerations
 
 ### Task Status & Reporting
 
@@ -446,6 +484,30 @@ The system now includes a full Discord bot (`src/integrations/discord_bot.py`) t
 - Pinned notes
 - Delay reason if delayed
 
+### Discord Forum Channel Support (NEW in v1.4)
+
+Tasks can be posted as organized forum threads instead of regular messages. Each task becomes its own forum post with automatic tagging.
+
+**Setup:**
+1. Create a Forum channel in Discord
+2. Add tags for priority (Urgent, High, Medium, Low) and status
+3. Set `DISCORD_FORUM_CHANNEL_ID` environment variable
+4. Ensure bot has "Create Posts" permission
+
+**Features:**
+- Each task = organized forum thread
+- Auto-applies matching tags (priority, status)
+- Proper @mentions using numeric Discord user IDs
+- Reaction-based status updates work on forum posts
+- Falls back to webhook + thread if forum not configured
+
+**@Mention Format:**
+Team members must have numeric Discord user IDs in `config/team.py`:
+```python
+"discord_id": "392400310108291092",  # Numeric ID, not username
+```
+To get numeric ID: Discord Developer Mode → Right-click user → Copy ID
+
 ### Configured Webhooks
 
 | Webhook | Purpose |
@@ -453,6 +515,7 @@ The system now includes a full Discord bot (`src/integrations/discord_bot.py`) t
 | `DISCORD_WEBHOOK_URL` | General notifications |
 | `DISCORD_TASKS_CHANNEL_WEBHOOK` | Task postings |
 | `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Standup/report summaries |
+| `DISCORD_FORUM_CHANNEL_ID` | Forum channel for organized task posts (NEW v1.4) |
 
 ---
 
@@ -915,6 +978,7 @@ project_repo = get_project_repository()
 | `DISCORD_WEBHOOK_URL` | Main Discord webhook |
 | `DISCORD_TASKS_CHANNEL_WEBHOOK` | Tasks channel webhook |
 | `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Standup channel webhook |
+| `DISCORD_FORUM_CHANNEL_ID` | Forum channel ID for organized task posts (NEW v1.4) |
 | `GOOGLE_CREDENTIALS_JSON` | Service account JSON |
 | `GOOGLE_SHEET_ID` | Google Sheets document ID |
 | `GOOGLE_CALENDAR_ID` | Google Calendar ID |
@@ -1302,6 +1366,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4.0 | 2026-01-18 | **Discord Forum Channels:** Tasks posted as organized forum threads with auto-tagging. **Sequential Multi-Task Handling:** Multiple tasks processed one-by-one with yes/skip/no flow. **SPECSHEETS Mode:** Trigger detailed specs with keywords. **Proper @mentions:** Numeric Discord user IDs for mentions. **Background Processing:** Prevents Telegram webhook timeouts. **Thread Creation:** Auto-creates discussion threads on task messages. |
 | 1.3.1 | 2026-01-17 | Image Vision Analysis: DeepSeek VL integration for photo analysis, proof screenshot validation, OCR text extraction. Vision analysis integrated with auto-review and boss notifications. |
 | 1.3.0 | 2026-01-17 | AI Task Breakdown: `/breakdown TASK-ID` analyzes tasks and suggests subtasks with effort estimates |
 | 1.2.1 | 2026-01-17 | Discord Bot Reaction Listener: Full bot integration that listens for emoji reactions and auto-updates task status in PostgreSQL + Sheets |
