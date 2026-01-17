@@ -30,6 +30,68 @@ class TeamMember(BaseModel):
     default_task_types: List[str] = Field(default_factory=list)  # Task types usually assigned
 
 
+class TaskTemplate(BaseModel):
+    """Pre-defined task template with auto-fill defaults."""
+    name: str  # Template name (e.g., "bug", "hotfix", "feature")
+    keywords: List[str] = Field(default_factory=list)  # Keywords that trigger this template
+    defaults: Dict[str, Any] = Field(default_factory=dict)  # Default values to apply
+    # Defaults can include: task_type, priority, tags, effort, deadline_hours
+    description: str = ""  # Template description
+
+
+# Default built-in templates
+DEFAULT_TEMPLATES: List[Dict[str, Any]] = [
+    {
+        "name": "bug",
+        "keywords": ["bug", "bug:", "bugfix", "issue", "broken", "not working", "crash", "error"],
+        "defaults": {"task_type": "bug", "priority": "high", "tags": ["bugfix"]},
+        "description": "Bug fix - high priority by default"
+    },
+    {
+        "name": "hotfix",
+        "keywords": ["hotfix", "hotfix:", "critical fix", "production issue", "p0", "sev0"],
+        "defaults": {"task_type": "bug", "priority": "urgent", "tags": ["hotfix"], "deadline_hours": 4},
+        "description": "Critical hotfix - urgent, 4 hour deadline"
+    },
+    {
+        "name": "feature",
+        "keywords": ["feature", "feature:", "new feature", "add feature", "implement"],
+        "defaults": {"task_type": "feature", "priority": "medium", "effort": "1 day", "tags": ["feature"]},
+        "description": "New feature - medium priority, 1 day effort"
+    },
+    {
+        "name": "research",
+        "keywords": ["research", "research:", "investigate", "explore", "look into", "analyze"],
+        "defaults": {"task_type": "research", "priority": "low", "tags": ["research"]},
+        "description": "Research/investigation - low priority"
+    },
+    {
+        "name": "meeting",
+        "keywords": ["meeting", "meeting:", "sync", "call", "standup"],
+        "defaults": {"task_type": "meeting", "priority": "medium", "effort": "1 hour", "tags": ["meeting"]},
+        "description": "Meeting - 1 hour effort"
+    },
+    {
+        "name": "docs",
+        "keywords": ["docs", "docs:", "documentation", "document", "readme", "write docs"],
+        "defaults": {"task_type": "task", "priority": "low", "tags": ["documentation"]},
+        "description": "Documentation task - low priority"
+    },
+    {
+        "name": "refactor",
+        "keywords": ["refactor", "refactor:", "cleanup", "clean up", "improve code", "tech debt"],
+        "defaults": {"task_type": "task", "priority": "low", "tags": ["refactor", "tech-debt"]},
+        "description": "Refactoring - low priority"
+    },
+    {
+        "name": "test",
+        "keywords": ["test", "test:", "testing", "write tests", "add tests", "unit test"],
+        "defaults": {"task_type": "task", "priority": "medium", "tags": ["testing"]},
+        "description": "Testing task - medium priority"
+    }
+]
+
+
 class Trigger(BaseModel):
     """Custom trigger that modifies task behavior."""
     pattern: str  # Text pattern to match (e.g., "client X", "urgent")
@@ -61,6 +123,9 @@ class UserPreferences(BaseModel):
     # Custom terminology/triggers
     triggers: List[Trigger] = Field(default_factory=list)
 
+    # Task templates
+    task_templates: List[TaskTemplate] = Field(default_factory=list)
+
     # Timezone
     timezone: str = "America/New_York"
 
@@ -91,6 +156,33 @@ class UserPreferences(BaseModel):
             if trigger.pattern.lower() in text_lower:
                 return trigger
         return None
+
+    def find_template(self, text: str) -> Optional[TaskTemplate]:
+        """Find a task template that matches the given text."""
+        text_lower = text.lower()
+
+        # First check user-defined templates
+        for template in self.task_templates:
+            for keyword in template.keywords:
+                if keyword.lower() in text_lower:
+                    return template
+
+        # Then check default templates
+        for template_data in DEFAULT_TEMPLATES:
+            for keyword in template_data["keywords"]:
+                if keyword.lower() in text_lower:
+                    return TaskTemplate(**template_data)
+
+        return None
+
+    def get_all_templates(self) -> List[TaskTemplate]:
+        """Get all available templates (user + defaults)."""
+        templates = list(self.task_templates)
+        for template_data in DEFAULT_TEMPLATES:
+            # Check if user hasn't overridden this template
+            if not any(t.name == template_data["name"] for t in templates):
+                templates.append(TaskTemplate(**template_data))
+        return templates
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""

@@ -24,6 +24,7 @@ class TaskClarifier:
 
     Handles the logic of deciding when to ask questions,
     what to ask, and when to proceed directly to spec generation.
+    Also handles template detection and smart dependency suggestions.
     """
 
     def __init__(self, deepseek_client: Optional[DeepSeekClient] = None):
@@ -38,6 +39,139 @@ class TaskClarifier:
         # Maximum questions to ask in one round
         self.max_questions_per_round = 3
 
+    def detect_and_apply_template(
+        self,
+        conversation: ConversationState,
+        preferences: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Detect if message matches a task template and apply its defaults.
+
+        Returns the matched template info or None.
+        """
+        from ..memory.preferences import UserPreferences, TaskTemplate, DEFAULT_TEMPLATES
+
+        message = conversation.original_message.lower()
+
+        # Check user templates first, then defaults
+        matched_template = None
+        template_name = None
+
+        # Check defaults
+        for template_data in DEFAULT_TEMPLATES:
+            for keyword in template_data["keywords"]:
+                if keyword.lower() in message:
+                    matched_template = template_data
+                    template_name = template_data["name"]
+                    break
+            if matched_template:
+                break
+
+        if not matched_template:
+            return None
+
+        # Apply template defaults to extracted_info
+        defaults = matched_template.get("defaults", {})
+
+        if "task_type" in defaults and "task_type" not in conversation.extracted_info:
+            conversation.extracted_info["task_type"] = defaults["task_type"]
+
+        if "priority" in defaults and "priority" not in conversation.extracted_info:
+            conversation.extracted_info["priority"] = defaults["priority"]
+
+        if "tags" in defaults:
+            existing_tags = conversation.extracted_info.get("tags", [])
+            conversation.extracted_info["tags"] = list(set(existing_tags + defaults["tags"]))
+
+        if "effort" in defaults and "estimated_effort" not in conversation.extracted_info:
+            conversation.extracted_info["estimated_effort"] = defaults["effort"]
+
+        if "deadline_hours" in defaults and "deadline" not in conversation.extracted_info:
+            from datetime import datetime, timedelta
+            deadline = datetime.now() + timedelta(hours=defaults["deadline_hours"])
+            conversation.extracted_info["deadline"] = deadline.isoformat()
+
+        # Store template info
+        conversation.extracted_info["_template_applied"] = template_name
+
+        logger.info(f"Applied template '{template_name}' with defaults: {defaults}")
+
+        return {
+            "template_name": template_name,
+            "applied_defaults": defaults,
+            "description": matched_template.get("description", "")
+        }
+
+    async def find_potential_dependencies(
+        self,
+        task_description: str,
+        assignee: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Find pending/in-progress tasks that might be dependencies.
+
+        Uses AI to detect if the new task relates to existing tasks.
+        Returns list of potential blocking tasks.
+        """
+        from ..integrations.sheets import get_sheets_integration
+
+        sheets = get_sheets_integration()
+        all_tasks = await sheets.get_all_tasks()
+
+        # Filter to only pending/in-progress/blocked tasks
+        active_tasks = [
+            t for t in all_tasks
+            if t.get('Status') in ['pending', 'in_progress', 'blocked', 'in_review']
+        ]
+
+        if not active_tasks:
+            return []
+
+        # Use AI to find related tasks
+        try:
+            prompt = f"""Analyze if this new task might depend on any existing tasks.
+
+NEW TASK: "{task_description}"
+{f"ASSIGNEE: {assignee}" if assignee else ""}
+
+EXISTING ACTIVE TASKS:
+"""
+            for task in active_tasks[:15]:  # Limit to 15 tasks
+                prompt += f"- {task.get('ID', 'N/A')}: {task.get('Title', '')} (Status: {task.get('Status', '')}, Assignee: {task.get('Assignee', 'Unassigned')})\n"
+
+            prompt += """
+Return JSON with tasks that the new task might need to wait for:
+{
+    "potential_dependencies": [
+        {"task_id": "TASK-XXX", "reason": "Brief explanation why this might be a dependency"}
+    ],
+    "explanation": "Overall assessment"
+}
+
+Only include tasks that are clearly related. Return empty array if no dependencies found.
+"""
+
+            response = await self.ai.client.chat.completions.create(
+                model=self.ai.model,
+                messages=[
+                    {"role": "system", "content": "You identify task dependencies. Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=500
+            )
+
+            import json
+            result = json.loads(response.choices[0].message.content)
+            dependencies = result.get("potential_dependencies", [])
+
+            logger.info(f"Found {len(dependencies)} potential dependencies for new task")
+            return dependencies
+
+        except Exception as e:
+            logger.error(f"Error finding dependencies: {e}")
+            return []
+
     async def analyze_and_decide(
         self,
         conversation: ConversationState,
@@ -50,6 +184,11 @@ class TaskClarifier:
         Returns:
             Tuple of (should_ask_questions, analysis_result)
         """
+        # First, detect and apply templates
+        template_info = self.detect_and_apply_template(conversation, preferences)
+        if template_info:
+            logger.info(f"Template detected: {template_info['template_name']}")
+
         # Get analysis from AI
         analysis = await self.ai.analyze_task_request(
             user_message=conversation.original_message,
@@ -57,6 +196,10 @@ class TaskClarifier:
             team_info=team_info,
             conversation_history=conversation.get_conversation_context()
         )
+
+        # Add template info to analysis
+        if template_info:
+            analysis["template_applied"] = template_info
 
         # Store extracted info in conversation
         if "understood" in analysis:

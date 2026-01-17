@@ -21,6 +21,8 @@ from .memory.context import get_conversation_context
 from .integrations.sheets import get_sheets_integration
 from .integrations.discord import get_discord_integration
 from .integrations.calendar import get_calendar_integration
+from .database import init_database, close_database, get_database
+from .database.sync import get_sheets_sync
 
 # Configure logging
 logging.basicConfig(
@@ -39,6 +41,15 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler for startup and shutdown."""
     # Startup
     logger.info("Starting Boss Workflow Automation...")
+
+    # Initialize PostgreSQL database
+    try:
+        if await init_database():
+            logger.info("PostgreSQL database initialized")
+        else:
+            logger.warning("PostgreSQL not configured or failed to initialize")
+    except Exception as e:
+        logger.warning(f"PostgreSQL init failed: {e}")
 
     # Initialize services with error handling
     try:
@@ -114,6 +125,11 @@ async def lifespan(app: FastAPI):
     except:
         pass
 
+    try:
+        await close_database()
+    except:
+        pass
+
     logger.info("Shutdown complete")
 
 
@@ -148,6 +164,14 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check endpoint."""
+    # Check database health
+    db_health = {"status": "not_configured"}
+    try:
+        db = get_database()
+        db_health = await db.health_check()
+    except Exception as e:
+        db_health = {"status": "error", "error": str(e)}
+
     return {
         "status": "healthy",
         "timestamp": __import__('datetime').datetime.now().isoformat(),
@@ -156,7 +180,8 @@ async def health_check():
             "deepseek": bool(settings.deepseek_api_key),
             "discord": bool(settings.discord_webhook_url),
             "sheets": bool(settings.google_sheet_id),
-            "redis": bool(settings.redis_url)
+            "redis": bool(settings.redis_url),
+            "database": db_health.get("status", "unknown"),
         }
     }
 
@@ -319,6 +344,265 @@ async def get_user_preferences(user_id: str):
 
     except Exception as e:
         logger.error(f"Error getting preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== DATABASE API ENDPOINTS ====================
+
+@app.get("/api/db/tasks")
+async def get_db_tasks(status: str = None, assignee: str = None, limit: int = 50):
+    """Get tasks from PostgreSQL database."""
+    try:
+        from .database.repositories import get_task_repository
+        task_repo = get_task_repository()
+
+        if status:
+            tasks = await task_repo.get_by_status(status)
+        elif assignee:
+            tasks = await task_repo.get_by_assignee(assignee)
+        else:
+            tasks = await task_repo.get_all(limit=limit)
+
+        return {
+            "tasks": [
+                {
+                    "id": t.task_id,
+                    "title": t.title,
+                    "status": t.status,
+                    "priority": t.priority,
+                    "assignee": t.assignee,
+                    "deadline": t.deadline.isoformat() if t.deadline else None,
+                    "created_at": t.created_at.isoformat(),
+                }
+                for t in tasks
+            ],
+            "count": len(tasks),
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting tasks from DB: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/db/tasks/{task_id}")
+async def get_db_task(task_id: str):
+    """Get a single task with full details from PostgreSQL."""
+    try:
+        from .database.repositories import get_task_repository
+        task_repo = get_task_repository()
+
+        task = await task_repo.get_by_id(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Get subtasks and dependencies
+        subtasks = await task_repo.get_subtasks(task_id)
+        blocking = await task_repo.get_blocking_tasks(task_id)
+        blocked_by_this = await task_repo.get_blocked_tasks(task_id)
+
+        return {
+            "task": {
+                "id": task.task_id,
+                "title": task.title,
+                "description": task.description,
+                "status": task.status,
+                "priority": task.priority,
+                "assignee": task.assignee,
+                "deadline": task.deadline.isoformat() if task.deadline else None,
+                "created_at": task.created_at.isoformat(),
+                "updated_at": task.updated_at.isoformat(),
+                "progress": task.progress,
+                "project_id": task.project_id,
+            },
+            "subtasks": [
+                {"id": s.id, "title": s.title, "completed": s.completed}
+                for s in subtasks
+            ],
+            "blocking_tasks": [t.task_id for t in blocking],
+            "blocks_tasks": [t.task_id for t in blocked_by_this],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting task from DB: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/db/tasks/{task_id}/subtasks")
+async def add_subtask(task_id: str, request: Request):
+    """Add a subtask to a task."""
+    try:
+        from .database.repositories import get_task_repository
+        task_repo = get_task_repository()
+
+        data = await request.json()
+        title = data.get("title")
+        if not title:
+            raise HTTPException(status_code=400, detail="Subtask title required")
+
+        subtask = await task_repo.add_subtask(
+            task_id=task_id,
+            title=title,
+            description=data.get("description"),
+        )
+
+        if not subtask:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        return {"ok": True, "subtask_id": subtask.id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding subtask: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/db/tasks/{task_id}/dependencies")
+async def add_dependency(task_id: str, request: Request):
+    """Add a dependency between tasks."""
+    try:
+        from .database.repositories import get_task_repository
+        task_repo = get_task_repository()
+
+        data = await request.json()
+        depends_on = data.get("depends_on")
+        dep_type = data.get("type", "depends_on")
+
+        if not depends_on:
+            raise HTTPException(status_code=400, detail="depends_on task ID required")
+
+        dependency = await task_repo.add_dependency(
+            task_id=task_id,
+            depends_on_task_id=depends_on,
+            dependency_type=dep_type,
+        )
+
+        if not dependency:
+            raise HTTPException(status_code=400, detail="Could not create dependency (circular or task not found)")
+
+        return {"ok": True, "dependency_id": dependency.id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding dependency: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/db/audit/{task_id}")
+async def get_task_audit(task_id: str):
+    """Get audit history for a task."""
+    try:
+        from .database.repositories import get_audit_repository
+        audit_repo = get_audit_repository()
+
+        logs = await audit_repo.get_task_history(task_id)
+
+        return {
+            "task_id": task_id,
+            "history": [
+                {
+                    "action": log.action,
+                    "field": log.field_changed,
+                    "old_value": log.old_value,
+                    "new_value": log.new_value,
+                    "changed_by": log.changed_by,
+                    "timestamp": log.timestamp.isoformat(),
+                    "reason": log.reason,
+                }
+                for log in logs
+            ],
+            "count": len(logs),
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting audit logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/db/projects")
+async def get_projects():
+    """Get all projects with stats."""
+    try:
+        from .database.repositories import get_project_repository
+        project_repo = get_project_repository()
+
+        stats = await project_repo.get_all_stats()
+        return {"projects": stats}
+
+    except Exception as e:
+        logger.error(f"Error getting projects: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/db/projects")
+async def create_project(request: Request):
+    """Create a new project."""
+    try:
+        from .database.repositories import get_project_repository
+        project_repo = get_project_repository()
+
+        data = await request.json()
+        name = data.get("name")
+        if not name:
+            raise HTTPException(status_code=400, detail="Project name required")
+
+        project = await project_repo.create(
+            name=name,
+            description=data.get("description"),
+            color=data.get("color"),
+        )
+
+        return {"ok": True, "project_id": project.id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/db/sync")
+async def trigger_sync():
+    """Trigger a sync from PostgreSQL to Google Sheets."""
+    try:
+        sync = get_sheets_sync()
+        result = await sync.sync_pending_tasks()
+        return {"ok": True, **result}
+
+    except Exception as e:
+        logger.error(f"Error running sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/db/stats")
+async def get_db_stats():
+    """Get database statistics."""
+    try:
+        from .database.repositories import (
+            get_task_repository,
+            get_audit_repository,
+            get_conversation_repository,
+        )
+
+        task_repo = get_task_repository()
+        audit_repo = get_audit_repository()
+        conv_repo = get_conversation_repository()
+
+        task_stats = await task_repo.get_daily_stats()
+        audit_stats = await audit_repo.get_activity_stats(days=7)
+        conv_stats = await conv_repo.get_stats(days=7)
+
+        return {
+            "tasks": task_stats,
+            "audit": audit_stats,
+            "conversations": conv_stats,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

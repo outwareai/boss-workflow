@@ -1,0 +1,331 @@
+# CLAUDE.MD - Boss Workflow Automation
+
+## Critical Instructions
+
+**ALWAYS READ `FEATURES.md` FIRST** before making any changes to this codebase.
+
+**ALWAYS UPDATE `FEATURES.md` LAST** after completing any changes to document what was added/modified.
+
+---
+
+## Project Overview
+
+Boss Workflow is a conversational task management system for a boss to manage their team via Telegram. It uses AI-powered natural language understanding to create tasks, track progress, and automate reporting.
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    TELEGRAM     │────►│   DEEPSEEK AI   │────►│  TASK CREATED   │
+│  (Boss Input)   │     │ (Intent + Spec) │     │                 │
+└─────────────────┘     └─────────────────┘     └────────┬────────┘
+                                                         │
+         ┌───────────────────────────────────────────────┼───────────────────────────────────┐
+         │                                               │                                   │
+         ▼                                               ▼                                   ▼
+┌─────────────────┐                             ┌─────────────────┐                 ┌─────────────────┐
+│  GOOGLE SHEETS  │                             │     DISCORD     │                 │ GOOGLE CALENDAR │
+│   (Tracking)    │                             │   (Team View)   │                 │  (Deadlines)    │
+└─────────────────┘                             └─────────────────┘                 └─────────────────┘
+```
+
+---
+
+## Key Files to Know
+
+| File | Purpose |
+|------|---------|
+| `FEATURES.md` | **READ FIRST** - Complete feature documentation |
+| `src/main.py` | FastAPI entry point, webhooks, API endpoints |
+| `src/bot/handler.py` | Unified message handler, intent routing |
+| `src/bot/commands.py` | All slash commands |
+| `src/ai/deepseek.py` | AI integration for task generation |
+| `src/ai/clarifier.py` | Smart question generation |
+| `src/integrations/sheets.py` | Google Sheets operations |
+| `src/integrations/discord.py` | Discord webhook posting |
+| `src/scheduler/jobs.py` | Scheduled tasks (standup, reports) |
+| `src/memory/preferences.py` | User preferences storage |
+| `src/models/task.py` | Task model with 14 statuses |
+| `src/database/` | **PostgreSQL database layer** |
+| `src/database/models.py` | SQLAlchemy models |
+| `src/database/repositories/` | CRUD operations |
+| `src/database/sync.py` | Sheets ↔ DB sync |
+| `setup_sheets.py` | Google Sheets initialization script |
+| `config/settings.py` | Environment configuration |
+| `.env` | API keys and credentials |
+
+---
+
+## Development Commands
+
+### Run Locally
+```bash
+cd boss-workflow
+pip install -r requirements.txt
+python -m src.main
+```
+
+### Setup Google Sheets
+```bash
+python setup_sheets.py
+```
+
+### Run Tests
+```bash
+python test_all.py
+```
+
+---
+
+## Sheet Names (Emoji Prefixed)
+
+When working with Google Sheets, always use these exact names:
+
+```python
+SHEET_DAILY_TASKS = "📋 Daily Tasks"
+SHEET_DASHBOARD = "📊 Dashboard"
+SHEET_TEAM = "👥 Team"
+SHEET_WEEKLY = "📅 Weekly Reports"
+SHEET_MONTHLY = "📆 Monthly Reports"
+SHEET_NOTES = "📝 Notes Log"
+SHEET_ARCHIVE = "🗃️ Archive"
+SHEET_SETTINGS = "⚙️ Settings"
+```
+
+---
+
+## Task Statuses
+
+The system uses 14 task statuses:
+
+| Status | Use Case |
+|--------|----------|
+| `pending` | Not started |
+| `in_progress` | Being worked on |
+| `in_review` | Under review |
+| `awaiting_validation` | Submitted to boss |
+| `needs_revision` | Rejected, needs fixes |
+| `completed` | Done |
+| `cancelled` | Not doing |
+| `blocked` | Can't proceed |
+| `delayed` | Postponed |
+| `undone` | Needs rework |
+| `on_hold` | Paused |
+| `waiting` | External dependency |
+| `needs_info` | Missing information |
+| `overdue` | Past deadline |
+
+---
+
+## API Credentials Required
+
+| Service | Env Variable | Notes |
+|---------|--------------|-------|
+| Telegram | `TELEGRAM_BOT_TOKEN` | From @BotFather |
+| Telegram | `TELEGRAM_BOSS_CHAT_ID` | Boss's chat ID |
+| DeepSeek | `DEEPSEEK_API_KEY` | AI provider |
+| Discord | `DISCORD_WEBHOOK_URL` | Main channel |
+| Discord | `DISCORD_TASKS_CHANNEL_WEBHOOK` | Tasks channel |
+| Discord | `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Reports channel |
+| Google | `GOOGLE_CREDENTIALS_JSON` | Service account JSON |
+| Google | `GOOGLE_SHEET_ID` | Spreadsheet ID |
+| Google | `GOOGLE_CALENDAR_ID` | Calendar ID |
+
+---
+
+## Adding New Features
+
+1. **Read `FEATURES.md`** to understand existing functionality
+2. **Identify the right file** based on feature type:
+   - Bot commands → `src/bot/commands.py`
+   - Natural language → `src/bot/handler.py` + `src/ai/intent.py`
+   - Sheets operations → `src/integrations/sheets.py`
+   - Scheduled jobs → `src/scheduler/jobs.py`
+   - New model → `src/models/`
+3. **Implement the feature**
+4. **Test locally** with `python -m src.main`
+5. **Update `FEATURES.md`** with the new functionality
+
+---
+
+## Common Tasks
+
+### Add a New Slash Command
+1. Add handler in `src/bot/commands.py`
+2. Register in command list
+3. Update `/help` output
+4. Document in `FEATURES.md`
+
+### Add a New Intent
+1. Add pattern in `src/ai/intent.py`
+2. Add handler in `src/bot/handler.py`
+3. Document in `FEATURES.md`
+
+### Add a New Scheduled Job
+1. Create job function in `src/scheduler/jobs.py`
+2. Add to scheduler in `get_scheduler_manager()`
+3. Add config variables if needed in `config/settings.py`
+4. Document in `FEATURES.md`
+
+### Modify Google Sheets Structure
+1. Update `setup_sheets.py` with new columns/tabs
+2. Update `src/integrations/sheets.py` with new operations
+3. Run `python setup_sheets.py` to recreate sheets
+4. Document in `FEATURES.md`
+
+---
+
+## Deployment
+
+### Railway Deployment
+1. Connect GitHub repo to Railway
+2. Add all `.env` variables in Railway dashboard
+3. Get deployment URL
+4. Update `WEBHOOK_BASE_URL` in Railway variables
+5. Telegram webhook auto-registers on startup
+
+### Railway CLI Commands (Claude has access!)
+
+```bash
+# View variables
+railway variables -s boss-workflow
+
+# Set a variable
+railway variables set -s boss-workflow "VAR_NAME=value"
+
+# Redeploy after changes
+railway redeploy -s boss-workflow --yes
+
+# View logs
+railway logs -s boss-workflow
+
+# Check deployment status
+railway status -s boss-workflow
+```
+
+**Note:** Railway auto-deploys on git push to master. Use CLI for manual operations.
+
+### Required Railway Variables
+```
+# Core
+TELEGRAM_BOT_TOKEN=xxx
+TELEGRAM_BOSS_CHAT_ID=xxx
+DEEPSEEK_API_KEY=xxx
+WEBHOOK_BASE_URL=https://boss-workflow-production.up.railway.app
+
+# Discord (full URLs - don't truncate!)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/xxx
+DISCORD_TASKS_CHANNEL_WEBHOOK=https://discord.com/api/webhooks/xxx/xxx
+DISCORD_STANDUP_CHANNEL_WEBHOOK=https://discord.com/api/webhooks/xxx/xxx
+
+# Google
+GOOGLE_CREDENTIALS_JSON={"type":"service_account",...}
+GOOGLE_SHEET_ID=xxx
+GOOGLE_CALENDAR_ID=xxx
+
+# Database (auto-set by Railway PostgreSQL)
+DATABASE_URL=postgresql://postgres:xxx@postgres.railway.internal:5432/railway
+
+# Optional
+REDIS_URL=redis://default:xxx@redis.railway.internal:6379
+TIMEZONE=Asia/Bangkok
+```
+
+---
+
+## PostgreSQL Database
+
+The system uses PostgreSQL as the source of truth, with Google Sheets as the boss dashboard.
+
+### Data Architecture
+```
+┌──────────────────┬──────────────────┬───────────────────┐
+│   POSTGRESQL     │   GOOGLE SHEETS  │       REDIS       │
+│ (Source of Truth)│ (Boss Dashboard) │  (Cache/Realtime) │
+├──────────────────┼──────────────────┼───────────────────┤
+│ • All tasks      │ • Task view      │ • Active sessions │
+│ • Conversations  │ • Reports        │ • Rate limiting   │
+│ • Audit logs     │ • Team roster    │ • Temp state      │
+│ • Relationships  │                  │                   │
+│ • AI memory      │                  │                   │
+└──────────────────┴──────────────────┴───────────────────┘
+```
+
+### Database Tables
+- `tasks` - Main task storage with all fields
+- `projects` - Group related tasks
+- `subtasks` - Break tasks into smaller pieces
+- `task_dependencies` - Blocked-by, depends-on relationships
+- `audit_logs` - Full change history
+- `conversations` - Chat history
+- `messages` - Individual messages
+- `ai_memory` - User preferences and context
+- `team_members` - Team roster
+- `webhook_events` - Incoming events log
+
+### Database API Endpoints
+```
+GET  /api/db/tasks                    # List tasks
+GET  /api/db/tasks/{task_id}          # Get task with relationships
+POST /api/db/tasks/{task_id}/subtasks # Add subtask
+POST /api/db/tasks/{task_id}/dependencies # Add dependency
+GET  /api/db/audit/{task_id}          # Get audit history
+GET  /api/db/projects                 # List projects
+POST /api/db/projects                 # Create project
+POST /api/db/sync                     # Trigger Sheets sync
+GET  /api/db/stats                    # Database statistics
+```
+
+### Using Repositories
+```python
+from src.database.repositories import get_task_repository
+
+task_repo = get_task_repository()
+
+# Create task
+task = await task_repo.create({"task_id": "TASK-001", "title": "..."})
+
+# Add subtask
+subtask = await task_repo.add_subtask("TASK-001", "Subtask title")
+
+# Add dependency
+await task_repo.add_dependency("TASK-002", "TASK-001", "blocked_by")
+
+# Get with relationships
+task = await task_repo.get_by_id("TASK-001")
+blocking = await task_repo.get_blocking_tasks("TASK-001")
+```
+
+---
+
+## Code Style
+
+- Use async/await for all I/O operations
+- Type hints on all function signatures
+- Docstrings for public functions
+- Logger instead of print statements
+- Handle exceptions gracefully (don't crash the bot)
+
+---
+
+## Remember
+
+1. **READ `FEATURES.md` FIRST** - Understand what exists
+2. **Don't duplicate** - Check if feature already exists
+3. **Keep sheet names exact** - Emoji prefixes matter
+4. **Test locally before deploy** - `python -m src.main`
+5. **UPDATE `FEATURES.md` LAST** - Document your changes
+
+---
+
+## GitHub Repository
+
+**URL:** https://github.com/outwareai/boss-workflow
+
+```bash
+git add .
+git commit -m "Description of changes"
+git push
+```
+
+---
+
+*Last updated: 2026-01-17* (Added PostgreSQL database layer)

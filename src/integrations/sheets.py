@@ -7,7 +7,7 @@ Sheet names match setup_sheets.py with emoji prefixes.
 
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from collections import Counter
 import gspread
@@ -762,6 +762,190 @@ class GoogleSheetsIntegration:
                         pass
 
         return due_soon
+
+    # ============================================
+    # SEARCH OPERATIONS
+    # ============================================
+
+    async def search_tasks(
+        self,
+        query: str = None,
+        assignee: str = None,
+        status: str = None,
+        priority: str = None,
+        due: str = None,
+        created: str = None,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search tasks with various filters.
+
+        Args:
+            query: Text search in title/description
+            assignee: Filter by assignee name (supports @mention format)
+            status: Filter by status
+            priority: Filter by priority (supports #priority format)
+            due: Filter by deadline ("today", "week", "overdue")
+            created: Filter by creation date ("today", "week", "month")
+            limit: Max results to return
+
+        Returns:
+            List of matching tasks
+        """
+        all_tasks = await self.get_all_tasks()
+        results = all_tasks
+
+        # Clean up assignee (remove @ if present)
+        if assignee:
+            assignee = assignee.lstrip('@').strip()
+
+        # Clean up priority (remove # if present)
+        if priority:
+            priority = priority.lstrip('#').strip()
+
+        # Text search
+        if query:
+            query_lower = query.lower()
+            results = [
+                t for t in results
+                if query_lower in t.get('Title', '').lower() or
+                   query_lower in t.get('Description', '').lower() or
+                   query_lower in t.get('Tags', '').lower()
+            ]
+
+        # Assignee filter
+        if assignee:
+            results = [
+                t for t in results
+                if assignee.lower() in t.get('Assignee', '').lower()
+            ]
+
+        # Status filter
+        if status:
+            results = [
+                t for t in results
+                if t.get('Status', '').lower() == status.lower()
+            ]
+
+        # Priority filter
+        if priority:
+            results = [
+                t for t in results
+                if t.get('Priority', '').lower() == priority.lower()
+            ]
+
+        # Due date filter
+        if due:
+            now = datetime.now()
+            filtered = []
+            for task in results:
+                deadline_str = task.get('Deadline', '')
+                if not deadline_str:
+                    continue
+                try:
+                    deadline = datetime.strptime(deadline_str.split()[0], '%Y-%m-%d')
+                    if due == "today" and deadline.date() == now.date():
+                        filtered.append(task)
+                    elif due == "week" and now.date() <= deadline.date() <= (now + timedelta(days=7)).date():
+                        filtered.append(task)
+                    elif due == "overdue" and deadline.date() < now.date():
+                        filtered.append(task)
+                except:
+                    pass
+            results = filtered
+
+        # Created date filter
+        if created:
+            now = datetime.now()
+            filtered = []
+            for task in results:
+                created_str = task.get('Created', '')
+                if not created_str:
+                    continue
+                try:
+                    created_date = datetime.strptime(created_str.split()[0], '%Y-%m-%d')
+                    if created == "today" and created_date.date() == now.date():
+                        filtered.append(task)
+                    elif created == "week" and (now - timedelta(days=7)).date() <= created_date.date():
+                        filtered.append(task)
+                    elif created == "month" and (now - timedelta(days=30)).date() <= created_date.date():
+                        filtered.append(task)
+                except:
+                    pass
+            results = filtered
+
+        return results[:limit]
+
+    async def bulk_update_status(
+        self,
+        task_ids: List[str],
+        new_status: str,
+        note: str = None
+    ) -> Tuple[int, List[str]]:
+        """
+        Update status for multiple tasks at once.
+
+        Args:
+            task_ids: List of task IDs to update
+            new_status: New status to set
+            note: Optional note to add
+
+        Returns:
+            Tuple of (success_count, failed_ids)
+        """
+        success_count = 0
+        failed_ids = []
+
+        for task_id in task_ids:
+            try:
+                result = await self.update_task(task_id, {'status': new_status})
+                if result:
+                    success_count += 1
+                    if note:
+                        task = await self.get_task(task_id)
+                        await self.add_note(
+                            task_id=task_id,
+                            task_title=task.get('Title', 'Task') if task else 'Task',
+                            author='System',
+                            note_type='update',
+                            content=f"Status changed to {new_status}. {note}"
+                        )
+                else:
+                    failed_ids.append(task_id)
+            except Exception as e:
+                logger.error(f"Error updating task {task_id}: {e}")
+                failed_ids.append(task_id)
+
+        logger.info(f"Bulk update: {success_count} succeeded, {len(failed_ids)} failed")
+        return success_count, failed_ids
+
+    async def bulk_assign(
+        self,
+        task_ids: List[str],
+        assignee: str
+    ) -> Tuple[int, List[str]]:
+        """
+        Assign multiple tasks to a person.
+
+        Returns:
+            Tuple of (success_count, failed_ids)
+        """
+        success_count = 0
+        failed_ids = []
+
+        for task_id in task_ids:
+            try:
+                result = await self.update_task(task_id, {'assignee': assignee})
+                if result:
+                    success_count += 1
+                else:
+                    failed_ids.append(task_id)
+            except Exception as e:
+                logger.error(f"Error assigning task {task_id}: {e}")
+                failed_ids.append(task_id)
+
+        logger.info(f"Bulk assign to {assignee}: {success_count} succeeded, {len(failed_ids)} failed")
+        return success_count, failed_ids
 
 
 # Singleton instance

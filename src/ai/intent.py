@@ -37,6 +37,11 @@ class UserIntent(str, Enum):
     CHECK_OVERDUE = "check_overdue"          # "anything overdue?"
     EMAIL_RECAP = "email_recap"              # "recap my emails", "summarize my inbox"
 
+    # Search and bulk operations
+    SEARCH_TASKS = "search_tasks"            # "what's John working on?", "find bug tasks"
+    BULK_COMPLETE = "bulk_complete"          # "mark these 3 as done"
+    BULK_UPDATE = "bulk_update"              # "block TASK-001 TASK-002"
+
     # Task updates
     DELAY_TASK = "delay_task"                # "delay the landing page to tomorrow"
     ADD_NOTE = "add_note"                    # "note on TASK-001: talked to client"
@@ -47,6 +52,9 @@ class UserIntent(str, Enum):
 
     # Learning/preferences
     TEACH_PREFERENCE = "teach"               # "when I say urgent, deadline is today"
+
+    # Templates
+    LIST_TEMPLATES = "list_templates"        # "/templates", "what templates are there?"
 
     # Conversation control
     SKIP = "skip"                            # "skip", "whatever", "default"
@@ -172,6 +180,31 @@ class IntentDetector:
             return UserIntent.CHECK_STATUS, {}
         if any(w in message for w in ["overdue", "late", "past due", "missed deadline"]):
             return UserIntent.CHECK_OVERDUE, {}
+
+        # Search - natural language patterns
+        search_patterns = [
+            "what's", "whats", "what is", "show me", "find", "search",
+            "working on", "assigned to", "tasks for", "list tasks"
+        ]
+        if any(pattern in message for pattern in search_patterns):
+            # Check if asking about a person
+            if "@" in message or any(w in message for w in ["working on", "assigned to", "tasks for"]):
+                return UserIntent.SEARCH_TASKS, {"query": message}
+
+        # Templates
+        if any(w in message for w in ["templates", "what templates", "show templates", "list templates"]):
+            return UserIntent.LIST_TEMPLATES, {}
+
+        # Bulk operations - natural language
+        bulk_complete_phrases = [
+            "mark these", "mark all", "complete these", "finish these",
+            "mark as done", "these are done", "all done", "mark done"
+        ]
+        if any(phrase in message for phrase in bulk_complete_phrases):
+            # Extract task IDs if present
+            import re
+            task_ids = re.findall(r'TASK-[\w\-]+', message, re.IGNORECASE)
+            return UserIntent.BULK_COMPLETE, {"task_ids": task_ids, "message": message}
 
         # Email recap - prioritize this for email-related personal requests
         if any(w in message for w in ["email", "emails", "inbox", "mail", "gmail"]):
