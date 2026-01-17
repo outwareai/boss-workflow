@@ -341,11 +341,18 @@ class IntentDetector:
 
         # If message mentions a person and an action, likely a task
         action_words = ["needs to", "should", "must", "has to", "can you",
-                       "fix", "build", "create", "make", "update", "add", "check"]
+                       "fix", "build", "create", "make", "update", "add", "check",
+                       "assign", "review", "test", "deploy", "finish", "complete",
+                       "write", "send", "prepare", "setup", "configure"]
         if any(word in message for word in action_words):
             # But not if it's about clearing/deleting
             if not any(w in message for w in ["clear", "delete", "remove", "wipe", "reset"]):
                 return UserIntent.CREATE_TASK, {"message": message}
+
+        # Status checks - more patterns
+        status_patterns = ["show me", "list tasks", "show tasks", "my tasks", "all tasks", "the tasks"]
+        if any(p in message for p in status_patterns):
+            return UserIntent.CHECK_STATUS, {}
 
         return UserIntent.UNKNOWN, {}
 
