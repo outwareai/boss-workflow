@@ -735,7 +735,9 @@ class GoogleSheetsIntegration:
 
         try:
             worksheet = self.spreadsheet.worksheet(SHEET_TEAM)
-            return worksheet.get_all_records()
+            # Use numericise_ignore to keep Discord/Telegram IDs as strings
+            # These columns contain large numeric IDs that should stay as strings
+            return worksheet.get_all_records(numericise_ignore=['all'])
         except Exception as e:
             logger.error(f"Error getting team members: {e}")
             return []
