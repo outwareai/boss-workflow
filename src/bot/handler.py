@@ -18,7 +18,7 @@ from ..memory.learning import get_learning_manager
 from ..models.task import Task, TaskStatus, TaskPriority, AcceptanceCriteria
 from ..models.conversation import ConversationState, ConversationStage
 from ..models.validation import ProofItem, ProofType, TaskValidation, ValidationStatus
-from ..integrations.discord import get_discord_integration, register_review_callback, get_review_callback, clear_review_callback, ReviewAction
+from ..integrations.discord import get_discord_integration
 from ..integrations.sheets import get_sheets_integration
 from ..integrations.calendar import get_calendar_integration
 from ..integrations.gmail import get_gmail_integration
