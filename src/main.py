@@ -28,6 +28,7 @@ from .integrations.discord_bot import (
     start_discord_bot,
     stop_discord_bot,
     setup_status_callback,
+    setup_attendance_callback,
 )
 from .database import init_database, close_database, get_database
 from .database.sync import get_sheets_sync
@@ -161,6 +162,32 @@ async def lifespan(app: FastAPI):
             setup_status_callback(handle_status_update)
             from .integrations.discord_bot import setup_priority_callback
             setup_priority_callback(handle_priority_update)
+
+            # Set up attendance callback
+            async def handle_attendance(user_id: str, user_name: str, event_type: str, channel_id: str, channel_name: str):
+                """Handle attendance events from Discord."""
+                logger.info(f"Attendance event: {user_name} ({user_id}) - {event_type} in {channel_name}")
+                try:
+                    from .services.attendance import get_attendance_service
+                    service = get_attendance_service()
+                    result = await service.process_event(
+                        user_id=user_id,
+                        user_name=user_name,
+                        event_type=event_type,
+                        channel_id=channel_id,
+                        channel_name=channel_name,
+                    )
+                    logger.info(f"Attendance result: {result.get('message', 'Success')}")
+                    return result
+                except Exception as e:
+                    logger.error(f"Error processing attendance: {e}")
+                    return {
+                        "success": False,
+                        "emoji": "⚠️",
+                        "message": f"Error: {e}",
+                    }
+
+            setup_attendance_callback(handle_attendance)
 
             # Start bot in background
             discord_bot_task = asyncio.create_task(start_discord_bot())

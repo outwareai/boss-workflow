@@ -1,0 +1,450 @@
+"""
+Attendance service for time clock system.
+
+Handles business logic for:
+- Processing clock in/out/break events
+- Late detection based on timezone
+- Team member working hours
+"""
+
+import logging
+from typing import Optional, Dict, Any, Tuple
+from datetime import datetime, date, time, timedelta
+import pytz
+
+from config import settings
+from ..database.repositories.attendance import get_attendance_repository, AttendanceRepository
+from ..database.models import AttendanceEventTypeEnum
+from ..integrations.sheets import get_sheets_integration, SHEET_TEAM
+
+logger = logging.getLogger(__name__)
+
+
+class AttendanceService:
+    """Service for attendance operations."""
+
+    def __init__(self):
+        self.repo: AttendanceRepository = get_attendance_repository()
+        self.sheets = get_sheets_integration()
+        self._team_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_time: Optional[datetime] = None
+        self._cache_ttl = timedelta(minutes=15)
+
+    async def _refresh_team_cache(self) -> None:
+        """Refresh the team member cache from Sheets."""
+        now = datetime.now()
+        if self._cache_time and (now - self._cache_time) < self._cache_ttl:
+            return  # Cache is still fresh
+
+        try:
+            team_members = await self.sheets.get_all_team_members()
+            self._team_cache = {}
+
+            for member in team_members:
+                discord_id = str(member.get("Discord ID", ""))
+                if discord_id:
+                    self._team_cache[discord_id] = {
+                        "name": member.get("Name", ""),
+                        "timezone": member.get("Timezone", settings.timezone),
+                        "work_start": member.get("Work Start", f"{settings.default_work_start_hour:02d}:00"),
+                        "role": member.get("Role", ""),
+                    }
+
+            self._cache_time = now
+            logger.debug(f"Team cache refreshed: {len(self._team_cache)} members")
+
+        except Exception as e:
+            logger.error(f"Error refreshing team cache: {e}")
+
+    async def get_team_member_info(self, discord_id: str) -> Optional[Dict[str, Any]]:
+        """Get team member info from cache or Sheets."""
+        await self._refresh_team_cache()
+        return self._team_cache.get(discord_id)
+
+    def calculate_late_status(
+        self,
+        clock_in_time_utc: datetime,
+        user_timezone: str,
+        work_start_time: str,
+        grace_period_minutes: int = None,
+    ) -> Tuple[bool, int, Optional[datetime]]:
+        """
+        Calculate if a clock-in is late.
+
+        Args:
+            clock_in_time_utc: The clock-in time in UTC
+            user_timezone: The user's timezone (e.g., "Asia/Bangkok", "Asia/Kolkata")
+            work_start_time: Expected start time in HH:MM format (local time)
+            grace_period_minutes: Grace period in minutes (default from settings)
+
+        Returns:
+            Tuple of (is_late, late_minutes, expected_time_utc)
+
+        Example:
+            Staff: Mayank (India, UTC+5:30)
+            Thailand work start: 9:00 AM ICT (UTC+7)
+
+            If Thailand expects 9:00 AM:
+            - 9:00 AM ICT = 7:30 AM IST (Mayank's local time)
+
+            For a member working from India:
+            - If work_start is "09:00" (Thailand time), they need to be online at 9:00 ICT
+            - 9:00 ICT = 02:00 UTC
+            - If they clock in at 9:30 ICT = 02:30 UTC, they are 30 min late
+        """
+        if grace_period_minutes is None:
+            grace_period_minutes = settings.default_grace_period_minutes
+
+        try:
+            # Parse work start time
+            work_hour, work_minute = map(int, work_start_time.split(":"))
+
+            # Get the reference timezone (Thailand time - where work hours are defined)
+            reference_tz = pytz.timezone(settings.timezone)  # Thailand
+
+            # Get today in reference timezone
+            now_reference = datetime.now(reference_tz)
+            today_reference = now_reference.date()
+
+            # Create expected start time in reference timezone
+            expected_start_local = reference_tz.localize(
+                datetime.combine(today_reference, time(work_hour, work_minute))
+            )
+
+            # Convert to UTC for comparison
+            expected_start_utc = expected_start_local.astimezone(pytz.UTC)
+
+            # Add grace period
+            expected_with_grace_utc = expected_start_utc + timedelta(minutes=grace_period_minutes)
+
+            # Compare (clock_in_time_utc should already be timezone-aware)
+            if clock_in_time_utc.tzinfo is None:
+                clock_in_time_utc = pytz.UTC.localize(clock_in_time_utc)
+
+            is_late = clock_in_time_utc > expected_with_grace_utc
+            late_minutes = 0
+
+            if is_late:
+                delta = clock_in_time_utc - expected_start_utc
+                late_minutes = int(delta.total_seconds() / 60)
+
+            return (is_late, late_minutes, expected_start_utc.replace(tzinfo=None))
+
+        except Exception as e:
+            logger.error(f"Error calculating late status: {e}")
+            return (False, 0, None)
+
+    async def process_clock_in(
+        self,
+        user_id: str,
+        user_name: str,
+        channel_id: str,
+        channel_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Process a clock-in event.
+
+        Returns:
+            Dict with: success, emoji, is_late, late_minutes, message
+        """
+        now_utc = datetime.now(pytz.UTC)
+        now_local = now_utc.astimezone(pytz.timezone(settings.timezone))
+
+        # Check if already clocked in today
+        existing = await self.repo.get_user_clock_in_today(user_id)
+        if existing:
+            return {
+                "success": False,
+                "emoji": "⚠️",
+                "is_late": False,
+                "late_minutes": 0,
+                "message": "Already clocked in today",
+            }
+
+        # Get team member info for late detection
+        member_info = await self.get_team_member_info(user_id)
+
+        # Calculate late status
+        is_late = False
+        late_minutes = 0
+        expected_time = None
+
+        if member_info:
+            work_start = member_info.get("work_start", f"{settings.default_work_start_hour:02d}:00")
+            user_tz = member_info.get("timezone", settings.timezone)
+
+            is_late, late_minutes, expected_time = self.calculate_late_status(
+                clock_in_time_utc=now_utc,
+                user_timezone=user_tz,
+                work_start_time=work_start,
+            )
+        else:
+            # Use default settings for unknown users
+            is_late, late_minutes, expected_time = self.calculate_late_status(
+                clock_in_time_utc=now_utc,
+                user_timezone=settings.timezone,
+                work_start_time=f"{settings.default_work_start_hour:02d}:00",
+            )
+
+        # Record the event
+        record = await self.repo.record_event(
+            user_id=user_id,
+            user_name=user_name,
+            event_type=AttendanceEventTypeEnum.CLOCK_IN.value,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            event_time=now_local.replace(tzinfo=None),
+            event_time_utc=now_utc.replace(tzinfo=None),
+            is_late=is_late,
+            late_minutes=late_minutes,
+            expected_time=expected_time,
+        )
+
+        if record:
+            return {
+                "success": True,
+                "emoji": "✅",
+                "is_late": is_late,
+                "late_minutes": late_minutes,
+                "message": f"Clocked in at {now_local.strftime('%H:%M')}",
+                "record_id": record.record_id,
+            }
+        else:
+            return {
+                "success": False,
+                "emoji": "❌",
+                "is_late": False,
+                "late_minutes": 0,
+                "message": "Failed to record clock-in",
+            }
+
+    async def process_clock_out(
+        self,
+        user_id: str,
+        user_name: str,
+        channel_id: str,
+        channel_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Process a clock-out event.
+
+        Returns:
+            Dict with: success, emoji, message, work_hours
+        """
+        now_utc = datetime.now(pytz.UTC)
+        now_local = now_utc.astimezone(pytz.timezone(settings.timezone))
+
+        # Check if clocked in today
+        clock_in = await self.repo.get_user_clock_in_today(user_id)
+        if not clock_in:
+            return {
+                "success": False,
+                "emoji": "⚠️",
+                "message": "Haven't clocked in today",
+                "work_hours": 0,
+            }
+
+        # Check if on break - end break first if needed
+        break_status = await self.repo.get_user_break_status(user_id)
+        if break_status == "on_break":
+            # Auto-end break before clock out
+            await self.repo.record_event(
+                user_id=user_id,
+                user_name=user_name,
+                event_type=AttendanceEventTypeEnum.BREAK_END.value,
+                channel_id=channel_id,
+                channel_name=channel_name,
+                event_time=now_local.replace(tzinfo=None),
+                event_time_utc=now_utc.replace(tzinfo=None),
+            )
+            logger.info(f"Auto-ended break for {user_name} before clock out")
+
+        # Record the clock out
+        record = await self.repo.record_event(
+            user_id=user_id,
+            user_name=user_name,
+            event_type=AttendanceEventTypeEnum.CLOCK_OUT.value,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            event_time=now_local.replace(tzinfo=None),
+            event_time_utc=now_utc.replace(tzinfo=None),
+        )
+
+        # Calculate work hours
+        work_hours = 0
+        if clock_in:
+            clock_in_utc = pytz.UTC.localize(clock_in.event_time_utc)
+            work_duration = now_utc - clock_in_utc
+            work_hours = round(work_duration.total_seconds() / 3600, 2)
+
+        if record:
+            return {
+                "success": True,
+                "emoji": "👋",
+                "message": f"Clocked out at {now_local.strftime('%H:%M')}. Total: {work_hours}h",
+                "work_hours": work_hours,
+                "record_id": record.record_id,
+            }
+        else:
+            return {
+                "success": False,
+                "emoji": "❌",
+                "message": "Failed to record clock-out",
+                "work_hours": 0,
+            }
+
+    async def process_break_toggle(
+        self,
+        user_id: str,
+        user_name: str,
+        channel_id: str,
+        channel_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Process a break toggle event.
+
+        Returns:
+            Dict with: success, emoji, is_starting_break, message
+        """
+        now_utc = datetime.now(pytz.UTC)
+        now_local = now_utc.astimezone(pytz.timezone(settings.timezone))
+
+        # Check if clocked in today
+        clock_in = await self.repo.get_user_clock_in_today(user_id)
+        if not clock_in:
+            return {
+                "success": False,
+                "emoji": "⚠️",
+                "is_starting_break": False,
+                "message": "Clock in first before taking a break",
+            }
+
+        # Check current break status
+        break_status = await self.repo.get_user_break_status(user_id)
+
+        if break_status == "on_break":
+            # End break
+            event_type = AttendanceEventTypeEnum.BREAK_END.value
+            emoji = "💪"
+            is_starting = False
+            message = f"Break ended at {now_local.strftime('%H:%M')}"
+        else:
+            # Start break
+            event_type = AttendanceEventTypeEnum.BREAK_START.value
+            emoji = "☕"
+            is_starting = True
+            message = f"Break started at {now_local.strftime('%H:%M')}"
+
+        # Record the event
+        record = await self.repo.record_event(
+            user_id=user_id,
+            user_name=user_name,
+            event_type=event_type,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            event_time=now_local.replace(tzinfo=None),
+            event_time_utc=now_utc.replace(tzinfo=None),
+        )
+
+        if record:
+            return {
+                "success": True,
+                "emoji": emoji,
+                "is_starting_break": is_starting,
+                "message": message,
+                "record_id": record.record_id,
+            }
+        else:
+            return {
+                "success": False,
+                "emoji": "❌",
+                "is_starting_break": False,
+                "message": "Failed to record break",
+            }
+
+    async def process_event(
+        self,
+        user_id: str,
+        user_name: str,
+        event_type: str,
+        channel_id: str,
+        channel_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Process any attendance event.
+
+        Args:
+            event_type: "in", "out", or "break"
+
+        Returns:
+            Dict with result details
+        """
+        if event_type == "in":
+            return await self.process_clock_in(user_id, user_name, channel_id, channel_name)
+        elif event_type == "out":
+            return await self.process_clock_out(user_id, user_name, channel_id, channel_name)
+        elif event_type == "break":
+            return await self.process_break_toggle(user_id, user_name, channel_id, channel_name)
+        else:
+            return {
+                "success": False,
+                "emoji": "❌",
+                "message": f"Unknown event type: {event_type}",
+            }
+
+    async def get_user_daily_summary(self, user_id: str) -> Dict[str, Any]:
+        """Get a user's attendance summary for today."""
+        today = date.today()
+        events = await self.repo.get_user_events_for_date(user_id, today)
+
+        if not events:
+            return {
+                "has_data": False,
+                "message": "No attendance records for today",
+            }
+
+        clock_in = None
+        clock_out = None
+        break_start = None
+        total_break_minutes = 0
+
+        for event in events:
+            if event.event_type == AttendanceEventTypeEnum.CLOCK_IN.value:
+                clock_in = event
+            elif event.event_type == AttendanceEventTypeEnum.CLOCK_OUT.value:
+                clock_out = event
+            elif event.event_type == AttendanceEventTypeEnum.BREAK_START.value:
+                break_start = event
+            elif event.event_type == AttendanceEventTypeEnum.BREAK_END.value:
+                if break_start:
+                    delta = event.event_time - break_start.event_time
+                    total_break_minutes += delta.total_seconds() / 60
+                    break_start = None
+
+        work_hours = 0
+        if clock_in and clock_out:
+            delta = clock_out.event_time - clock_in.event_time
+            work_hours = (delta.total_seconds() / 60 - total_break_minutes) / 60
+
+        return {
+            "has_data": True,
+            "clock_in": clock_in.event_time.strftime("%H:%M") if clock_in else None,
+            "clock_out": clock_out.event_time.strftime("%H:%M") if clock_out else None,
+            "is_late": clock_in.is_late if clock_in else False,
+            "late_minutes": clock_in.late_minutes if clock_in else 0,
+            "break_minutes": round(total_break_minutes),
+            "work_hours": round(work_hours, 2),
+            "is_on_break": break_start is not None,
+        }
+
+
+# Singleton
+_attendance_service: Optional[AttendanceService] = None
+
+
+def get_attendance_service() -> AttendanceService:
+    """Get the attendance service singleton."""
+    global _attendance_service
+    if _attendance_service is None:
+        _attendance_service = AttendanceService()
+    return _attendance_service

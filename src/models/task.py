@@ -102,8 +102,10 @@ class Task(BaseModel):
 
     # Integration IDs
     discord_message_id: Optional[str] = None
+    discord_thread_id: Optional[str] = None  # For forum threads
     sheets_row_id: Optional[int] = None
     google_calendar_event_id: Optional[str] = None  # For calendar integration
+    spec_sheet_url: Optional[str] = None  # URL to detailed spec document
 
     # Validation tracking
     requires_validation: bool = True  # Whether task needs boss approval

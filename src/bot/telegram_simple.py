@@ -78,7 +78,11 @@ class TelegramBotSimple:
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
-            await update.message.reply_text("Oops, something went wrong. Try again?")
+            error_type = type(e).__name__
+            await update.message.reply_text(
+                f"⚠️ Something unexpected happened ({error_type}). "
+                "Please try again or rephrase your request."
+            )
 
     async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle photo messages with AI vision analysis."""

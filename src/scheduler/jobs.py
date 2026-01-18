@@ -29,6 +29,7 @@ from ..ai.email_summarizer import get_email_summarizer
 from ..memory.context import get_conversation_context
 from ..models.task import TaskStatus
 from ..database.repositories.recurring import get_recurring_repository, RecurrenceCalculator
+from ..database.repositories.attendance import get_attendance_repository
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,30 @@ class SchedulerManager:
                 replace_existing=True
             )
             logger.info(f"Email digests scheduled: {settings.morning_digest_hour}:00 and {settings.evening_digest_hour}:00")
+
+        # Attendance sync to Google Sheets (every 15 minutes)
+        self.scheduler.add_job(
+            self._sync_attendance_job,
+            IntervalTrigger(minutes=settings.attendance_sync_interval_minutes),
+            id="sync_attendance",
+            name="Sync Attendance to Sheets",
+            replace_existing=True
+        )
+
+        # Weekly time report (Monday at 10 AM)
+        self.scheduler.add_job(
+            self._weekly_time_report_job,
+            CronTrigger(
+                day_of_week='mon',
+                hour=10,
+                minute=0,
+                timezone=self.timezone
+            ),
+            id="weekly_time_report",
+            name="Weekly Time Report",
+            replace_existing=True
+        )
+        logger.info("Attendance jobs scheduled: sync every 15 min, weekly report Mon 10 AM")
 
         self.scheduler.start()
         logger.info("Scheduler started with all jobs")
@@ -636,6 +661,136 @@ Keep up the great work!"""
 
         except Exception as e:
             logger.error(f"Error in evening email digest job: {e}", exc_info=True)
+
+    async def _sync_attendance_job(self) -> None:
+        """Sync unsynced attendance records to Google Sheets."""
+        logger.debug("Running attendance sync job")
+
+        try:
+            attendance_repo = get_attendance_repository()
+
+            # Get unsynced records
+            unsynced = await attendance_repo.get_unsynced_records(limit=100)
+
+            if not unsynced:
+                logger.debug("No unsynced attendance records")
+                return
+
+            logger.info(f"Syncing {len(unsynced)} attendance records to Sheets")
+
+            # Convert to sheet format
+            records = []
+            for record in unsynced:
+                # Map event type to sheet format
+                event_map = {
+                    "clock_in": "in",
+                    "clock_out": "out",
+                    "break_start": "break in",
+                    "break_end": "break out",
+                }
+
+                records.append({
+                    "record_id": record.record_id,
+                    "date": record.event_time.strftime("%Y-%m-%d"),
+                    "time": record.event_time.strftime("%H:%M"),
+                    "name": record.user_name,
+                    "event": event_map.get(record.event_type, record.event_type),
+                    "late": "Yes" if record.is_late else ("No" if record.event_type == "clock_in" else "-"),
+                    "late_min": record.late_minutes,
+                    "channel": record.channel_name,
+                })
+
+            # Batch add to sheets
+            count = await self.sheets.add_attendance_logs_batch(records)
+
+            if count > 0:
+                # Mark as synced
+                record_ids = [r.id for r in unsynced[:count]]
+                await attendance_repo.mark_synced(record_ids)
+                logger.info(f"Synced {count} attendance records to Sheets")
+
+        except Exception as e:
+            logger.error(f"Error in attendance sync job: {e}", exc_info=True)
+
+    async def _weekly_time_report_job(self) -> None:
+        """Generate weekly time reports for all team members."""
+        logger.info("Running weekly time report job")
+
+        try:
+            from datetime import date
+
+            attendance_repo = get_attendance_repository()
+
+            # Get the start of last week (Monday)
+            today = date.today()
+            days_since_monday = today.weekday()  # Monday = 0
+            last_monday = today - timedelta(days=days_since_monday + 7)  # Previous week's Monday
+
+            logger.info(f"Generating time report for week starting {last_monday}")
+
+            # Get all team summaries
+            summaries = await attendance_repo.get_team_weekly_summary(last_monday)
+
+            if not summaries:
+                logger.info("No attendance data for weekly time report")
+                return
+
+            # Convert to sheet format
+            week_num = last_monday.isocalendar()[1]
+            year = last_monday.year
+
+            sheet_summaries = []
+            for summary in summaries:
+                sheet_summaries.append({
+                    "name": summary.get("user_name", "Unknown"),
+                    "days_worked": summary.get("days_worked", 0),
+                    "total_hours": summary.get("total_hours", 0),
+                    "avg_start": summary.get("avg_start", ""),
+                    "avg_end": summary.get("avg_end", ""),
+                    "late_days": summary.get("late_days", 0),
+                    "total_late_minutes": summary.get("total_late_minutes", 0),
+                    "break_minutes": summary.get("total_break_minutes", 0),
+                    "notes": "",
+                })
+
+            # Update sheets
+            await self.sheets.update_time_report(week_num, year, sheet_summaries)
+
+            # Post summary to Discord standup channel
+            late_summary = ""
+            for s in sheet_summaries:
+                if s["late_days"] > 0:
+                    late_summary += f"• {s['name']}: {s['late_days']} late day(s), {s['total_late_minutes']} min total\n"
+
+            summary_message = f"""📊 **Weekly Time Report - Week {week_num}**
+
+**Team Summary:**
+"""
+            for s in sheet_summaries:
+                summary_message += f"• {s['name']}: {s['days_worked']} days, {s['total_hours']:.1f}h worked\n"
+
+            if late_summary:
+                summary_message += f"\n**Late Arrivals:**\n{late_summary}"
+
+            summary_message += "\n_Full report available in Google Sheets._"
+
+            # Post to Discord standup channel
+            try:
+                await self.discord.post_standup(summary_message)
+            except Exception as e:
+                logger.warning(f"Failed to post time report to Discord: {e}")
+
+            # Send to Telegram
+            if settings.telegram_boss_chat_id:
+                await self.reminders.send_telegram_message(
+                    settings.telegram_boss_chat_id,
+                    summary_message
+                )
+
+            logger.info(f"Weekly time report generated: {len(sheet_summaries)} team members")
+
+        except Exception as e:
+            logger.error(f"Error in weekly time report job: {e}", exc_info=True)
 
     def trigger_job(self, job_id: str) -> bool:
         """Manually trigger a job."""

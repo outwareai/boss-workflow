@@ -335,19 +335,22 @@ def setup_advanced_sheets(spreadsheet):
     # ========================================
     # 3. TEAM DIRECTORY
     # ========================================
-    print("\n[3/8] Setting up Team Directory...")
+    print("\n[3/10] Setting up Team Directory...")
 
-    team_sheet = get_or_create_sheet(spreadsheet, "👥 Team", rows=50, cols=6)
+    team_sheet = get_or_create_sheet(spreadsheet, "👥 Team", rows=50, cols=9)
     team_id = team_sheet.id
 
-    # New simplified structure:
+    # New structure with attendance columns:
     # - Name: Used for Telegram mentions (e.g., "Mayank fix this")
     # - Discord ID: Numeric ID for Discord @mentions (e.g., "392400310108291092")
     # - Email: Google email for Calendar/Tasks integration
     # - Role: Developer, Marketing, or Admin (for channel routing)
     # - Status: Active, On Leave, Inactive
+    # - Active Tasks: Count of non-completed tasks
     # - Calendar ID: Google Calendar ID for direct event creation (usually same as email)
-    team_headers = ["Name", "Discord ID", "Email", "Role", "Status", "Active Tasks", "Calendar ID"]
+    # - Timezone: User's timezone for attendance (e.g., Asia/Bangkok, Asia/Kolkata)
+    # - Work Start: Expected start time in local time (e.g., 09:00)
+    team_headers = ["Name", "Discord ID", "Email", "Role", "Status", "Active Tasks", "Calendar ID", "Timezone", "Work Start"]
 
     # Start with empty data - will be populated via /syncteam command
     # The setup script creates structure only, no mock data
@@ -356,18 +359,18 @@ def setup_advanced_sheets(spreadsheet):
     team_sheet.update(values=[team_headers] + team_examples, range_name='A1', value_input_option='USER_ENTERED')
 
     # Header formatting - blue theme
-    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 7}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
+    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 9}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
 
     requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 35}, 'fields': 'pixelSize'}})
     requests.append({'updateSheetProperties': {'properties': {'sheetId': team_id, 'gridProperties': {'frozenRowCount': 1}}, 'fields': 'gridProperties.frozenRowCount'}})
 
-    # Column widths - optimized for new structure
-    # Name: 120, Discord ID: 200, Email: 220, Role: 100, Status: 80, Active Tasks: 100, Calendar ID: 220
-    for i, w in enumerate([120, 200, 220, 100, 80, 100, 220]):
+    # Column widths - optimized for new structure with attendance columns
+    # Name: 120, Discord ID: 200, Email: 220, Role: 100, Status: 80, Active Tasks: 100, Calendar ID: 220, Timezone: 140, Work Start: 90
+    for i, w in enumerate([120, 200, 220, 100, 80, 100, 220, 140, 90]):
         requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i+1}, 'properties': {'pixelSize': w}, 'fields': 'pixelSize'}})
 
-    add_borders(requests, team_id, 0, 50, 0, 7)
-    add_alternating_colors(requests, team_id, 0, 50, 0, 7)
+    add_borders(requests, team_id, 0, 50, 0, 9)
+    add_alternating_colors(requests, team_id, 0, 50, 0, 9)
 
     # Role dropdown - 3 categories for Discord channel routing
     requests.append({
@@ -385,12 +388,21 @@ def setup_advanced_sheets(spreadsheet):
         }
     })
 
-    print("  [OK] Team: headers, validation, no mock data (use /syncteam)")
+    # Timezone dropdown - common timezones
+    common_timezones = ['Asia/Bangkok', 'Asia/Kolkata', 'Asia/Manila', 'Asia/Singapore', 'UTC', 'America/New_York', 'America/Los_Angeles', 'Europe/London']
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 7, 'endColumnIndex': 8},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in common_timezones]}, 'showCustomUi': True}
+        }
+    })
+
+    print("  [OK] Team: headers, validation, timezone/work start columns")
 
     # ========================================
     # 4. WEEKLY REPORTS
     # ========================================
-    print("\n[4/8] Setting up Weekly Reports...")
+    print("\n[4/10] Setting up Weekly Reports...")
 
     weekly_sheet = get_or_create_sheet(spreadsheet, "📅 Weekly Reports", rows=200, cols=22)
     weekly_id = weekly_sheet.id
@@ -471,7 +483,7 @@ def setup_advanced_sheets(spreadsheet):
     # ========================================
     # 5. MONTHLY REPORTS
     # ========================================
-    print("\n[5/8] Setting up Monthly Reports...")
+    print("\n[5/10] Setting up Monthly Reports...")
 
     monthly_sheet = get_or_create_sheet(spreadsheet, "📆 Monthly Reports", rows=100, cols=28)
     monthly_id = monthly_sheet.id
@@ -556,7 +568,7 @@ def setup_advanced_sheets(spreadsheet):
     # ========================================
     # 6. NOTES LOG
     # ========================================
-    print("\n[6/8] Setting up Notes Log...")
+    print("\n[6/10] Setting up Notes Log...")
 
     notes_sheet = get_or_create_sheet(spreadsheet, "📝 Notes Log", rows=2000, cols=8)
     notes_id = notes_sheet.id
@@ -602,7 +614,7 @@ def setup_advanced_sheets(spreadsheet):
     # ========================================
     # 7. TASK ARCHIVE
     # ========================================
-    print("\n[7/8] Setting up Task Archive...")
+    print("\n[7/10] Setting up Task Archive...")
 
     archive_sheet = get_or_create_sheet(spreadsheet, "🗃️ Archive", rows=5000, cols=18)
     archive_id = archive_sheet.id
@@ -627,7 +639,7 @@ def setup_advanced_sheets(spreadsheet):
     # ========================================
     # 8. SETTINGS
     # ========================================
-    print("\n[8/8] Setting up Settings...")
+    print("\n[8/10] Setting up Settings...")
 
     settings_sheet = get_or_create_sheet(spreadsheet, "⚙️ Settings", rows=50, cols=8)
     settings_id = settings_sheet.id
@@ -691,11 +703,135 @@ def setup_advanced_sheets(spreadsheet):
     print("  [OK] Settings: team list, types, priorities, statuses")
 
     # ========================================
+    # 9. TIME LOGS (Attendance)
+    # ========================================
+    print("\n[9/10] Setting up Time Logs (Attendance)...")
+
+    time_logs_sheet = get_or_create_sheet(spreadsheet, "⏰ Time Logs", rows=5000, cols=8)
+    time_logs_id = time_logs_sheet.id
+
+    # Compact structure for attendance records
+    time_logs_headers = ["Record ID", "Date", "Time", "Name", "Event", "Late", "Late Min", "Channel"]
+
+    time_logs_examples = [
+        ["ATT-20260118-001", today.strftime("%Y-%m-%d"), "08:55", "John", "in", "No", "0", "dev"],
+        ["ATT-20260118-002", today.strftime("%Y-%m-%d"), "09:15", "Sarah", "in", "Yes", "15", "dev"],
+        ["ATT-20260118-003", today.strftime("%Y-%m-%d"), "12:00", "John", "break in", "-", "0", "dev"],
+        ["ATT-20260118-004", today.strftime("%Y-%m-%d"), "12:30", "John", "break out", "-", "0", "dev"],
+        ["ATT-20260118-005", today.strftime("%Y-%m-%d"), "18:00", "John", "out", "-", "0", "dev"],
+    ]
+
+    time_logs_sheet.update(values=[time_logs_headers] + time_logs_examples, range_name='A1')
+
+    # Header formatting - teal theme
+    requests.append({'repeatCell': {'range': {'sheetId': time_logs_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 8}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(0, 128, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
+
+    requests.append({'updateDimensionProperties': {'range': {'sheetId': time_logs_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 35}, 'fields': 'pixelSize'}})
+    requests.append({'updateSheetProperties': {'properties': {'sheetId': time_logs_id, 'gridProperties': {'frozenRowCount': 1}}, 'fields': 'gridProperties.frozenRowCount'}})
+
+    # Column widths: Record ID, Date, Time, Name, Event, Late, Late Min, Channel
+    for i, w in enumerate([150, 100, 70, 120, 90, 60, 70, 80]):
+        requests.append({'updateDimensionProperties': {'range': {'sheetId': time_logs_id, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i+1}, 'properties': {'pixelSize': w}, 'fields': 'pixelSize'}})
+
+    add_borders(requests, time_logs_id, 0, 200, 0, 8)
+    add_alternating_colors(requests, time_logs_id, 0, 200, 0, 8)
+
+    # Event dropdown
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': time_logs_id, 'startRowIndex': 1, 'endRowIndex': 5000, 'startColumnIndex': 4, 'endColumnIndex': 5},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['in', 'out', 'break in', 'break out']]}, 'showCustomUi': True}
+        }
+    })
+
+    # Late dropdown
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': time_logs_id, 'startRowIndex': 1, 'endRowIndex': 5000, 'startColumnIndex': 5, 'endColumnIndex': 6},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': 'Yes'}, {'userEnteredValue': 'No'}, {'userEnteredValue': '-'}]}, 'showCustomUi': True}
+        }
+    })
+
+    # Channel dropdown
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': time_logs_id, 'startRowIndex': 1, 'endRowIndex': 5000, 'startColumnIndex': 7, 'endColumnIndex': 8},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['dev', 'admin', 'marketing', 'design']]}, 'showCustomUi': True}
+        }
+    })
+
+    # Conditional formatting for late (Yes = red)
+    requests.append({
+        'addConditionalFormatRule': {
+            'rule': {
+                'ranges': [{'sheetId': time_logs_id, 'startRowIndex': 1, 'endRowIndex': 5000, 'startColumnIndex': 5, 'endColumnIndex': 6}],
+                'booleanRule': {'condition': {'type': 'TEXT_EQ', 'values': [{'userEnteredValue': 'Yes'}]}, 'format': {'backgroundColor': rgb(255, 200, 200), 'textFormat': {'bold': True}}}
+            }, 'index': 0
+        }
+    })
+
+    print("  [OK] Time Logs: attendance records, dropdowns, late highlighting")
+
+    # ========================================
+    # 10. TIME REPORTS (Weekly Summary)
+    # ========================================
+    print("\n[10/10] Setting up Time Reports (Weekly Summary)...")
+
+    time_reports_sheet = get_or_create_sheet(spreadsheet, "📊 Time Reports", rows=200, cols=11)
+    time_reports_id = time_reports_sheet.id
+
+    # Weekly time summary structure
+    time_reports_headers = ["Week", "Year", "Name", "Days Worked", "Total Hours", "Avg Start", "Avg End", "Late Days", "Total Late", "Break Time", "Notes"]
+
+    time_reports_examples = [
+        ["3", "2026", "John", "5", "42.5", "08:55", "18:10", "0", "0", "2.5h", ""],
+        ["3", "2026", "Sarah", "5", "40.0", "09:15", "18:00", "3", "45", "3.0h", "Consistently late Monday-Wednesday"],
+        ["3", "2026", "Mike", "4", "35.0", "09:00", "17:30", "0", "0", "2.0h", "Friday off"],
+        ["2", "2026", "John", "5", "44.0", "08:50", "18:30", "0", "0", "2.5h", ""],
+        ["2", "2026", "Sarah", "5", "41.5", "09:05", "18:15", "1", "15", "2.5h", ""],
+    ]
+
+    time_reports_sheet.update(values=[time_reports_headers] + time_reports_examples, range_name='A1')
+
+    # Header formatting - dark teal theme
+    requests.append({'repeatCell': {'range': {'sheetId': time_reports_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 11}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(0, 100, 100), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
+
+    requests.append({'updateDimensionProperties': {'range': {'sheetId': time_reports_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 35}, 'fields': 'pixelSize'}})
+    requests.append({'updateSheetProperties': {'properties': {'sheetId': time_reports_id, 'gridProperties': {'frozenRowCount': 1, 'frozenColumnCount': 3}}, 'fields': 'gridProperties.frozenRowCount,gridProperties.frozenColumnCount'}})
+
+    # Column widths
+    for i, w in enumerate([60, 50, 120, 100, 90, 80, 80, 80, 80, 90, 200]):
+        requests.append({'updateDimensionProperties': {'range': {'sheetId': time_reports_id, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i+1}, 'properties': {'pixelSize': w}, 'fields': 'pixelSize'}})
+
+    add_borders(requests, time_reports_id, 0, 100, 0, 11)
+    add_alternating_colors(requests, time_reports_id, 0, 100, 0, 11)
+
+    # Conditional formatting for late days (>0 = yellow/red)
+    requests.append({
+        'addConditionalFormatRule': {
+            'rule': {
+                'ranges': [{'sheetId': time_reports_id, 'startRowIndex': 1, 'endRowIndex': 200, 'startColumnIndex': 7, 'endColumnIndex': 8}],
+                'booleanRule': {'condition': {'type': 'NUMBER_GREATER', 'values': [{'userEnteredValue': '2'}]}, 'format': {'backgroundColor': rgb(255, 150, 150)}}
+            }, 'index': 0
+        }
+    })
+    requests.append({
+        'addConditionalFormatRule': {
+            'rule': {
+                'ranges': [{'sheetId': time_reports_id, 'startRowIndex': 1, 'endRowIndex': 200, 'startColumnIndex': 7, 'endColumnIndex': 8}],
+                'booleanRule': {'condition': {'type': 'NUMBER_BETWEEN', 'values': [{'userEnteredValue': '1'}, {'userEnteredValue': '2'}]}, 'format': {'backgroundColor': rgb(255, 255, 150)}}
+            }, 'index': 1
+        }
+    })
+
+    print("  [OK] Time Reports: weekly summary, late day highlighting")
+
+    # ========================================
     # APPLY MONTSERRAT FONT TO ALL SHEETS
     # ========================================
     print("\n[*] Applying Montserrat font to all sheets...")
 
-    all_sheet_ids = [tasks_id, dash_id, team_id, weekly_id, monthly_id, notes_id, archive_id, settings_id]
+    all_sheet_ids = [tasks_id, dash_id, team_id, weekly_id, monthly_id, notes_id, archive_id, settings_id, time_logs_id, time_reports_id]
     for sid in all_sheet_ids:
         requests.append({
             'repeatCell': {
@@ -762,7 +898,7 @@ def main():
     print("="*60)
     print("""
 Features Applied:
-  - 8 professional tabs with consistent styling
+  - 10 professional tabs with consistent styling
   - Example data in all sheets
   - Dropdown menus (Priority, Status, Type, Progress, Role, etc.)
   - Conditional formatting (color-coded priorities & statuses)
@@ -772,6 +908,9 @@ Features Applied:
   - Frozen headers and columns
   - Optimized column widths
   - Dashboard with live formulas
+  - Time Logs for attendance tracking
+  - Time Reports for weekly summaries
+  - Team timezone and work start columns
 
 View your sheet at:
 """)

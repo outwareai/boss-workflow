@@ -239,6 +239,35 @@ async def google_auth_callback(code: Optional[str] = None, state: Optional[str] 
 
             tokens = response.json()
 
+            # Get user's email from userinfo endpoint
+            access_token = tokens.get("access_token")
+            user_email = None
+            if access_token:
+                userinfo_response = await client.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"}
+                )
+                if userinfo_response.status_code == 200:
+                    userinfo = userinfo_response.json()
+                    user_email = userinfo.get("email")
+
+        # Store tokens in database
+        if user_email and tokens.get("refresh_token"):
+            try:
+                from ..database.repositories import get_oauth_repository
+                oauth_repo = get_oauth_repository()
+                await oauth_repo.store_token(
+                    email=user_email,
+                    service=service,
+                    refresh_token=tokens.get("refresh_token"),
+                    access_token=tokens.get("access_token"),
+                    expires_in=tokens.get("expires_in"),
+                    scopes=tokens.get("scope"),
+                )
+                logger.info(f"Stored {service} OAuth token for {user_email}")
+            except Exception as db_error:
+                logger.warning(f"Failed to store OAuth token in DB: {db_error}")
+
         # Return success to popup
         html = f"""
         <!DOCTYPE html>
@@ -254,12 +283,14 @@ async def google_auth_callback(code: Optional[str] = None, state: Optional[str] 
             <div class="success">
                 <div class="icon">✓</div>
                 <h2>Google {service.title()} Connected!</h2>
+                <p style="color: #888;">{user_email or 'Your account'}</p>
                 <p>You can close this window.</p>
             </div>
             <script>
                 window.opener.postMessage({{
                     type: '{service}_connected',
-                    token: '{tokens.get("refresh_token", "")}'
+                    token: '{tokens.get("refresh_token", "")}',
+                    email: '{user_email or ""}'
                 }}, '*');
                 setTimeout(() => window.close(), 2000);
             </script>

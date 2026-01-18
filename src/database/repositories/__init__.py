@@ -10,6 +10,8 @@ from .conversations import ConversationRepository, get_conversation_repository
 from .ai_memory import AIMemoryRepository, get_ai_memory_repository
 from .team import TeamRepository, get_team_repository
 from .projects import ProjectRepository, get_project_repository
+from .attendance import AttendanceRepository, get_attendance_repository
+from .oauth import OAuthTokenRepository, get_oauth_repository
 
 __all__ = [
     "TaskRepository",
@@ -24,4 +26,8 @@ __all__ = [
     "get_team_repository",
     "ProjectRepository",
     "get_project_repository",
+    "AttendanceRepository",
+    "get_attendance_repository",
+    "OAuthTokenRepository",
+    "get_oauth_repository",
 ]

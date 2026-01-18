@@ -122,6 +122,24 @@ class Settings(BaseSettings):
     enable_drive_storage: bool = Field(default=True, env="ENABLE_DRIVE_STORAGE")
     drive_folder_id: str = Field(default="", env="DRIVE_FOLDER_ID")
 
+    # Attendance / Time Clock Settings
+    discord_attendance_dev_channel_id: str = Field(
+        default="1462451610184843449",
+        env="DISCORD_ATTENDANCE_DEV_CHANNEL_ID"
+    )
+    discord_attendance_admin_channel_id: str = Field(
+        default="1462451782470078628",
+        env="DISCORD_ATTENDANCE_ADMIN_CHANNEL_ID"
+    )
+
+    # Default working hours (in system timezone - Thailand time)
+    default_work_start_hour: int = Field(default=9, env="DEFAULT_WORK_START_HOUR")
+    default_work_end_hour: int = Field(default=18, env="DEFAULT_WORK_END_HOUR")
+    default_grace_period_minutes: int = Field(default=15, env="DEFAULT_GRACE_PERIOD_MINUTES")
+
+    # Attendance sync settings
+    attendance_sync_interval_minutes: int = Field(default=15, env="ATTENDANCE_SYNC_INTERVAL_MINUTES")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

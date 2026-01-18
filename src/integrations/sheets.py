@@ -29,6 +29,8 @@ SHEET_MONTHLY = "📆 Monthly Reports"
 SHEET_NOTES = "📝 Notes Log"
 SHEET_ARCHIVE = "🗃️ Archive"
 SHEET_SETTINGS = "⚙️ Settings"
+SHEET_TIME_LOGS = "⏰ Time Logs"
+SHEET_TIME_REPORTS = "📊 Time Reports"
 
 
 class GoogleSheetsIntegration:
@@ -1180,6 +1182,212 @@ class GoogleSheetsIntegration:
 
         logger.info(f"Bulk assign to {assignee}: {success_count} succeeded, {len(failed_ids)} failed")
         return success_count, failed_ids
+
+    # ============================================
+    # ATTENDANCE / TIME CLOCK OPERATIONS
+    # ============================================
+    # Time Logs columns: Record ID, Date, Time, Name, Event, Late, Late Min, Channel
+    # Time Reports columns: Week, Year, Name, Days Worked, Total Hours, Avg Start, Avg End, Late Days, Total Late, Break Time, Notes
+
+    async def add_attendance_log(self, record: Dict[str, Any]) -> bool:
+        """
+        Add a single attendance record to the Time Logs sheet.
+
+        Args:
+            record: Dict containing:
+                - record_id: ATT-YYYYMMDD-XXX
+                - date: YYYY-MM-DD
+                - time: HH:MM
+                - name: Staff name
+                - event: in/out/break in/break out
+                - late: Yes/No/-
+                - late_min: Minutes late (0 if not late)
+                - channel: dev/admin
+        """
+        if not await self.initialize():
+            return False
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_TIME_LOGS)
+
+            row_data = [
+                record.get('record_id', ''),
+                record.get('date', ''),
+                record.get('time', ''),
+                record.get('name', ''),
+                record.get('event', ''),
+                record.get('late', '-'),
+                str(record.get('late_min', 0)),
+                record.get('channel', ''),
+            ]
+
+            worksheet.append_row(row_data, value_input_option='USER_ENTERED')
+            logger.info(f"Added attendance log: {record.get('record_id')} - {record.get('name')} {record.get('event')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error adding attendance log: {e}")
+            return False
+
+    async def add_attendance_logs_batch(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Batch add attendance records to Time Logs sheet.
+
+        Args:
+            records: List of record dicts (same format as add_attendance_log)
+
+        Returns:
+            Number of records successfully added
+        """
+        if not await self.initialize():
+            return 0
+
+        if not records:
+            return 0
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_TIME_LOGS)
+
+            rows = []
+            for record in records:
+                rows.append([
+                    record.get('record_id', ''),
+                    record.get('date', ''),
+                    record.get('time', ''),
+                    record.get('name', ''),
+                    record.get('event', ''),
+                    record.get('late', '-'),
+                    str(record.get('late_min', 0)),
+                    record.get('channel', ''),
+                ])
+
+            # Get current last row
+            current_values = worksheet.get_all_values()
+            start_row = len(current_values) + 1
+
+            # Batch update
+            worksheet.update(
+                f'A{start_row}:H{start_row + len(rows) - 1}',
+                rows,
+                value_input_option='USER_ENTERED'
+            )
+
+            logger.info(f"Batch added {len(rows)} attendance records")
+            return len(rows)
+
+        except Exception as e:
+            logger.error(f"Error batch adding attendance logs: {e}")
+            return 0
+
+    async def update_time_report(
+        self,
+        week: int,
+        year: int,
+        summaries: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Update or add weekly time report summaries.
+
+        Args:
+            week: Week number
+            year: Year (e.g., 2026)
+            summaries: List of user summaries, each containing:
+                - name: Staff name
+                - days_worked: Number of days
+                - total_hours: Total work hours
+                - avg_start: Average clock-in time (HH:MM)
+                - avg_end: Average clock-out time (HH:MM)
+                - late_days: Count of late days
+                - total_late_minutes: Total minutes late
+                - break_minutes: Total break time in minutes
+                - notes: Optional notes
+
+        Returns:
+            True if successful
+        """
+        if not await self.initialize():
+            return False
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_TIME_REPORTS)
+
+            for summary in summaries:
+                # Check if row exists for this week/year/name
+                all_records = worksheet.get_all_records()
+                existing_row = None
+
+                for idx, record in enumerate(all_records):
+                    if (str(record.get('Week', '')) == str(week) and
+                        str(record.get('Year', '')) == str(year) and
+                        record.get('Name', '').lower() == summary.get('name', '').lower()):
+                        existing_row = idx + 2  # +1 for 0-index, +1 for header
+                        break
+
+                # Format break time
+                break_minutes = summary.get('break_minutes', 0)
+                break_hours = break_minutes / 60
+                break_str = f"{break_hours:.1f}h"
+
+                row_data = [
+                    str(week),
+                    str(year),
+                    summary.get('name', ''),
+                    str(summary.get('days_worked', 0)),
+                    str(summary.get('total_hours', 0)),
+                    summary.get('avg_start', ''),
+                    summary.get('avg_end', ''),
+                    str(summary.get('late_days', 0)),
+                    str(summary.get('total_late_minutes', 0)),
+                    break_str,
+                    summary.get('notes', ''),
+                ]
+
+                if existing_row:
+                    # Update existing row
+                    worksheet.update(
+                        f'A{existing_row}:K{existing_row}',
+                        [row_data],
+                        value_input_option='USER_ENTERED'
+                    )
+                    logger.info(f"Updated time report for {summary.get('name')} week {week}/{year}")
+                else:
+                    # Append new row
+                    worksheet.append_row(row_data, value_input_option='USER_ENTERED')
+                    logger.info(f"Added time report for {summary.get('name')} week {week}/{year}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating time report: {e}")
+            return False
+
+    async def get_time_logs(self, start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
+        """Get time logs, optionally filtered by date range."""
+        if not await self.initialize():
+            return []
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_TIME_LOGS)
+            records = worksheet.get_all_records()
+
+            if not start_date and not end_date:
+                return records
+
+            # Filter by date range
+            filtered = []
+            for record in records:
+                record_date = record.get('Date', '')
+                if start_date and record_date < start_date:
+                    continue
+                if end_date and record_date > end_date:
+                    continue
+                filtered.append(record)
+
+            return filtered
+
+        except Exception as e:
+            logger.error(f"Error getting time logs: {e}")
+            return []
 
 
 # Singleton instance

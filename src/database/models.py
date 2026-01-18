@@ -102,6 +102,13 @@ class MessageRoleEnum(str, enum.Enum):
     SYSTEM = "system"
 
 
+class AttendanceEventTypeEnum(str, enum.Enum):
+    CLOCK_IN = "clock_in"
+    CLOCK_OUT = "clock_out"
+    BREAK_START = "break_start"
+    BREAK_END = "break_end"
+
+
 # ==================== PROJECTS ====================
 
 class ProjectDB(Base):
@@ -577,6 +584,49 @@ class ActiveTimerDB(Base):
     )
 
 
+# ==================== ATTENDANCE RECORDS ====================
+
+class AttendanceRecordDB(Base):
+    """Attendance records for time clock system."""
+    __tablename__ = "attendance_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    record_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # ATT-YYYYMMDD-XXX
+
+    # User info
+    user_id: Mapped[str] = mapped_column(String(100), nullable=False)  # Discord user ID
+    user_name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    # Event details
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)  # clock_in, clock_out, break_start, break_end
+    event_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # Local time
+    event_time_utc: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # UTC for calculations
+
+    # Channel info
+    channel_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    channel_name: Mapped[str] = mapped_column(String(50), nullable=False)  # dev/admin
+
+    # Late tracking
+    is_late: Mapped[bool] = mapped_column(Boolean, default=False)
+    late_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    expected_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Sync tracking
+    synced_to_sheets: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Metadata
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_attendance_user", "user_id"),
+        Index("idx_attendance_type", "event_type"),
+        Index("idx_attendance_time", "event_time"),
+        Index("idx_attendance_channel", "channel_id"),
+        Index("idx_attendance_synced", "synced_to_sheets"),
+        Index("idx_attendance_date", "event_time"),  # For daily queries
+    )
+
+
 # ==================== WEBHOOK EVENTS ====================
 
 class WebhookEventDB(Base):
@@ -603,4 +653,46 @@ class WebhookEventDB(Base):
         Index("idx_webhook_source", "source"),
         Index("idx_webhook_processed", "processed"),
         Index("idx_webhook_received", "received_at"),
+    )
+
+
+# ==================== OAUTH TOKENS ====================
+
+class OAuthTokenDB(Base):
+    """
+    Store OAuth tokens for user-level Google integrations.
+
+    Used for:
+    - Google Calendar (create events on user's personal calendar)
+    - Google Tasks (create tasks in user's personal task list)
+    """
+    __tablename__ = "oauth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # User identification (by email since that's consistent across platforms)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=False)
+
+    # Service type: 'calendar', 'tasks'
+    service: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # OAuth tokens (encrypted in production)
+    access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    token_type: Mapped[str] = mapped_column(String(50), default="Bearer")
+
+    # Token expiry
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Metadata
+    scopes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Space-separated scopes
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("email", "service", name="uq_oauth_email_service"),
+        Index("idx_oauth_email", "email"),
+        Index("idx_oauth_service", "service"),
     )

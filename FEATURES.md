@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-18
-> **Version:** 1.5.1
+> **Version:** 1.5.4
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -22,8 +22,10 @@ This document contains the complete list of features, functions, and capabilitie
 11. [Task Model](#task-model)
 12. [Validation System](#validation-system)
 13. [API Endpoints](#api-endpoints)
-14. [Configuration](#configuration)
-15. [Future Upgrades & Roadmap](#future-upgrades--roadmap)
+14. [Utility Modules](#utility-modules-new-in-v153)
+15. [Time Clock / Attendance System](#time-clock--attendance-system-new-in-v154)
+16. [Configuration](#configuration)
+17. [Future Upgrades & Roadmap](#future-upgrades--roadmap)
 
 ---
 
@@ -734,6 +736,8 @@ Dark minimalist theme matching outsupplements.com:
 | `recurring_tasks_job` | Every 5 minutes | Create task instances from recurring templates (NEW v1.2) |
 | `morning_digest` | 10 AM | Email summary for morning (Telegram only) |
 | `evening_digest` | 9 PM | Email summary for evening (Telegram only) |
+| `sync_attendance` | Every 15 minutes | Sync attendance records from PostgreSQL to Google Sheets (NEW v1.5.4) |
+| `weekly_time_report` | Monday 10 AM | Generate weekly time/attendance report for all staff (NEW v1.5.4) |
 
 ### Email Digest in Daily Standup (NEW in v1.4.1)
 
@@ -1165,6 +1169,275 @@ project_repo = get_project_repository()
 
 ---
 
+## Utility Modules (NEW in v1.5.3)
+
+Centralized utilities for consistent behavior across the application.
+
+### Datetime Utilities (`src/utils/datetime_utils.py`)
+
+All datetime handling uses these functions to ensure timezone consistency:
+
+```python
+from src.utils import (
+    get_local_tz,       # Get configured timezone
+    get_local_now,      # Current time in local TZ (naive)
+    to_naive_local,     # Convert any datetime to naive local
+    to_aware_utc,       # Convert to timezone-aware UTC
+    parse_deadline,     # Parse deadline strings ("tomorrow", "2026-01-20")
+    format_deadline,    # Format for display ("Jan 20, 2026 5:00 PM")
+    is_overdue,         # Check if deadline passed
+    hours_until_deadline,  # Hours remaining (negative if overdue)
+)
+
+# Convert timezone-aware deadline to naive local for PostgreSQL
+db_deadline = to_naive_local(task.deadline)
+
+# Parse user input like "tomorrow" or "2026-01-20T18:00:00+07:00"
+deadline = parse_deadline("tomorrow")  # Returns naive local datetime
+```
+
+### Team Utilities (`src/utils/team_utils.py`)
+
+Centralized team member lookup across all data sources:
+
+```python
+from src.utils import (
+    lookup_team_member,     # Find member by name (DB → Sheets → config)
+    get_assignee_info,      # Get all IDs for notifications
+    get_role_for_assignee,  # Get role for channel routing
+    validate_discord_id,    # Validate numeric Discord ID format
+)
+
+# Get assignee info for task creation
+info = await get_assignee_info("Mayank")
+# Returns: {"discord_id": "123...", "email": "...", "telegram_id": "...", "role": "Developer"}
+
+# Lookup searches in order:
+# 1. PostgreSQL database (fastest)
+# 2. Google Sheets Team tab (source of truth)
+# 3. config/team.py (local fallback)
+```
+
+### Validation Utilities (`src/utils/validation.py`)
+
+Task validation before database save:
+
+```python
+from src.utils import (
+    validate_task_data,        # Full task validation
+    validate_email,            # Email format check
+    validate_task_id,          # Task ID format (TASK-YYYYMMDD-XXX)
+    validate_priority,         # Priority value check
+    validate_status,           # Status value check
+    validate_status_transition,  # Transition validity check
+)
+
+# Validate before creating task
+result = validate_task_data(
+    title="Fix login bug",
+    assignee="Mayank",
+    assignee_discord_id="1234567890123456789",
+    priority="high",
+)
+
+if not result.is_valid:
+    print(f"Errors: {result.errors}")
+else:
+    if result.warnings:
+        print(f"Warnings: {result.warnings}")
+    # Proceed with task creation
+```
+
+**Validation Checks:**
+- Title required (3-500 characters)
+- Priority must be: low, medium, high, urgent
+- Status must be valid (14 statuses)
+- Discord ID format (17-19 digits)
+- Email format validation
+- Deadline in past (warning)
+- Assignee without contact info (warning)
+
+---
+
+## Time Clock / Attendance System (NEW in v1.5.4)
+
+A simple, Discord-based attendance tracking system where staff send messages like "in", "out", "break" in dedicated channels.
+
+### Discord Channels for Attendance
+
+| Department | Channel ID | Purpose |
+|------------|------------|---------|
+| Dev | 1462451610184843449 | Developer attendance |
+| Admin | 1462451782470078628 | Admin attendance |
+
+### Staff Commands (Discord Message)
+
+Staff simply send a message in their department's attendance channel:
+
+| Message | Action | Bot Reaction |
+|---------|--------|--------------|
+| `in` | Clock in for the day | ✅ (+ ⏰ if late) |
+| `out` | Clock out for the day | 👋 |
+| `break` | Toggle break on/off | ☕ (start) / 💪 (end) |
+
+**Example:**
+```
+Staff sends: "in"
+Bot reacts: ✅
+(If late, also: ⏰)
+```
+
+### Late Detection
+
+The system automatically detects late arrivals based on:
+
+1. **Expected work start time**: Default 9:00 AM Thailand time
+2. **Grace period**: Default 15 minutes
+3. **Timezone support**: Each staff member can have their own timezone configured
+
+**Late Detection Algorithm:**
+```
+1. User sends "in" → capture event_time (UTC)
+2. Look up team member by Discord ID
+3. Get their timezone from Team sheet (default: Asia/Bangkok)
+4. Get their work_start from Team sheet (default: 09:00)
+5. Convert work_start to UTC for comparison
+6. Apply grace period (default: 15 min)
+7. If event_time > (work_start + grace_period):
+   - is_late = True
+   - late_minutes = (event_time - work_start).minutes
+   - React with ⏰ emoji
+```
+
+**Multi-Timezone Example:**
+```
+Staff: Mayank (India, UTC+5:30)
+Thailand work start: 9:00 AM (UTC+7)
+
+Expected start in Mayank's time:
+  9:00 ICT = 7:30 IST (1.5 hours behind)
+
+If Mayank clocks in at 8:00 AM IST:
+  = 9:30 AM ICT → 30 min late! ⏰
+
+If Mayank clocks in at 7:15 AM IST:
+  = 8:45 AM ICT → Within grace period ✅
+```
+
+### Google Sheets Integration
+
+Two new sheets are created:
+
+**⏰ Time Logs** (compact, 8 columns):
+
+| Column | Description |
+|--------|-------------|
+| Record ID | ATT-YYYYMMDD-XXX |
+| Date | YYYY-MM-DD |
+| Time | HH:MM |
+| Name | Staff name |
+| Event | in/out/break in/break out |
+| Late | Yes/No/- |
+| Late Min | Minutes late (0 if not) |
+| Channel | dev/admin |
+
+**📊 Time Reports** (weekly summary, 11 columns):
+
+| Column | Description |
+|--------|-------------|
+| Week | Week number |
+| Year | 2026 |
+| Name | Staff name |
+| Days Worked | Count |
+| Total Hours | Sum |
+| Avg Start | Average clock-in time |
+| Avg End | Average clock-out time |
+| Late Days | Count |
+| Total Late | Minutes |
+| Break Time | Total break duration |
+| Notes | Manual notes |
+
+**Updated 👥 Team sheet** - 2 new columns:
+
+| Column | Description |
+|--------|-------------|
+| Timezone | e.g., Asia/Kolkata, Asia/Bangkok |
+| Work Start | e.g., 09:00 (in Thailand time) |
+
+### Database Model
+
+```python
+class AttendanceRecordDB:
+    id: int
+    record_id: str  # ATT-YYYYMMDD-XXX
+    user_id: str    # Discord user ID
+    user_name: str
+    event_type: str  # clock_in, clock_out, break_start, break_end
+    event_time: datetime  # Local time
+    event_time_utc: datetime  # UTC for calculations
+    channel_id: str
+    channel_name: str  # dev/admin
+    is_late: bool
+    late_minutes: int
+    expected_time: datetime (nullable)
+    synced_to_sheets: bool
+    created_at: datetime
+```
+
+### Service Layer (`src/services/attendance.py`)
+
+| Function | Description |
+|----------|-------------|
+| `process_clock_in()` | Record clock-in, check for late, return reaction info |
+| `process_clock_out()` | Record clock-out, auto-end break if needed |
+| `process_break_toggle()` | Toggle break on/off state |
+| `calculate_late_status()` | Compare clock-in vs expected time with timezone handling |
+| `get_user_daily_summary()` | Get today's attendance for a user |
+
+### Repository Layer (`src/database/repositories/attendance.py`)
+
+| Function | Description |
+|----------|-------------|
+| `record_event()` | Save clock in/out/break event |
+| `get_user_events_for_date()` | Daily log for a user |
+| `get_user_last_event()` | For break toggle logic |
+| `get_weekly_summary()` | Per-user weekly stats |
+| `get_team_weekly_summary()` | All users weekly stats |
+| `get_unsynced_records()` | For Sheets sync |
+| `mark_synced()` | After Sheets sync |
+
+### Scheduled Jobs
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `sync_attendance` | Every 15 min | Sync PostgreSQL → Google Sheets |
+| `weekly_time_report` | Monday 10 AM | Generate weekly summary, post to Discord/Telegram |
+
+### Configuration
+
+```bash
+# Attendance channels (env vars or settings.py)
+DISCORD_ATTENDANCE_DEV_CHANNEL_ID=1462451610184843449
+DISCORD_ATTENDANCE_ADMIN_CHANNEL_ID=1462451782470078628
+
+# Working hours (Thailand time)
+DEFAULT_WORK_START_HOUR=9
+DEFAULT_WORK_END_HOUR=18
+DEFAULT_GRACE_PERIOD_MINUTES=15
+
+# Sync interval
+ATTENDANCE_SYNC_INTERVAL_MINUTES=15
+```
+
+### Setup
+
+1. **Run setup_sheets.py** to create ⏰ Time Logs and 📊 Time Reports sheets
+2. **Configure Discord channels** in settings (or use defaults)
+3. **Update Team sheet** with Timezone and Work Start columns for each staff member
+4. **Staff sends messages** in their attendance channel
+
+---
+
 ## Configuration
 
 ### Environment Variables (`.env`)
@@ -1581,6 +1854,8 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.4 | 2026-01-18 | **Time Clock / Attendance System:** Staff check-in/check-out via Discord messages ("in", "out", "break"). **Discord Channels:** Dev attendance (1462451610184843449), Admin attendance (1462451782470078628). **Late Detection:** Automatic late detection with ⏰ reaction, timezone-aware calculations, configurable grace period. **Break Toggle:** Single "break" message toggles break on/off (☕/💪 reactions). **New Sheets:** ⏰ Time Logs for attendance records, 📊 Time Reports for weekly summaries. **Team Sheet Update:** Added Timezone and Work Start columns. **Database Model:** AttendanceRecordDB with full event tracking. **Service Layer:** AttendanceService for business logic with timezone handling. **Repository:** AttendanceRepository with daily/weekly summary methods. **Scheduler Jobs:** sync_attendance (every 15 min), weekly_time_report (Monday 10 AM). **Settings:** New attendance config options (channel IDs, work hours, grace period). |
+| 1.5.3 | 2026-01-18 | **Centralized Utility Modules:** New `src/utils/` package with datetime, team lookup, and validation utilities. **Datetime Utils:** `to_naive_local()`, `parse_deadline()`, `get_local_now()` for consistent timezone handling (fixes PostgreSQL offset-naive/aware datetime errors). **Team Utils:** `get_assignee_info()`, `lookup_team_member()` with 3-tier fallback (DB → Sheets → config). **Validation Utils:** `validate_task_data()` with field validation and warnings before database save. **Task Model Fix:** Added `spec_sheet_url`, `discord_thread_id` optional fields to prevent AttributeError on forum posting. **Improved Error Messages:** More descriptive error messages with error type hints. **ThreadWithMessage Fix:** Updated discord_bot.py to handle discord.py 2.0+ `ThreadWithMessage` object (has `.thread`/`.message` attributes, not tuple). |
 | 1.5.2 | 2026-01-18 | **Web Onboarding Portal:** Staff self-service registration page at `/onboard` with dark minimalist design. 4-step wizard: Basic Info → Discord Setup → Google Integration → Confirmation. Saves to Sheets + PostgreSQL. **Google OAuth2:** User-level authentication for Calendar & Tasks with popup flow. Includes embedded screenshot showing Google's "unverified app" warning with click-through instructions. **Auto Calendar ID:** Form automatically sets Calendar ID to user's email. Existing users backfilled. **Route Fix:** OAuth callback route ordering fixed to prevent "Invalid service" error. New env vars: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`. **Team View:** `/team` endpoint shows all team members. |
 | 1.5.1 | 2026-01-18 | **Admin Department Setup:** Added Admin category Discord channels - Forum `1462370539858432145`, Report `1462370845908402268`, General `1462370950627725362`. **Team Member Minty:** Added (Discord: 834982814910775306, Role: Admin, Email: sutima2543@gmail.com). **Fallback Routing:** Tasks for departments without a tasks channel automatically post to forum. **Post to All Departments:** Added `post_standup_to_all()` for multi-department reports. **Per-User Google Calendar:** Events now created directly on assignee's personal calendar (if shared with service account). Team sheet has Calendar ID column. System looks up from Sheets, falls back to config/team.py. |
 | 1.5.0 | 2026-01-18 | **MAJOR: Channel-Based Discord Integration:** Complete rewrite from webhooks to Bot API with channel IDs. Full permissions for message/thread management. **4 Channels Per Department:** Forum (specs), Tasks (regular tasks), Report (standup), General. **Dev Category Configured:** Forum `1459834094304104653`, Tasks `1461760665873158349`, Report `1461760697334632651`, General `1461760791719182590`. **Smart Content Routing:** Specs→Forum, tasks→Tasks channel, standup→Report, help→General. **Role-Based Department Routing:** Tasks route to matching department's channels based on assignee role. |

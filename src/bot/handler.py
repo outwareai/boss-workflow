@@ -25,6 +25,7 @@ from ..integrations.gmail import get_gmail_integration
 from ..ai.email_summarizer import get_email_summarizer
 from ..ai.reviewer import get_submission_reviewer, ReviewResult
 from ..database.repositories import get_task_repository
+from ..utils import to_naive_local, get_assignee_info, validate_task_data
 
 logger = logging.getLogger(__name__)
 
@@ -1895,23 +1896,38 @@ Ready to send to boss? (yes/no)""", None
         """Finalize and create the task."""
         spec = conv.generated_spec
         if not spec:
-            return "Something went wrong. Try describing the task again.", None
+            logger.error(f"Task finalization failed: no spec generated for conversation {conv.id}")
+            return (
+                "⚠️ Task specification wasn't generated properly. "
+                "Please describe the task again with more detail."
+            ), None
 
-        # Get user preferences for team member lookup
-        user_prefs = await self.prefs.get_preferences(user_id)
+        # Look up team member info using centralized lookup
         assignee_name = spec.get("assignee")
-        assignee_discord_id = None
-        assignee_email = None
-        assignee_telegram_id = None
+        assignee_info = await get_assignee_info(assignee_name) if assignee_name else {}
+        assignee_discord_id = assignee_info.get("discord_id")
+        assignee_email = assignee_info.get("email")
+        assignee_telegram_id = assignee_info.get("telegram_id")
 
-        # Look up team member info if assignee specified
-        if assignee_name:
-            team_member = self.prefs.find_team_member(user_prefs, assignee_name)
-            if team_member:
-                assignee_name = team_member.name  # Use canonical name
-                assignee_discord_id = team_member.discord_username or team_member.discord_id
-                assignee_email = team_member.email
-                assignee_telegram_id = team_member.telegram_id
+        # Validate task data before creation
+        validation = validate_task_data(
+            title=spec.get("title", ""),
+            description=spec.get("description"),
+            assignee=assignee_name,
+            assignee_discord_id=assignee_discord_id,
+            assignee_email=assignee_email,
+            priority=spec.get("priority"),
+            status="pending",
+        )
+
+        if not validation.is_valid:
+            error_msg = "Cannot create task:\n" + "\n".join(f"• {e}" for e in validation.errors)
+            return error_msg, None
+
+        # Log warnings but continue
+        if validation.warnings:
+            for warning in validation.warnings:
+                logger.warning(f"Task validation warning: {warning}")
 
         task = Task(
             title=spec.get("title", "Untitled"),
@@ -1963,20 +1979,10 @@ Ready to send to boss? (yes/no)""", None
         # Save to PostgreSQL with discord_message_id
         subtask_ids = []
         try:
-            from ..database.repositories import get_task_repository
             task_repo = get_task_repository()
 
-            # Convert timezone-aware deadline to naive datetime for PostgreSQL
-            db_deadline = None
-            if task.deadline:
-                if task.deadline.tzinfo is not None:
-                    # Convert to local timezone and strip tzinfo
-                    import pytz
-                    local_tz = pytz.timezone(settings.timezone)
-                    local_dt = task.deadline.astimezone(local_tz)
-                    db_deadline = local_dt.replace(tzinfo=None)
-                else:
-                    db_deadline = task.deadline
+            # Convert deadline to naive local time for PostgreSQL
+            db_deadline = to_naive_local(task.deadline)
 
             db_task_data = {
                 'task_id': task.id,

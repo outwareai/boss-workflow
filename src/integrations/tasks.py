@@ -2,6 +2,7 @@
 Google Tasks integration for two-way sync.
 
 Syncs tasks with Google Tasks for mobile access.
+Supports user-level OAuth for personal task lists.
 """
 
 import logging
@@ -9,7 +10,9 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import json
 
-from google.oauth2.service_account import Credentials
+import httpx
+from google.oauth2.credentials import Credentials as UserCredentials
+from google.oauth2.service_account import Credentials as ServiceCredentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 

@@ -50,6 +50,23 @@ STATUS_REACTION_MAP = {
     "pending": "⏳",
 }
 
+# Attendance channel mapping (channel_id -> department name)
+# These are the channels where staff send "in", "out", "break" messages
+ATTENDANCE_CHANNELS = {
+    1462451610184843449: "dev",    # Dev attendance channel
+    1462451782470078628: "admin",  # Admin attendance channel
+}
+
+# Attendance command reactions
+ATTENDANCE_REACTIONS = {
+    "in": "✅",      # Clock in
+    "out": "👋",     # Clock out
+    "break_start": "☕",  # Break started
+    "break_end": "💪",   # Break ended
+    "late": "⏰",     # Late indicator
+    "error": "⚠️",    # Error
+}
+
 
 class TaskingBot(commands.Bot):
     """Discord bot for task management via reactions."""
@@ -73,6 +90,9 @@ class TaskingBot(commands.Bot):
         # Callback for status updates (set by main app)
         self.on_status_update_callback = None
         self.on_priority_update_callback = None
+
+        # Callback for attendance events (set by main app)
+        self.on_attendance_callback = None
 
     async def setup_hook(self):
         """Called when bot is ready to set up."""
@@ -197,6 +217,68 @@ Contact boss directly on Telegram.""",
         # For now, we don't revert on reaction remove
         # Could implement "undo" logic here if needed
         pass
+
+    async def on_message(self, message: discord.Message):
+        """
+        Handle messages - primarily for attendance tracking.
+
+        Listens for "in", "out", "break" messages in attendance channels.
+        """
+        # Ignore bot's own messages
+        if message.author.bot:
+            return
+
+        # Check if this is an attendance channel
+        channel_name = ATTENDANCE_CHANNELS.get(message.channel.id)
+        if not channel_name:
+            # Not an attendance channel, process commands normally
+            await self.process_commands(message)
+            return
+
+        # Parse attendance command (case-insensitive, strip whitespace)
+        cmd = message.content.strip().lower()
+
+        # Only handle recognized attendance commands
+        if cmd not in ["in", "out", "break"]:
+            return
+
+        logger.info(f"Attendance command: {cmd} from {message.author.display_name} in {channel_name}")
+
+        # Call the attendance callback if registered
+        if self.on_attendance_callback:
+            try:
+                result = await self.on_attendance_callback(
+                    user_id=str(message.author.id),
+                    user_name=message.author.display_name,
+                    event_type=cmd,
+                    channel_id=str(message.channel.id),
+                    channel_name=channel_name,
+                )
+
+                # React based on result
+                if result.get("success"):
+                    # Add primary reaction
+                    emoji = result.get("emoji", "✅")
+                    await message.add_reaction(emoji)
+
+                    # Add late indicator if applicable
+                    if result.get("is_late"):
+                        await message.add_reaction(ATTENDANCE_REACTIONS["late"])
+
+                    logger.info(f"Attendance recorded: {result.get('message', 'Success')}")
+                else:
+                    # Error - add warning reaction
+                    await message.add_reaction(ATTENDANCE_REACTIONS["error"])
+                    logger.warning(f"Attendance failed: {result.get('message', 'Unknown error')}")
+
+            except Exception as e:
+                logger.error(f"Error processing attendance command: {e}")
+                try:
+                    await message.add_reaction(ATTENDANCE_REACTIONS["error"])
+                except:
+                    pass
+        else:
+            logger.warning("Attendance callback not registered, ignoring attendance command")
 
     async def _get_task_for_message(self, message_id: int, channel_id: int) -> Optional[str]:
         """Look up task ID for a Discord message."""
@@ -592,6 +674,14 @@ def setup_priority_callback(callback):
     if bot:
         bot.on_priority_update_callback = callback
         logger.info("Discord bot priority callback registered")
+
+
+def setup_attendance_callback(callback):
+    """Set the callback function for attendance events."""
+    bot = get_discord_bot()
+    if bot:
+        bot.on_attendance_callback = callback
+        logger.info("Discord bot attendance callback registered")
 
 
 async def create_task_thread(
