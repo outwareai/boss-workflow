@@ -461,11 +461,12 @@ class DiscordIntegration:
 
         # Post to forum channel (creates a thread) if:
         # - Explicitly requested (channel="specs" or "forum")
-        # - Task has spec sheet URL
+        # - Task has spec sheet URL (if attribute exists)
         # - No tasks channel configured (fallback to forum for all tasks)
+        has_spec_url = getattr(task, 'spec_sheet_url', None)
         use_forum = (
             channel in ["specs", "forum"] or
-            task.spec_sheet_url or
+            has_spec_url or
             not tasks_channel_id  # Fallback to forum when no tasks channel
         )
 
