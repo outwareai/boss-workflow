@@ -302,6 +302,103 @@ Or use `/addteam [name] [role]`"""
         else:
             return "Failed to add team member. Please try again."
 
+    async def handle_syncteam(self, user_id: str, clear_first: bool = False) -> str:
+        """
+        Handle /syncteam command - sync team from config/team.py to Sheets and database.
+
+        Args:
+            user_id: The user triggering the sync
+            clear_first: If True, clears existing Team sheet data first
+        """
+        try:
+            from ..database.repositories import get_team_repository
+            from config.team import get_default_team
+
+            results = []
+
+            # Clear Team sheet if requested
+            if clear_first:
+                cleared = await self.sheets.clear_team_sheet(keep_header=True)
+                if cleared:
+                    results.append("🗑️ Cleared mock data from Team sheet")
+                else:
+                    results.append("⚠️ Could not clear Team sheet")
+
+            # Get team from config
+            team_config = get_default_team()
+
+            if not team_config:
+                return "⚠️ No team members found in `config/team.py`"
+
+            # Sync to Sheets
+            sheets_synced, sheets_failed = await self.sheets.sync_team_from_config()
+            results.append(f"📊 Sheets: {sheets_synced} synced, {sheets_failed} failed")
+
+            # Sync to database
+            team_repo = get_team_repository()
+            db_synced = 0
+            db_failed = 0
+
+            for member in team_config:
+                try:
+                    # Check if exists
+                    existing = await team_repo.find_member(member.get("name", ""))
+
+                    if existing:
+                        # Update
+                        await team_repo.update(existing.id, {
+                            "role": member.get("role", "developer"),
+                            "discord_id": member.get("discord_id", ""),
+                            "discord_username": member.get("discord_username", ""),
+                            "email": member.get("email", ""),
+                            "skills": member.get("skills", []),
+                        })
+                        db_synced += 1
+                    else:
+                        # Create
+                        await team_repo.create(
+                            name=member.get("name", ""),
+                            role=member.get("role", "developer"),
+                            telegram_id=member.get("telegram_id", ""),
+                            discord_id=member.get("discord_id", ""),
+                            discord_username=member.get("discord_username", ""),
+                            email=member.get("email", ""),
+                            skills=member.get("skills", []),
+                        )
+                        db_synced += 1
+                except Exception as e:
+                    logger.error(f"Error syncing {member.get('name')} to database: {e}")
+                    db_failed += 1
+
+            results.append(f"💾 Database: {db_synced} synced, {db_failed} failed")
+
+            # List team members synced
+            results.append("")
+            results.append("**Team Members:**")
+            for member in team_config:
+                role_emoji = "💻" if "dev" in member.get("role", "").lower() else "👔" if "admin" in member.get("role", "").lower() else "📢" if "market" in member.get("role", "").lower() else "👤"
+                results.append(f"• {role_emoji} {member.get('name')} ({member.get('role')})")
+
+            return "✅ **Team Sync Complete**\n\n" + "\n".join(results)
+
+        except Exception as e:
+            logger.error(f"Error in team sync: {e}", exc_info=True)
+            return f"❌ Error syncing team: {str(e)}"
+
+    async def handle_clearteam(self, user_id: str) -> str:
+        """Handle /clearteam command - clear mock data from Team sheet."""
+        try:
+            success = await self.sheets.clear_team_sheet(keep_header=True)
+
+            if success:
+                return "✅ Cleared all data from Team sheet. Use `/syncteam` to populate with real team members."
+            else:
+                return "❌ Could not clear Team sheet"
+
+        except Exception as e:
+            logger.error(f"Error clearing team: {e}")
+            return f"❌ Error: {str(e)}"
+
     async def handle_note(self, user_id: str, task_id: str, note_content: str) -> str:
         """Handle /note command - add note to a task."""
         # This would need to update the task in sheets and discord

@@ -45,11 +45,20 @@ class DiscordIntegration:
 
     Primary use: Post rich task embeds to Discord channels.
     Optional: Track reactions for status updates.
+    Supports role-based channel routing for tasks.
     """
 
     # Reaction guide for status updates
     REACTION_GUIDE = "React: ✅ Done | 🚧 In Progress | 🚫 Blocked | ⏸️ On Hold | 🔄 In Review"
     REACTION_HELP = "React to update status: ✅=Done 🚧=Working 🚫=Blocked ⏸️=Paused 🔄=Review"
+
+    # Role to webhook mapping keywords
+    ROLE_KEYWORDS = {
+        "dev": ["developer", "dev", "backend", "frontend", "engineer", "programmer", "software"],
+        "admin": ["admin", "administrator", "manager", "lead", "director", "executive"],
+        "marketing": ["marketing", "content", "social", "growth", "seo", "ads"],
+        "design": ["design", "designer", "ui", "ux", "graphic", "creative", "artist"],
+    }
 
     def __init__(self):
         self.tasks_webhook = settings.discord_tasks_channel_webhook
@@ -57,12 +66,84 @@ class DiscordIntegration:
         self.specs_webhook = settings.discord_specs_channel_webhook
         self.default_webhook = settings.discord_webhook_url
 
+        # Role-based webhooks
+        self.role_webhooks = {
+            "dev": settings.discord_dev_tasks_webhook,
+            "admin": settings.discord_admin_tasks_webhook,
+            "marketing": settings.discord_marketing_tasks_webhook,
+            "design": settings.discord_design_tasks_webhook,
+        }
+
+    def _get_role_category(self, role: str) -> Optional[str]:
+        """
+        Determine which webhook category a role belongs to.
+
+        Args:
+            role: The team member's role (e.g., "Developer", "Marketing Lead")
+
+        Returns:
+            Category key ("dev", "admin", "marketing", "design") or None
+        """
+        if not role:
+            return None
+
+        role_lower = role.lower()
+
+        for category, keywords in self.ROLE_KEYWORDS.items():
+            if any(keyword in role_lower for keyword in keywords):
+                return category
+
+        return None
+
+    def _get_webhook_for_role(self, role: str) -> Optional[str]:
+        """
+        Get the appropriate webhook URL for a given role.
+
+        Args:
+            role: The team member's role
+
+        Returns:
+            Webhook URL or None if no role-specific webhook configured
+        """
+        category = self._get_role_category(role)
+
+        if category and self.role_webhooks.get(category):
+            return self.role_webhooks[category]
+
+        return None
+
+    async def get_assignee_role(self, assignee: str) -> Optional[str]:
+        """
+        Look up an assignee's role from the team database.
+
+        Args:
+            assignee: The assignee name
+
+        Returns:
+            The role string or None
+        """
+        if not assignee:
+            return None
+
+        try:
+            from ..database.repositories import get_team_repository
+            team_repo = get_team_repository()
+            member = await team_repo.find_member(assignee)
+            if member:
+                return member.role
+        except Exception as e:
+            logger.debug(f"Could not look up role for {assignee}: {e}")
+
+        return None
+
     async def post_task(self, task: Task, channel: str = "tasks") -> Optional[str]:
         """
         Post a task to Discord as a rich embed.
 
-        If DISCORD_FORUM_CHANNEL_ID is configured, posts as a forum thread.
-        Otherwise, posts via webhook and creates a thread on the message.
+        Routing priority:
+        1. If DISCORD_FORUM_CHANNEL_ID is configured, posts as a forum thread
+        2. If role-based webhook is configured for assignee's role, use that
+        3. Fall back to default tasks channel webhook
 
         Args:
             task: The task to post
@@ -75,8 +156,24 @@ class DiscordIntegration:
         if settings.discord_forum_channel_id:
             return await self._post_task_to_forum(task)
 
-        # Fall back to webhook posting with thread creation
-        webhook_url = self._get_webhook_url(channel)
+        # Try role-based routing first
+        webhook_url = None
+        role_category = None
+
+        if task.assignee:
+            # Look up assignee's role
+            assignee_role = await self.get_assignee_role(task.assignee)
+            if assignee_role:
+                role_webhook = self._get_webhook_for_role(assignee_role)
+                if role_webhook:
+                    webhook_url = role_webhook
+                    role_category = self._get_role_category(assignee_role)
+                    logger.info(f"Routing task {task.id} to {role_category} channel (assignee: {task.assignee}, role: {assignee_role})")
+
+        # Fall back to default webhook
+        if not webhook_url:
+            webhook_url = self._get_webhook_url(channel)
+
         if not webhook_url:
             logger.warning(f"No webhook configured for channel: {channel}")
             return None

@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-18
-> **Version:** 1.4.2
+> **Version:** 1.4.3
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -114,6 +114,9 @@ You: "SPECSHEETS detailed for: Build authentication system for John"
 |---------|-------------|---------|
 | `/team` | View team members with roles | `/team` |
 | `/addteam [name] [role]` | Add new team member | `/addteam John Developer` |
+| `/syncteam` | Sync team from config/team.py to Sheets + DB | `/syncteam` |
+| `/syncteam --clear` | Clear mock data first, then sync | `/syncteam --clear` |
+| `/clearteam` | Clear all data from Team sheet | `/clearteam` |
 | `/teach [instruction]` | Teach bot preferences | `/teach When I say ASAP, deadline is 4 hours` |
 | `/preferences` | View saved preferences | `/preferences` |
 
@@ -508,14 +511,43 @@ Team members must have numeric Discord user IDs in `config/team.py`:
 ```
 To get numeric ID: Discord Developer Mode → Right-click user → Copy ID
 
+### Role-Based Channel Routing (NEW in v1.4.3)
+
+Tasks are automatically routed to different Discord channels based on the assignee's role:
+
+| Role Keywords | Target Channel | Webhook Variable |
+|---------------|----------------|------------------|
+| developer, backend, frontend, engineer | Dev > #tasks | `DISCORD_DEV_TASKS_WEBHOOK` |
+| admin, administrator, manager, lead | Admin > #tasks-admin | `DISCORD_ADMIN_TASKS_WEBHOOK` |
+| marketing, content, social, growth | Marketing channel | `DISCORD_MARKETING_TASKS_WEBHOOK` |
+| designer, ui, ux, graphic, creative | Design channel | `DISCORD_DESIGN_TASKS_WEBHOOK` |
+
+**How it works:**
+1. When a task is created with an assignee
+2. System looks up assignee's role from database
+3. Routes to matching department channel
+4. Falls back to default tasks channel if no match
+
+**Setup:**
+1. Create webhooks in each department channel
+2. Set environment variables in Railway:
+```bash
+railway variables set -s boss-workflow "DISCORD_DEV_TASKS_WEBHOOK=https://discord.com/api/webhooks/..."
+railway variables set -s boss-workflow "DISCORD_ADMIN_TASKS_WEBHOOK=https://discord.com/api/webhooks/..."
+```
+
 ### Configured Webhooks
 
 | Webhook | Purpose |
 |---------|---------|
 | `DISCORD_WEBHOOK_URL` | General notifications |
-| `DISCORD_TASKS_CHANNEL_WEBHOOK` | Task postings |
+| `DISCORD_TASKS_CHANNEL_WEBHOOK` | Task postings (default fallback) |
 | `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Standup/report summaries |
 | `DISCORD_FORUM_CHANNEL_ID` | Forum channel for organized task posts (NEW v1.4) |
+| `DISCORD_DEV_TASKS_WEBHOOK` | Dev department tasks (NEW v1.4.3) |
+| `DISCORD_ADMIN_TASKS_WEBHOOK` | Admin department tasks (NEW v1.4.3) |
+| `DISCORD_MARKETING_TASKS_WEBHOOK` | Marketing department tasks (NEW v1.4.3) |
+| `DISCORD_DESIGN_TASKS_WEBHOOK` | Design department tasks (NEW v1.4.3) |
 
 ---
 
@@ -1409,6 +1441,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4.3 | 2026-01-18 | **Role-Based Discord Routing:** Tasks automatically route to department-specific Discord channels based on assignee role (Dev, Admin, Marketing, Design). **Team Sync Commands:** `/syncteam` syncs team from config/team.py to Sheets + DB. `/clearteam` removes mock data. **Team Config:** config/team.py defines team with roles for channel routing. |
 | 1.4.2 | 2026-01-18 | **True Task Deletion:** Clearing tasks now permanently deletes from Google Sheets, Discord (messages + threads), and PostgreSQL database. Previously only marked as "cancelled". Supports single task deletion and bulk deletion with confirmation. |
 | 1.4.1 | 2026-01-18 | **Email Digest in Standup:** Daily standup now sends comprehensive email summary as separate Telegram message (boss only, not Discord). All email digests are now Telegram-only for privacy. Includes AI summary, action items, priority emails, and latest 15 emails with status icons. |
 | 1.4.0 | 2026-01-18 | **Discord Forum Channels:** Tasks posted as organized forum threads with auto-tagging. **Sequential Multi-Task Handling:** Multiple tasks processed one-by-one with yes/skip/no flow. **SPECSHEETS Mode:** Trigger detailed specs with keywords. **Proper @mentions:** Numeric Discord user IDs for mentions. **Background Processing:** Prevents Telegram webhook timeouts. **Thread Creation:** Auto-creates discussion threads on task messages. |

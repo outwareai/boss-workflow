@@ -697,6 +697,122 @@ class GoogleSheetsIntegration:
             logger.error(f"Error updating team member: {e}")
             return False
 
+    async def get_all_team_members(self) -> List[Dict[str, Any]]:
+        """Get all team members from the Team sheet."""
+        if not await self.initialize():
+            return []
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_TEAM)
+            return worksheet.get_all_records()
+        except Exception as e:
+            logger.error(f"Error getting team members: {e}")
+            return []
+
+    async def clear_team_sheet(self, keep_header: bool = True) -> bool:
+        """
+        Clear all data from the Team sheet (remove mock data).
+
+        Args:
+            keep_header: If True, keeps the header row
+
+        Returns:
+            True if successful
+        """
+        if not await self.initialize():
+            return False
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_TEAM)
+            all_values = worksheet.get_all_values()
+
+            if len(all_values) <= 1:
+                logger.info("Team sheet already empty")
+                return True
+
+            # Clear all rows except header
+            if keep_header and len(all_values) > 1:
+                # Delete rows from bottom up
+                for row_num in range(len(all_values), 1, -1):
+                    worksheet.delete_rows(row_num)
+                logger.info(f"Cleared {len(all_values) - 1} rows from Team sheet")
+            else:
+                worksheet.clear()
+                logger.info("Cleared entire Team sheet")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error clearing Team sheet: {e}")
+            return False
+
+    async def sync_team_from_config(self) -> Tuple[int, int]:
+        """
+        Sync team members from config/team.py to the Team sheet.
+
+        Returns:
+            Tuple of (synced_count, failed_count)
+        """
+        if not await self.initialize():
+            return (0, 0)
+
+        try:
+            from config.team import get_default_team
+
+            team_members = get_default_team()
+
+            if not team_members:
+                logger.warning("No team members in config/team.py")
+                return (0, 0)
+
+            synced = 0
+            failed = 0
+
+            for member in team_members:
+                try:
+                    success = await self.update_team_member(
+                        name=member.get("name", ""),
+                        telegram_id=member.get("telegram_id", ""),
+                        role=member.get("role", "developer"),
+                        email=member.get("email", ""),
+                        status="Active"
+                    )
+                    if success:
+                        synced += 1
+                    else:
+                        failed += 1
+                except Exception as e:
+                    logger.error(f"Error syncing team member {member.get('name')}: {e}")
+                    failed += 1
+
+            logger.info(f"Team sync complete: {synced} synced, {failed} failed")
+            return (synced, failed)
+
+        except Exception as e:
+            logger.error(f"Error syncing team from config: {e}")
+            return (0, len(team_members) if 'team_members' in dir() else 0)
+
+    async def delete_team_member(self, name: str) -> bool:
+        """Delete a team member from the Team sheet."""
+        if not await self.initialize():
+            return False
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_TEAM)
+            cell = worksheet.find(name, in_column=1)
+
+            if not cell or cell.row <= 1:
+                logger.warning(f"Team member {name} not found")
+                return False
+
+            worksheet.delete_rows(cell.row)
+            logger.info(f"Deleted team member: {name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting team member {name}: {e}")
+            return False
+
     # ============================================
     # ARCHIVE OPERATIONS
     # ============================================

@@ -34,13 +34,19 @@ class Settings(BaseSettings):
     # OpenAI (for Whisper voice transcription)
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
 
-    # Discord
+    # Discord - Main webhooks
     discord_webhook_url: str = Field(default="", env="DISCORD_WEBHOOK_URL")
     discord_tasks_channel_webhook: str = Field(default="", env="DISCORD_TASKS_CHANNEL_WEBHOOK")
     discord_standup_channel_webhook: str = Field(default="", env="DISCORD_STANDUP_CHANNEL_WEBHOOK")
     discord_specs_channel_webhook: str = Field(default="", env="DISCORD_SPECS_CHANNEL_WEBHOOK")
     discord_bot_token: Optional[str] = Field(default=None, env="DISCORD_BOT_TOKEN")
     discord_forum_channel_id: Optional[str] = Field(default=None, env="DISCORD_FORUM_CHANNEL_ID")  # Forum channel for organized task posts
+
+    # Discord - Role-based task channel webhooks (route tasks by assignee role)
+    discord_dev_tasks_webhook: str = Field(default="", env="DISCORD_DEV_TASKS_WEBHOOK")  # Dev > #tasks
+    discord_admin_tasks_webhook: str = Field(default="", env="DISCORD_ADMIN_TASKS_WEBHOOK")  # Admin > #tasks-admin
+    discord_marketing_tasks_webhook: str = Field(default="", env="DISCORD_MARKETING_TASKS_WEBHOOK")  # Marketing channel
+    discord_design_tasks_webhook: str = Field(default="", env="DISCORD_DESIGN_TASKS_WEBHOOK")  # Design/Content channel
 
     # Google Sheets
     google_credentials_json: str = Field(default="", env="GOOGLE_CREDENTIALS_JSON")

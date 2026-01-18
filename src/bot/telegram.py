@@ -81,6 +81,8 @@ class TelegramBot:
         self.app.add_handler(TGCommandHandler("teach", self._handle_teach))
         self.app.add_handler(TGCommandHandler("team", self._handle_team))
         self.app.add_handler(TGCommandHandler("addteam", self._handle_addteam))
+        self.app.add_handler(TGCommandHandler("syncteam", self._handle_syncteam))
+        self.app.add_handler(TGCommandHandler("clearteam", self._handle_clearteam))
         self.app.add_handler(TGCommandHandler("note", self._handle_note))
         self.app.add_handler(TGCommandHandler("delay", self._handle_delay))
 
@@ -221,6 +223,23 @@ class TelegramBot:
         role = ' '.join(context.args[1:]) if len(context.args) > 1 else ""
 
         response = await self.commands.handle_addteam(user_id, name, role)
+        await update.message.reply_text(response, parse_mode='Markdown')
+
+    async def _handle_syncteam(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /syncteam command - sync team from config to Sheets and database."""
+        user_id = str(update.effective_user.id)
+
+        # Check for optional --clear flag
+        clear_first = "--clear" in context.args if context.args else False
+
+        await update.message.reply_text("🔄 Syncing team members...", parse_mode='Markdown')
+        response = await self.commands.handle_syncteam(user_id, clear_first=clear_first)
+        await update.message.reply_text(response, parse_mode='Markdown')
+
+    async def _handle_clearteam(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /clearteam command - clear mock data from Team sheet."""
+        user_id = str(update.effective_user.id)
+        response = await self.commands.handle_clearteam(user_id)
         await update.message.reply_text(response, parse_mode='Markdown')
 
     async def _handle_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
