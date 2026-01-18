@@ -225,8 +225,118 @@ class SchedulerManager:
 
             logger.info("Daily standup completed")
 
+            # Send email digest as separate message (Telegram only)
+            await self._send_standup_email_digest()
+
         except Exception as e:
             logger.error(f"Error in daily standup job: {e}")
+
+    async def _send_standup_email_digest(self) -> None:
+        """
+        Send comprehensive email digest as separate message after standup.
+        Only sent to Telegram (boss), not Discord.
+        """
+        if not settings.enable_email_digest:
+            logger.debug("Email digest disabled, skipping standup email summary")
+            return
+
+        if not settings.telegram_boss_chat_id:
+            return
+
+        try:
+            # Initialize Gmail if needed
+            if not self.gmail._initialized:
+                await self.gmail.initialize()
+
+            if not self.gmail.is_available():
+                logger.warning("Gmail not available for standup email digest")
+                return
+
+            # Get emails from last 12 hours (overnight emails)
+            emails = await self.gmail.get_emails_since(
+                hours=settings.morning_digest_hours_back,
+                max_results=50
+            )
+
+            if not emails:
+                # Send a brief "no emails" message
+                await self.reminders.send_telegram_message(
+                    settings.telegram_boss_chat_id,
+                    "📧 **Email Summary**\n\n_No new emails since yesterday._"
+                )
+                logger.info("No emails for standup digest")
+                return
+
+            # Convert to summary format
+            email_dicts = [e.to_summary_dict() for e in emails]
+
+            # Generate comprehensive summary with DeepSeek
+            summary_result = await self.email_summarizer.summarize_emails(
+                emails=email_dicts,
+                period="morning"
+            )
+
+            # Build comprehensive email message
+            unread_count = sum(1 for e in emails if e.is_unread)
+            important_count = sum(1 for e in emails if e.is_important)
+
+            # Format individual email summaries
+            email_details = []
+            for i, email in enumerate(emails[:15], 1):  # Top 15 emails
+                status_icons = []
+                if email.is_unread:
+                    status_icons.append("🔵")
+                if email.is_important:
+                    status_icons.append("⭐")
+
+                status_str = " ".join(status_icons) if status_icons else ""
+
+                # Truncate subject if too long
+                subject = email.subject[:60] + "..." if len(email.subject) > 60 else email.subject
+                sender = email.sender_name or email.sender_email.split('@')[0]
+
+                email_details.append(f"{i}. {status_str} **{sender}**: {subject}")
+
+            # Build the comprehensive message
+            digest_message = f"""📧 **Comprehensive Email Summary**
+
+📊 **Overview**
+• Total: **{len(emails)}** emails
+• Unread: **{unread_count}** 🔵
+• Important: **{important_count}** ⭐
+
+📝 **AI Summary**
+{summary_result.summary}
+
+{"📌 **Action Items**" if summary_result.action_items else ""}
+{chr(10).join(f"• {item}" for item in summary_result.action_items) if summary_result.action_items else ""}
+
+{"🚨 **Priority Emails**" if summary_result.priority_emails else ""}
+{chr(10).join(f"• {email}" for email in summary_result.priority_emails[:5]) if summary_result.priority_emails else ""}
+
+📬 **Latest Emails**
+{chr(10).join(email_details)}
+
+_🔵 = Unread | ⭐ = Important_"""
+
+            # Send to Telegram ONLY (not Discord)
+            await self.reminders.send_telegram_message(
+                settings.telegram_boss_chat_id,
+                digest_message
+            )
+
+            logger.info(f"Standup email digest sent to Telegram: {len(emails)} emails summarized")
+
+        except Exception as e:
+            logger.error(f"Error in standup email digest: {e}", exc_info=True)
+            # Don't fail the whole standup if email digest fails
+            try:
+                await self.reminders.send_telegram_message(
+                    settings.telegram_boss_chat_id,
+                    "📧 **Email Summary**\n\n⚠️ _Could not fetch emails. Check Gmail configuration._"
+                )
+            except:
+                pass
 
     async def _eod_reminder_job(self) -> None:
         """Send end of day reminder."""
@@ -466,24 +576,14 @@ Keep up the great work!"""
                 unread_count=unread_count
             )
 
-            # Send to Telegram
+            # Send to Telegram ONLY (boss only, not Discord)
             if settings.telegram_boss_chat_id:
                 await self.reminders.send_telegram_message(
                     settings.telegram_boss_chat_id,
                     digest_message
                 )
 
-            # Also post to Discord if configured
-            if settings.discord_webhook_url:
-                await self.discord.post_alert(
-                    title="☀️ Morning Email Digest",
-                    message=summary_result.summary + (
-                        f"\n\n**{len(emails)}** emails | **{unread_count}** unread"
-                    ),
-                    alert_type="info"
-                )
-
-            logger.info(f"Morning email digest sent: {len(emails)} emails summarized")
+            logger.info(f"Morning email digest sent to Telegram: {len(emails)} emails summarized")
 
         except Exception as e:
             logger.error(f"Error in morning email digest job: {e}", exc_info=True)
@@ -525,24 +625,14 @@ Keep up the great work!"""
                 unread_count=unread_count
             )
 
-            # Send to Telegram
+            # Send to Telegram ONLY (boss only, not Discord)
             if settings.telegram_boss_chat_id:
                 await self.reminders.send_telegram_message(
                     settings.telegram_boss_chat_id,
                     digest_message
                 )
 
-            # Also post to Discord if configured
-            if settings.discord_webhook_url:
-                await self.discord.post_alert(
-                    title="🌙 Evening Email Digest",
-                    message=summary_result.summary + (
-                        f"\n\n**{len(emails)}** emails | **{unread_count}** unread"
-                    ),
-                    alert_type="info"
-                )
-
-            logger.info(f"Evening email digest sent: {len(emails)} emails summarized")
+            logger.info(f"Evening email digest sent to Telegram: {len(emails)} emails summarized")
 
         except Exception as e:
             logger.error(f"Error in evening email digest job: {e}", exc_info=True)

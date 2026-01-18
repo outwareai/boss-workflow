@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-18
-> **Version:** 1.4.0
+> **Version:** 1.4.2
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -565,7 +565,7 @@ To get numeric ID: Discord Developer Mode → Right-click user → Copy ID
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
-| `daily_standup_job` | 9 AM daily | Summary of today's tasks, completion %, blocked tasks |
+| `daily_standup_job` | 9 AM daily | Summary of today's tasks + comprehensive email digest (Telegram only) |
 | `eod_reminder_job` | 6 PM daily | Pending/overdue tasks, tomorrow's priorities |
 | `weekly_summary_job` | Friday 5 PM | Team performance, completed vs pending, trends |
 | `monthly_report_job` | 1st of month 9 AM | Monthly analytics, productivity insights |
@@ -573,8 +573,51 @@ To get numeric ID: Discord Developer Mode → Right-click user → Copy ID
 | `overdue_alert` | Every 4 hours | Lists overdue tasks with days count |
 | `conversation_cleanup` | Every 5 minutes | Auto-finalize timed-out conversations |
 | `recurring_tasks_job` | Every 5 minutes | Create task instances from recurring templates (NEW v1.2) |
-| `morning_digest` | 7 AM | Email summary for morning |
-| `evening_digest` | 8 PM | Email summary for evening |
+| `morning_digest` | 10 AM | Email summary for morning (Telegram only) |
+| `evening_digest` | 9 PM | Email summary for evening (Telegram only) |
+
+### Email Digest in Daily Standup (NEW in v1.4.1)
+
+After the daily standup message, a **separate comprehensive email summary** is automatically sent to Telegram (boss only, not Discord).
+
+**Features:**
+- Sent as separate message right after task standup
+- Only goes to Telegram (boss) - not Discord
+- Shows email overview (total, unread, important counts)
+- AI-powered summary of key emails
+- Extracted action items
+- Priority emails highlighted
+- List of latest 15 emails with status icons
+
+**Requirements:**
+- Set `ENABLE_EMAIL_DIGEST=true` in environment
+- Gmail must be configured (run `python setup_gmail.py` first)
+
+**Example Output:**
+```
+📧 Comprehensive Email Summary
+
+📊 Overview
+• Total: 12 emails
+• Unread: 5 🔵
+• Important: 2 ⭐
+
+📝 AI Summary
+[AI-generated summary of key emails...]
+
+📌 Action Items
+• Reply to client about proposal by EOD
+• Review contract draft from legal
+
+🚨 Priority Emails
+• John Smith: Urgent - Production issue needs attention
+
+📬 Latest Emails
+1. 🔵 ⭐ John Smith: Urgent - Production issue
+2. 🔵 Client Name: Re: Proposal feedback
+3. Sarah: Weekly report ready for review
+...
+```
 
 ### Configurable Settings
 
@@ -1366,6 +1409,8 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4.2 | 2026-01-18 | **True Task Deletion:** Clearing tasks now permanently deletes from Google Sheets, Discord (messages + threads), and PostgreSQL database. Previously only marked as "cancelled". Supports single task deletion and bulk deletion with confirmation. |
+| 1.4.1 | 2026-01-18 | **Email Digest in Standup:** Daily standup now sends comprehensive email summary as separate Telegram message (boss only, not Discord). All email digests are now Telegram-only for privacy. Includes AI summary, action items, priority emails, and latest 15 emails with status icons. |
 | 1.4.0 | 2026-01-18 | **Discord Forum Channels:** Tasks posted as organized forum threads with auto-tagging. **Sequential Multi-Task Handling:** Multiple tasks processed one-by-one with yes/skip/no flow. **SPECSHEETS Mode:** Trigger detailed specs with keywords. **Proper @mentions:** Numeric Discord user IDs for mentions. **Background Processing:** Prevents Telegram webhook timeouts. **Thread Creation:** Auto-creates discussion threads on task messages. |
 | 1.3.1 | 2026-01-17 | Image Vision Analysis: DeepSeek VL integration for photo analysis, proof screenshot validation, OCR text extraction. Vision analysis integrated with auto-review and boss notifications. |
 | 1.3.0 | 2026-01-17 | AI Task Breakdown: `/breakdown TASK-ID` analyzes tasks and suggests subtasks with effort estimates |

@@ -24,6 +24,7 @@ from ..integrations.calendar import get_calendar_integration
 from ..integrations.gmail import get_gmail_integration
 from ..ai.email_summarizer import get_email_summarizer
 from ..ai.reviewer import get_submission_reviewer, ReviewResult
+from ..database.repositories import get_task_repository
 
 logger = logging.getLogger(__name__)
 
@@ -1137,7 +1138,7 @@ Make the changes and submit again when ready!"""
         """Handle request to clear/delete tasks (specific or all)."""
         task_ids = data.get("task_ids", [])
 
-        # If specific task IDs provided, cancel them directly
+        # If specific task IDs provided, delete them directly
         if task_ids:
             return await self._clear_specific_tasks(task_ids, user_name)
 
@@ -1147,32 +1148,62 @@ Make the changes and submit again when ready!"""
         if pending_action and pending_action.get("type") == "clear_tasks":
             # User is confirming
             if any(w in message.lower() for w in ["yes", "confirm", "do it", "proceed"]):
-                # Actually clear the tasks
+                # Actually delete the tasks
                 try:
-                    # Get all tasks and mark as cancelled
+                    # Get all tasks from Sheets
                     tasks = await self.sheets.get_all_tasks()
-                    count = 0
+                    tasks_to_delete = []
 
                     for task in tasks:
                         status = task.get("Status", task.get("status", ""))
                         task_id = task.get("ID", task.get("id", ""))
                         if status.lower() not in ["completed", "cancelled"] and task_id:
-                            success = await self.sheets.update_task(
-                                task_id=task_id,
-                                updates={"Status": "cancelled"}
-                            )
-                            if success:
-                                count += 1
+                            tasks_to_delete.append(task_id)
+
+                    # Get Discord message IDs from database
+                    task_repo = get_task_repository()
+                    discord_messages = []
+                    for task_id in tasks_to_delete:
+                        try:
+                            db_task = await task_repo.get_by_id(task_id)
+                            if db_task and db_task.discord_message_id:
+                                discord_messages.append((task_id, db_task.discord_message_id))
+                        except Exception:
+                            pass
+
+                    # Delete from Sheets
+                    deleted, failed = await self.sheets.delete_tasks(tasks_to_delete)
+
+                    # Delete from database
+                    for task_id in tasks_to_delete:
+                        try:
+                            await task_repo.delete(task_id)
+                        except Exception:
+                            pass
+
+                    # Delete from Discord
+                    discord_deleted = 0
+                    for task_id, msg_id in discord_messages:
+                        try:
+                            if await self.discord.delete_task_message(task_id, msg_id):
+                                discord_deleted += 1
+                        except Exception as e:
+                            logger.warning(f"Could not delete Discord message for {task_id}: {e}")
 
                     del self._pending_actions[user_id]
 
                     await self.discord.post_alert(
-                        title="Tasks Cleared",
-                        message=f"{count} task(s) marked as cancelled by {user_name}",
+                        title="Tasks Deleted",
+                        message=f"{deleted} task(s) permanently deleted by {user_name}",
                         alert_type="warning"
                     )
 
-                    return f"✅ Cleared {count} task(s). They've been marked as cancelled.", None
+                    response = f"✅ Deleted {deleted} task(s) from Sheets"
+                    if discord_deleted > 0:
+                        response += f" and {discord_deleted} Discord message(s)"
+                    if failed > 0:
+                        response += f"\n⚠️ {failed} task(s) could not be deleted"
+                    return response, None
 
                 except Exception as e:
                     logger.error(f"Error clearing tasks: {e}", exc_info=True)
@@ -1180,7 +1211,7 @@ Make the changes and submit again when ready!"""
                     return "❌ Error clearing tasks. Please try again.", None
             else:
                 del self._pending_actions[user_id]
-                return "Cancelled. No tasks were cleared.", None
+                return "Cancelled. No tasks were deleted.", None
 
         # First time - ask for confirmation
         try:
@@ -1191,9 +1222,9 @@ Make the changes and submit again when ready!"""
 
         self._pending_actions[user_id] = {"type": "clear_tasks"}
 
-        return f"""⚠️ **Clear All Tasks?**
+        return f"""⚠️ **Delete All Tasks?**
 
-This will mark {active_count} active task(s) as cancelled.
+This will **permanently delete** {active_count} active task(s) from Sheets and Discord.
 
 **This action cannot be undone.**
 
@@ -1202,40 +1233,72 @@ Reply **yes** to confirm or **no** to cancel.""", None
     async def _clear_specific_tasks(
         self, task_ids: list, user_name: str
     ) -> Tuple[str, Optional[Dict]]:
-        """Clear/cancel specific tasks by ID."""
-        cancelled = []
+        """Delete specific tasks by ID from Sheets and Discord."""
+        deleted = []
         not_found = []
+        discord_deleted = 0
+
+        # Get task repository for database lookups
+        task_repo = get_task_repository()
 
         for task_id in task_ids:
             task_id = task_id.upper()
             try:
-                success = await self.sheets.update_task(
-                    task_id=task_id,
-                    updates={"Status": "cancelled"}
-                )
+                # First get the task from database to retrieve Discord message ID
+                discord_msg_id = None
+                try:
+                    db_task = await task_repo.get_by_id(task_id)
+                    if db_task:
+                        discord_msg_id = db_task.discord_message_id
+                except Exception as e:
+                    logger.debug(f"Could not get task from database: {e}")
+
+                # Delete from Sheets
+                success = await self.sheets.delete_task(task_id)
+
                 if success:
-                    cancelled.append(task_id)
+                    deleted.append(task_id)
+
+                    # Also delete from database
+                    try:
+                        await task_repo.delete(task_id)
+                    except Exception as e:
+                        logger.debug(f"Could not delete from database: {e}")
+
+                    # Delete from Discord if we have a message ID
+                    if discord_msg_id:
+                        try:
+                            if await self.discord.delete_task_message(task_id, discord_msg_id):
+                                discord_deleted += 1
+                        except Exception as e:
+                            logger.warning(f"Could not delete Discord message for {task_id}: {e}")
                 else:
                     not_found.append(task_id)
             except Exception as e:
-                logger.error(f"Error cancelling task {task_id}: {e}")
+                logger.error(f"Error deleting task {task_id}: {e}")
                 not_found.append(task_id)
 
-        # Post to Discord
-        if cancelled:
+        # Post notification to Discord
+        if deleted:
             await self.discord.post_alert(
-                title="Tasks Cancelled",
-                message=f"{len(cancelled)} task(s) cancelled by {user_name}: {', '.join(cancelled)}",
+                title="Tasks Deleted",
+                message=f"{len(deleted)} task(s) deleted by {user_name}: {', '.join(deleted)}",
                 alert_type="warning"
             )
 
         # Build response
-        if cancelled and not_found:
-            return f"✅ Cancelled: {', '.join(cancelled)}\n❌ Not found: {', '.join(not_found)}", None
-        elif cancelled:
-            return f"✅ Cancelled {len(cancelled)} task(s): {', '.join(cancelled)}", None
+        response_parts = []
+        if deleted:
+            response_parts.append(f"✅ Deleted: {', '.join(deleted)}")
+            if discord_deleted > 0:
+                response_parts.append(f"🗑️ Removed {discord_deleted} Discord message(s)")
+        if not_found:
+            response_parts.append(f"❌ Not found: {', '.join(not_found)}")
+
+        if response_parts:
+            return "\n".join(response_parts), None
         else:
-            return f"❌ Could not find: {', '.join(not_found)}", None
+            return f"❌ Could not find any tasks to delete", None
 
     async def _handle_archive_tasks(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str

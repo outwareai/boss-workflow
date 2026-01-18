@@ -187,6 +187,92 @@ class GoogleSheetsIntegration:
             logger.error(f"Error getting task: {e}")
             return None
 
+    async def delete_task(self, task_id: str) -> bool:
+        """
+        Delete a task row from the Daily Tasks sheet.
+
+        Args:
+            task_id: The task ID to delete
+
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if not await self.initialize():
+            return False
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_DAILY_TASKS)
+            cell = worksheet.find(task_id, in_column=1)
+
+            if not cell:
+                logger.warning(f"Task {task_id} not found in sheets for deletion")
+                return False
+
+            row_num = cell.row
+
+            # Don't delete the header row
+            if row_num <= 1:
+                logger.warning(f"Cannot delete header row for task {task_id}")
+                return False
+
+            worksheet.delete_rows(row_num)
+            logger.info(f"Deleted task {task_id} from row {row_num}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting task {task_id}: {e}")
+            return False
+
+    async def delete_tasks(self, task_ids: List[str]) -> Tuple[int, int]:
+        """
+        Delete multiple task rows from the Daily Tasks sheet.
+
+        Deletes in reverse order to preserve row numbers.
+
+        Args:
+            task_ids: List of task IDs to delete
+
+        Returns:
+            Tuple of (deleted_count, failed_count)
+        """
+        if not await self.initialize():
+            return (0, len(task_ids))
+
+        deleted = 0
+        failed = 0
+
+        try:
+            worksheet = self.spreadsheet.worksheet(SHEET_DAILY_TASKS)
+
+            # Find all rows first, then delete in reverse order
+            rows_to_delete = []
+            for task_id in task_ids:
+                try:
+                    cell = worksheet.find(task_id, in_column=1)
+                    if cell and cell.row > 1:  # Skip header
+                        rows_to_delete.append((cell.row, task_id))
+                except Exception as e:
+                    logger.warning(f"Could not find task {task_id}: {e}")
+                    failed += 1
+
+            # Sort by row number descending (delete from bottom up)
+            rows_to_delete.sort(key=lambda x: x[0], reverse=True)
+
+            for row_num, task_id in rows_to_delete:
+                try:
+                    worksheet.delete_rows(row_num)
+                    logger.info(f"Deleted task {task_id} from row {row_num}")
+                    deleted += 1
+                except Exception as e:
+                    logger.error(f"Failed to delete task {task_id}: {e}")
+                    failed += 1
+
+            return (deleted, failed)
+
+        except Exception as e:
+            logger.error(f"Error in bulk delete: {e}")
+            return (deleted, len(task_ids) - deleted)
+
     async def get_all_tasks(self) -> List[Dict[str, Any]]:
         """Get all tasks from Daily Tasks sheet."""
         if not await self.initialize():

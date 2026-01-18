@@ -287,6 +287,122 @@ class DiscordIntegration:
             logger.error(f"Error updating Discord message: {e}")
             return False
 
+    async def delete_message(
+        self,
+        message_id: str,
+        channel: str = "tasks"
+    ) -> bool:
+        """
+        Delete a Discord message (task embed).
+
+        Args:
+            message_id: The Discord message ID to delete
+            channel: Which channel the message is in
+
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if not message_id:
+            return False
+
+        webhook_url = self._get_webhook_url(channel)
+        if not webhook_url:
+            logger.warning(f"No webhook configured for channel: {channel}")
+            return False
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(
+                    f"{webhook_url}/messages/{message_id}"
+                ) as response:
+                    if response.status == 204:
+                        logger.info(f"Deleted Discord message: {message_id}")
+                        return True
+                    elif response.status == 404:
+                        logger.warning(f"Discord message already deleted or not found: {message_id}")
+                        return True  # Consider it a success if already gone
+                    else:
+                        error = await response.text()
+                        logger.error(f"Discord delete error: {response.status} - {error}")
+                        return False
+
+        except Exception as e:
+            logger.error(f"Error deleting Discord message: {e}")
+            return False
+
+    async def delete_thread(self, thread_id: str) -> bool:
+        """
+        Delete a Discord thread (forum post or message thread).
+
+        Requires bot token - threads can't be deleted via webhooks.
+
+        Args:
+            thread_id: The Discord thread/channel ID to delete
+
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if not thread_id:
+            return False
+
+        if not settings.discord_bot_token:
+            logger.warning("Bot token required to delete threads")
+            return False
+
+        try:
+            # Use Discord API directly to delete the thread/channel
+            headers = {
+                "Authorization": f"Bot {settings.discord_bot_token}",
+                "Content-Type": "application/json"
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(
+                    f"https://discord.com/api/v10/channels/{thread_id}",
+                    headers=headers
+                ) as response:
+                    if response.status == 200 or response.status == 204:
+                        logger.info(f"Deleted Discord thread: {thread_id}")
+                        return True
+                    elif response.status == 404:
+                        logger.warning(f"Discord thread already deleted or not found: {thread_id}")
+                        return True
+                    else:
+                        error = await response.text()
+                        logger.error(f"Discord thread delete error: {response.status} - {error}")
+                        return False
+
+        except Exception as e:
+            logger.error(f"Error deleting Discord thread: {e}")
+            return False
+
+    async def delete_task_message(self, task_id: str, message_id: str, is_forum_thread: bool = False) -> bool:
+        """
+        Delete a task's Discord message or forum thread.
+
+        This is a convenience method that handles both regular messages and forum threads.
+
+        Args:
+            task_id: The task ID (for logging)
+            message_id: The Discord message or thread ID
+            is_forum_thread: Whether this is a forum thread (requires different API)
+
+        Returns:
+            True if deleted successfully
+        """
+        if not message_id:
+            logger.debug(f"No Discord message ID for task {task_id}")
+            return False
+
+        if is_forum_thread or settings.discord_forum_channel_id:
+            # Try to delete as thread first (forum posts are threads)
+            result = await self.delete_thread(message_id)
+            if result:
+                return True
+
+        # Fall back to webhook message deletion
+        return await self.delete_message(message_id)
+
     async def post_standup(self, summary: str) -> bool:
         """Post daily standup summary to Discord."""
         webhook_url = self._get_webhook_url("standup")
