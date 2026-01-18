@@ -47,11 +47,11 @@ class Settings(BaseSettings):
     # General messages channel
     discord_dev_general_channel_id: str = Field(default="1461760791719182590", env="DISCORD_DEV_GENERAL_CHANNEL_ID")
 
-    # Discord - Admin Category Channel IDs (Future)
-    discord_admin_forum_channel_id: str = Field(default="", env="DISCORD_ADMIN_FORUM_CHANNEL_ID")
-    discord_admin_tasks_channel_id: str = Field(default="", env="DISCORD_ADMIN_TASKS_CHANNEL_ID")
-    discord_admin_report_channel_id: str = Field(default="", env="DISCORD_ADMIN_REPORT_CHANNEL_ID")
-    discord_admin_general_channel_id: str = Field(default="", env="DISCORD_ADMIN_GENERAL_CHANNEL_ID")
+    # Discord - Admin Category Channel IDs
+    discord_admin_forum_channel_id: str = Field(default="1462370539858432145", env="DISCORD_ADMIN_FORUM_CHANNEL_ID")
+    discord_admin_tasks_channel_id: str = Field(default="", env="DISCORD_ADMIN_TASKS_CHANNEL_ID")  # Optional - falls back to forum
+    discord_admin_report_channel_id: str = Field(default="1462370845908402268", env="DISCORD_ADMIN_REPORT_CHANNEL_ID")
+    discord_admin_general_channel_id: str = Field(default="1462370950627725362", env="DISCORD_ADMIN_GENERAL_CHANNEL_ID")
 
     # Discord - Marketing Category Channel IDs (Future)
     discord_marketing_forum_channel_id: str = Field(default="", env="DISCORD_MARKETING_FORUM_CHANNEL_ID")

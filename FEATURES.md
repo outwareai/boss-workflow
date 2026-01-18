@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-18
-> **Version:** 1.5.0
+> **Version:** 1.5.1
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1461,6 +1461,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.1 | 2026-01-18 | **Admin Department Setup:** Added Admin category Discord channels - Forum `1462370539858432145`, Report `1462370845908402268`, General `1462370950627725362`. **Team Member Minty:** Added (Discord: 834982814910775306, Role: Admin, Email: sutima2543@gmail.com). **Fallback Routing:** Tasks for departments without a tasks channel automatically post to forum. **Post to All Departments:** Added `post_standup_to_all()` for multi-department reports. |
 | 1.5.0 | 2026-01-18 | **MAJOR: Channel-Based Discord Integration:** Complete rewrite from webhooks to Bot API with channel IDs. Full permissions for message/thread management. **4 Channels Per Department:** Forum (specs), Tasks (regular tasks), Report (standup), General. **Dev Category Configured:** Forum `1459834094304104653`, Tasks `1461760665873158349`, Report `1461760697334632651`, General `1461760791719182590`. **Smart Content Routing:** Specs→Forum, tasks→Tasks channel, standup→Report, help→General. **Role-Based Department Routing:** Tasks route to matching department's channels based on assignee role. |
 | 1.4.3 | 2026-01-18 | **Role-Based Discord Routing:** Tasks automatically route to department-specific Discord channels based on assignee role (Dev, Admin, Marketing, Design). **Team Sync Commands:** `/syncteam` syncs team from config/team.py to Sheets + DB. `/clearteam` removes mock data. **Team Config:** config/team.py defines team with roles for channel routing. |
 | 1.4.2 | 2026-01-18 | **True Task Deletion:** Clearing tasks now permanently deletes from Google Sheets, Discord (messages + threads), and PostgreSQL database. Previously only marked as "cancelled". Supports single task deletion and bulk deletion with confirmation. |

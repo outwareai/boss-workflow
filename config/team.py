@@ -33,18 +33,18 @@ DEFAULT_TEAM_MEMBERS: List[Dict[str, Any]] = [
         "email": "coolmayank52@gmail.com",
         "role": "Developer",
     },
+    {
+        "name": "Minty",
+        "discord_id": "834982814910775306",
+        "email": "sutima2543@gmail.com",
+        "role": "Admin",
+    },
     # Add more team members as needed:
     # {
     #     "name": "Sarah",
     #     "discord_id": "123456789012345678",  # Get from Discord: Right-click → Copy ID
     #     "email": "sarah@example.com",
     #     "role": "Marketing",
-    # },
-    # {
-    #     "name": "Mike",
-    #     "discord_id": "987654321098765432",
-    #     "email": "mike@example.com",
-    #     "role": "Admin",
     # },
 ]
 

@@ -433,28 +433,44 @@ class DiscordIntegration:
         if task.assignee_discord_id:
             mention_content = f"<@{task.assignee_discord_id}> - New task assigned to you!"
 
-        # Post to forum channel (creates a thread)
-        if channel in ["specs", "forum"] or task.spec_sheet_url:
-            forum_channel_id = self._get_channel_id(ChannelType.FORUM, role_category)
-            if forum_channel_id:
-                thread_name = f"{task.id}: {task.title}"[:100]
-                return await self.create_forum_thread(
-                    forum_channel_id=forum_channel_id,
-                    name=thread_name,
-                    content=mention_content,
-                    embed=embed
-                )
+        # Check if tasks channel is configured for this category
+        tasks_channel_id = self._get_channel_id(ChannelType.TASKS, role_category)
+        forum_channel_id = self._get_channel_id(ChannelType.FORUM, role_category)
+
+        # Post to forum channel (creates a thread) if:
+        # - Explicitly requested (channel="specs" or "forum")
+        # - Task has spec sheet URL
+        # - No tasks channel configured (fallback to forum for all tasks)
+        use_forum = (
+            channel in ["specs", "forum"] or
+            task.spec_sheet_url or
+            not tasks_channel_id  # Fallback to forum when no tasks channel
+        )
+
+        if use_forum and forum_channel_id:
+            thread_name = f"{task.id}: {task.title}"[:100]
+            thread_id = await self.create_forum_thread(
+                forum_channel_id=forum_channel_id,
+                name=thread_name,
+                content=mention_content,
+                embed=embed
+            )
+            if thread_id:
+                logger.info(f"Posted task {task.id} to forum channel {forum_channel_id}")
+                return thread_id
 
         # Post to tasks channel (regular message)
-        tasks_channel_id = self._get_channel_id(ChannelType.TASKS, role_category)
         if tasks_channel_id:
-            return await self.send_message(
+            message_id = await self.send_message(
                 channel_id=tasks_channel_id,
                 content=mention_content,
                 embed=embed
             )
+            if message_id:
+                logger.info(f"Posted task {task.id} to tasks channel {tasks_channel_id}")
+                return message_id
 
-        logger.warning(f"No channel configured for task {task.id}")
+        logger.warning(f"No channel configured for task {task.id} (role: {role_category.value})")
         return None
 
     async def post_spec_sheet(
@@ -633,6 +649,34 @@ class DiscordIntegration:
         message_id = await self.send_message(report_channel_id, embed=embed)
         return message_id is not None
 
+    def get_configured_categories(self) -> List[RoleCategory]:
+        """Get all role categories that have at least one channel configured."""
+        configured = []
+        for category in RoleCategory:
+            # Check if any channel is configured for this category
+            has_channel = any(
+                self.channels.get(category, {}).get(channel_type)
+                for channel_type in ChannelType
+            )
+            if has_channel:
+                configured.append(category)
+        return configured
+
+    async def post_standup_to_all(self, summary: str) -> Dict[str, bool]:
+        """
+        Post standup to all configured department report channels.
+
+        Returns:
+            Dict mapping category name to success status
+        """
+        results = {}
+        for category in self.get_configured_categories():
+            report_channel_id = self._get_channel_id(ChannelType.REPORT, category)
+            if report_channel_id:
+                success = await self.post_standup(summary, category)
+                results[category.value] = success
+        return results
+
     async def post_alert(
         self,
         title: str,
@@ -642,7 +686,7 @@ class DiscordIntegration:
         role_category: RoleCategory = RoleCategory.DEV
     ) -> bool:
         """
-        Post an alert message to the tasks channel.
+        Post an alert message to the tasks or general channel.
 
         Args:
             title: Alert title
@@ -651,8 +695,12 @@ class DiscordIntegration:
             task: Optional task to include details for
             role_category: Which category's channels to use
         """
-        tasks_channel_id = self._get_channel_id(ChannelType.TASKS, role_category)
-        if not tasks_channel_id:
+        # Try tasks channel first, fall back to general
+        channel_id = self._get_channel_id(ChannelType.TASKS, role_category)
+        if not channel_id:
+            channel_id = self._get_channel_id(ChannelType.GENERAL, role_category)
+        if not channel_id:
+            logger.warning(f"No channel configured for alerts in {role_category.value}")
             return False
 
         color_map = {
@@ -682,7 +730,7 @@ class DiscordIntegration:
                 {"name": "Assignee", "value": task.assignee or "Unassigned", "inline": True},
             ]
 
-        message_id = await self.send_message(tasks_channel_id, embed=embed)
+        message_id = await self.send_message(channel_id, embed=embed)
         return message_id is not None
 
     async def post_status_change(

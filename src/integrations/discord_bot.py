@@ -661,3 +661,130 @@ async def create_forum_post(
     )
 
     return thread.id if thread else None
+
+
+async def send_to_channel(
+    channel_id: int,
+    content: str = None,
+    embed: dict = None,
+    embeds: list = None
+) -> Optional[int]:
+    """
+    Send a message to a text channel using the bot.
+
+    Args:
+        channel_id: Discord text channel ID
+        content: Text content (optional)
+        embed: Single embed dict (optional)
+        embeds: List of embed dicts (optional)
+
+    Returns:
+        Message ID if sent successfully, None otherwise
+    """
+    bot = get_discord_bot()
+    if not bot or not bot.is_ready():
+        logger.warning("Discord bot not ready, cannot send to channel")
+        return None
+
+    try:
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            channel = await bot.fetch_channel(channel_id)
+
+        if not channel:
+            logger.error(f"Could not find channel {channel_id}")
+            return None
+
+        # Build embed objects
+        discord_embeds = []
+        if embed:
+            discord_embeds.append(discord.Embed.from_dict(embed))
+        if embeds:
+            for e in embeds:
+                discord_embeds.append(discord.Embed.from_dict(e))
+
+        # Send message
+        message = await channel.send(
+            content=content,
+            embeds=discord_embeds if discord_embeds else None
+        )
+
+        logger.info(f"Sent message {message.id} to channel {channel_id}")
+        return message.id
+
+    except discord.Forbidden as e:
+        logger.error(f"Bot lacks permission to send to channel {channel_id}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error sending to channel {channel_id}: {type(e).__name__}: {e}")
+        return None
+
+
+async def send_standup_to_channel(channel_id: int, summary: str) -> bool:
+    """
+    Send daily standup summary to a specific channel.
+
+    Args:
+        channel_id: Discord channel ID
+        summary: Standup summary text
+
+    Returns:
+        True if sent successfully
+    """
+    from datetime import datetime
+
+    embed = {
+        "title": "☀️ Daily Standup",
+        "description": summary,
+        "color": 0x3498DB,
+        "timestamp": datetime.now().isoformat(),
+        "footer": {"text": "Boss Workflow | React to update status"}
+    }
+
+    message_id = await send_to_channel(channel_id, embed=embed)
+    return message_id is not None
+
+
+async def send_alert_to_channel(
+    channel_id: int,
+    title: str,
+    message: str,
+    alert_type: str = "info"
+) -> bool:
+    """
+    Send an alert to a specific channel.
+
+    Args:
+        channel_id: Discord channel ID
+        title: Alert title
+        message: Alert message
+        alert_type: "warning", "error", "info", "success"
+
+    Returns:
+        True if sent successfully
+    """
+    from datetime import datetime
+
+    color_map = {
+        "warning": 0xF39C12,
+        "error": 0xE74C3C,
+        "info": 0x3498DB,
+        "success": 0x2ECC71,
+    }
+
+    emoji_map = {
+        "warning": "⚠️",
+        "error": "🚨",
+        "info": "ℹ️",
+        "success": "✅",
+    }
+
+    embed = {
+        "title": f"{emoji_map.get(alert_type, 'ℹ️')} {title}",
+        "description": message,
+        "color": color_map.get(alert_type, 0x95A5A6),
+        "timestamp": datetime.now().isoformat()
+    }
+
+    message_id = await send_to_channel(channel_id, embed=embed)
+    return message_id is not None

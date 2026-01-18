@@ -39,6 +39,33 @@ You have access to the user's preferences and team information to help fill in g
 USER'S MESSAGE:
 "{user_message}"
 
+⚠️ CRITICAL - FILTER INSTRUCTION WORDS FROM TASK CONTENT:
+The boss gives YOU (the bot) instructions, but these should NOT be in the task content.
+
+INSTRUCTION PHRASES TO FILTER OUT (these are directed at the bot, not the assignee):
+- "tell him/her/them" → REMOVE from task, just note WHO to assign
+- "ask him/her/them" → REMOVE from task
+- "remind him/her/them" → REMOVE from task
+- "let him/her/them know" → REMOVE from task
+- "have him/her/them" → REMOVE from task
+- "get him/her/them to" → REMOVE from task
+- "make sure he/she/they" → can keep but rephrase for task context
+
+EXAMPLE TRANSFORMATIONS:
+❌ "tell Mayank at 8PM tonight to join meeting for contract"
+✅ Title: "Join meeting for contract" | Deadline: 8PM tonight | Assignee: Mayank
+
+❌ "ask Sarah to review the design by tomorrow"
+✅ Title: "Review the design" | Deadline: tomorrow | Assignee: Sarah
+
+❌ "remind John to submit his report"
+✅ Title: "Submit report" | Assignee: John
+
+❌ "let the team know about the deadline change"
+✅ Title: "Team announcement: deadline change" | Assignee: (general)
+
+The TITLE and DESCRIPTION should be what the ASSIGNEE needs to do, not instructions to the bot!
+
 USER'S PREFERENCES:
 {pref_str}
 
@@ -182,6 +209,23 @@ EXTRACTED INFORMATION:
 USER PREFERENCES:
 {preferences}
 {detailed_instructions}
+⚠️ CRITICAL - FILTER INSTRUCTION WORDS FROM TASK CONTENT:
+The boss gives instructions to the BOT (like "tell him", "ask her"). These should NOT appear in the task.
+
+REMOVE these instruction phrases from title/description:
+- "tell him/her/them to" → just the action after "to"
+- "ask him/her/them to" → just the action
+- "remind him/her/them to" → just the action
+- "let him/her/them know" → rephrase as the actual task
+- "have him/her/them" → just the action
+
+EXAMPLES:
+❌ "Tell Mayank at 8PM tonight to join meeting" → ✅ "Join meeting for contract at 8PM"
+❌ "Ask Sarah to review the design" → ✅ "Review the design"
+❌ "Remind team about deadline" → ✅ "Team reminder: deadline approaching"
+
+The task title/description should be what the ASSIGNEE does, not what the bot does!
+
 CRITICAL - DETECT AND PRESERVE SUBTASKS:
 If the user lists subtasks or items (after "subtasks:", "in it:", "-", "•", numbered items, etc.),
 you MUST extract them as separate subtasks. DON'T oversimplify or lose details!
