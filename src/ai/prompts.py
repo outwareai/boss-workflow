@@ -1,6 +1,8 @@
 """Prompt templates for DeepSeek AI interactions."""
 
 from typing import Dict, Any, List, Optional
+from datetime import datetime
+from config.settings import settings
 
 
 class PromptTemplates:
@@ -38,6 +40,21 @@ You have access to the user's preferences and team information to help fill in g
 
 USER'S MESSAGE:
 "{user_message}"
+
+📅 CURRENT DATE/TIME CONTEXT:
+- Current Date: {datetime.now().strftime('%Y-%m-%d')}
+- Current Time: {datetime.now().strftime('%H:%M')}
+- Timezone: {settings.timezone}
+- Day of Week: {datetime.now().strftime('%A')}
+
+When parsing deadlines like "tonight", "tomorrow", "next week":
+- "tonight" = today's date at the specified time (default 23:59 if no time)
+- "today" = today's date at EOD (23:59) unless specific time given
+- "tomorrow" = tomorrow's date
+- "by Friday" = this coming Friday
+- "8PM tonight" = today at 20:00 in timezone {settings.timezone}
+
+ALWAYS use timezone {settings.timezone} for deadline times!
 
 ⚠️ CRITICAL - FILTER INSTRUCTION WORDS FROM TASK CONTENT:
 The boss gives YOU (the bot) instructions, but these should NOT be in the task content.
@@ -208,6 +225,9 @@ EXTRACTED INFORMATION:
 
 USER PREFERENCES:
 {preferences}
+
+📅 CURRENT DATE/TIME: {datetime.now().strftime('%Y-%m-%d %H:%M')} ({settings.timezone})
+Use this to properly format deadlines like "tonight", "tomorrow", etc.
 {detailed_instructions}
 ⚠️ CRITICAL - FILTER INSTRUCTION WORDS FROM TASK CONTENT:
 The boss gives instructions to the BOT (like "tell him", "ask her"). These should NOT appear in the task.
