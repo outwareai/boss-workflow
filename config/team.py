@@ -30,7 +30,7 @@ DEFAULT_TEAM_MEMBERS: List[Dict[str, Any]] = [
     {
         "name": "Mayank",
         "discord_id": "392400310108291092",
-        "email": "colmayank52@gmail.com",
+        "email": "coolmayank52@gmail.com",
         "role": "Developer",
     },
     # Add more team members as needed:
