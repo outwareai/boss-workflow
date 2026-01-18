@@ -155,14 +155,14 @@ async def get_role_for_assignee(assignee_name: str) -> Optional[str]:
     return member.role if member else None
 
 
-def validate_discord_id(discord_id: str) -> bool:
+def validate_discord_id(discord_id) -> bool:
     """
     Validate that a Discord ID is a numeric user ID.
 
     Discord user IDs are 17-19 digit snowflakes.
 
     Args:
-        discord_id: The ID to validate
+        discord_id: The ID to validate (can be str or int)
 
     Returns:
         True if valid numeric Discord ID
@@ -170,8 +170,11 @@ def validate_discord_id(discord_id: str) -> bool:
     if not discord_id:
         return False
 
+    # Convert to string if int
+    discord_id_str = str(discord_id)
+
     # Remove any @ prefix
-    clean_id = discord_id.lstrip('@')
+    clean_id = discord_id_str.lstrip('@')
 
     # Should be all digits and reasonable length
     return clean_id.isdigit() and 17 <= len(clean_id) <= 19
