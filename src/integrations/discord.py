@@ -139,18 +139,40 @@ class DiscordIntegration:
         return channel_id if channel_id else None
 
     async def get_assignee_role(self, assignee: str) -> Optional[str]:
-        """Look up an assignee's role from the team database."""
+        """
+        Look up an assignee's role from database or Google Sheets.
+
+        Checks in order:
+        1. PostgreSQL database (fast)
+        2. Google Sheets Team tab (fallback, always up-to-date)
+        """
         if not assignee:
             return None
 
+        # Try database first (faster)
         try:
             from ..database.repositories import get_team_repository
             team_repo = get_team_repository()
             member = await team_repo.find_member(assignee)
-            if member:
+            if member and member.role:
+                logger.debug(f"Found role for {assignee} in database: {member.role}")
                 return member.role
         except Exception as e:
-            logger.debug(f"Could not look up role for {assignee}: {e}")
+            logger.debug(f"Database lookup failed for {assignee}: {e}")
+
+        # Fallback to Google Sheets (source of truth)
+        try:
+            from .sheets import sheets_integration
+            team_members = await sheets_integration.get_all_team_members()
+            for member in team_members:
+                member_name = member.get("Name", "").strip().lower()
+                if member_name == assignee.lower() or assignee.lower() in member_name:
+                    role = member.get("Role", "")
+                    if role:
+                        logger.info(f"Found role for {assignee} in Sheets: {role}")
+                        return role
+        except Exception as e:
+            logger.debug(f"Sheets lookup failed for {assignee}: {e}")
 
         return None
 
