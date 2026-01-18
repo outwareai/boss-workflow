@@ -11,13 +11,16 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import OAuthTokenDB
-from ..connection import get_session
+from ..connection import get_database
 
 logger = logging.getLogger(__name__)
 
 
 class OAuthTokenRepository:
     """Repository for OAuth token operations."""
+
+    def __init__(self):
+        self.db = get_database()
 
     async def store_token(
         self,
@@ -40,7 +43,7 @@ class OAuthTokenRepository:
             scopes: Space-separated list of granted scopes
         """
         try:
-            async with get_session() as session:
+            async with self.db.session() as session:
                 # Check if token already exists
                 stmt = select(OAuthTokenDB).where(
                     and_(
@@ -93,7 +96,7 @@ class OAuthTokenRepository:
         Returns dict with refresh_token, access_token, expires_at, scopes.
         """
         try:
-            async with get_session() as session:
+            async with self.db.session() as session:
                 stmt = select(OAuthTokenDB).where(
                     and_(
                         OAuthTokenDB.email == email,
@@ -133,7 +136,7 @@ class OAuthTokenRepository:
     ) -> bool:
         """Update the access token after a refresh."""
         try:
-            async with get_session() as session:
+            async with self.db.session() as session:
                 stmt = select(OAuthTokenDB).where(
                     and_(
                         OAuthTokenDB.email == email,
@@ -161,7 +164,7 @@ class OAuthTokenRepository:
     async def delete_token(self, email: str, service: str) -> bool:
         """Delete a token (e.g., when user disconnects)."""
         try:
-            async with get_session() as session:
+            async with self.db.session() as session:
                 stmt = select(OAuthTokenDB).where(
                     and_(
                         OAuthTokenDB.email == email,
