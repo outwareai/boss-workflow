@@ -132,9 +132,10 @@ async def get_assignee_info(assignee_name: str) -> Dict[str, Any]:
 
     member = await lookup_team_member(assignee_name)
     if member:
-        result["discord_id"] = member.discord_id
+        # Ensure IDs are strings (they may come as int from sheets)
+        result["discord_id"] = str(member.discord_id) if member.discord_id else None
         result["email"] = member.email
-        result["telegram_id"] = member.telegram_id
+        result["telegram_id"] = str(member.telegram_id) if member.telegram_id else None
         result["role"] = member.role
         result["calendar_id"] = member.calendar_id
 
