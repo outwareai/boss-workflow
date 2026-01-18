@@ -82,6 +82,9 @@ class GoogleCalendarIntegration:
         """
         Create a calendar event for a task deadline.
 
+        Creates event on assignee's personal calendar if they have shared it,
+        otherwise falls back to the default calendar.
+
         Returns the event ID if successful.
         """
         if not await self.initialize():
@@ -92,22 +95,34 @@ class GoogleCalendarIntegration:
             return None
 
         try:
+            # Get assignee's calendar ID (their personal calendar if shared)
+            target_calendar = self.calendar_id  # Default
+            if task.assignee:
+                assignee_info = await self._get_assignee_info(task.assignee)
+                if assignee_info.get('calendar_id'):
+                    target_calendar = assignee_info['calendar_id']
+                    logger.info(f"Using {task.assignee}'s calendar: {target_calendar}")
+
             # Build event body
             event = self._build_event_body(task)
 
-            # Create the event
+            # Create the event on assignee's calendar
             result = self.service.events().insert(
-                calendarId=self.calendar_id,
+                calendarId=target_calendar,
                 body=event
             ).execute()
 
             event_id = result.get('id')
-            logger.info(f"Created calendar event {event_id} for task {task.id}")
+            logger.info(f"Created calendar event {event_id} for task {task.id} on calendar {target_calendar}")
 
             return event_id
 
         except HttpError as e:
-            logger.error(f"Google Calendar API error: {e}")
+            if e.resp.status == 404:
+                logger.error(f"Calendar not found or not shared: {target_calendar}. "
+                            f"Assignee needs to share their calendar with the service account.")
+            else:
+                logger.error(f"Google Calendar API error: {e}")
             return None
         except Exception as e:
             logger.error(f"Error creating calendar event: {e}")
@@ -130,10 +145,18 @@ class GoogleCalendarIntegration:
             return await self.delete_task_event(task.google_calendar_event_id)
 
         try:
+            # Get assignee's calendar ID (their personal calendar if shared)
+            target_calendar = self.calendar_id  # Default
+            if task.assignee:
+                assignee_info = await self._get_assignee_info(task.assignee)
+                if assignee_info.get('calendar_id'):
+                    target_calendar = assignee_info['calendar_id']
+                    logger.info(f"Updating event on {task.assignee}'s calendar: {target_calendar}")
+
             event = self._build_event_body(task)
 
             self.service.events().update(
-                calendarId=self.calendar_id,
+                calendarId=target_calendar,
                 eventId=task.google_calendar_event_id,
                 body=event
             ).execute()
@@ -371,20 +394,66 @@ class GoogleCalendarIntegration:
 
         return event
 
-    def _get_assignee_email(self, assignee_name: str) -> Optional[str]:
-        """Look up assignee's email from team configuration."""
+    async def _get_assignee_info(self, assignee_name: str) -> Dict[str, Optional[str]]:
+        """
+        Look up assignee's email and calendar ID from Google Sheets.
+
+        Returns:
+            Dict with 'email' and 'calendar_id' keys
+        """
+        result = {'email': None, 'calendar_id': None}
+
+        if not assignee_name:
+            return result
+
+        assignee_lower = assignee_name.lower()
+
+        # Try Google Sheets first (source of truth)
+        try:
+            from .sheets import sheets_integration
+            team_members = await sheets_integration.get_all_team_members()
+            for member in team_members:
+                member_name = member.get("Name", "").strip().lower()
+                if member_name == assignee_lower or assignee_lower in member_name:
+                    result['email'] = member.get("Email", "")
+                    result['calendar_id'] = member.get("Calendar ID", "") or member.get("Email", "")
+                    logger.debug(f"Found {assignee_name} in Sheets: email={result['email']}, calendar={result['calendar_id']}")
+                    return result
+        except Exception as e:
+            logger.debug(f"Sheets lookup failed for {assignee_name}: {e}")
+
+        # Fallback to config/team.py
         try:
             from config.team import get_default_team
             team = get_default_team()
 
-            assignee_lower = assignee_name.lower()
             for member in team:
                 if member.get('name', '').lower() == assignee_lower:
-                    return member.get('email')
-                if member.get('username', '').lower() == assignee_lower:
-                    return member.get('email')
+                    result['email'] = member.get('email')
+                    result['calendar_id'] = member.get('calendar_id') or member.get('email')
+                    return result
+        except Exception as e:
+            logger.debug(f"Config lookup failed for {assignee_name}: {e}")
 
-            return None
+        return result
+
+    def _get_assignee_email(self, assignee_name: str) -> Optional[str]:
+        """Sync wrapper for backward compatibility."""
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Can't await in sync context, fallback to config
+                from config.team import get_default_team
+                team = get_default_team()
+                assignee_lower = assignee_name.lower()
+                for member in team:
+                    if member.get('name', '').lower() == assignee_lower:
+                        return member.get('email')
+                return None
+            else:
+                result = loop.run_until_complete(self._get_assignee_info(assignee_name))
+                return result.get('email')
         except Exception as e:
             logger.debug(f"Could not look up assignee email: {e}")
             return None

@@ -661,18 +661,20 @@ class GoogleSheetsIntegration:
         discord_id: str,
         email: str,
         role: str,
-        status: str = 'Active'
+        status: str = 'Active',
+        calendar_id: str = ''
     ) -> bool:
         """
         Add or update a team member in the Team sheet.
 
-        New column structure (v1.5):
+        Column structure (v1.5.1):
         - Name: Used for Telegram mentions
         - Discord ID: Numeric ID for Discord @mentions
         - Email: Google email for Calendar/Tasks
         - Role: Developer, Marketing, Admin (for channel routing)
         - Status: Active, On Leave, Inactive
         - Active Tasks: Count (formula-driven)
+        - Calendar ID: Google Calendar ID for direct event creation
 
         Args:
             name: Team member name (used for Telegram mentions)
@@ -680,6 +682,7 @@ class GoogleSheetsIntegration:
             email: Google email address
             role: One of Developer, Marketing, Admin
             status: Active, On Leave, or Inactive
+            calendar_id: Google Calendar ID (usually same as email, or custom calendar ID)
         """
         if not await self.initialize():
             return False
@@ -691,6 +694,11 @@ class GoogleSheetsIntegration:
             try:
                 cell = worksheet.find(name, in_column=1)
                 row_num = cell.row
+                # Preserve existing calendar_id if not provided
+                if not calendar_id:
+                    existing = worksheet.row_values(row_num)
+                    if len(existing) >= 7:
+                        calendar_id = existing[6]  # Column G
             except:
                 row_num = len(worksheet.get_all_values()) + 1
 
@@ -699,18 +707,19 @@ class GoogleSheetsIntegration:
             person_tasks = [t for t in all_tasks if t.get('Assignee', '').lower() == name.lower()]
             active_tasks = len([t for t in person_tasks if t.get('Status') not in ['completed', 'cancelled']])
 
-            # New column structure: Name, Discord ID, Email, Role, Status, Active Tasks
+            # Column structure: Name, Discord ID, Email, Role, Status, Active Tasks, Calendar ID
             row_data = [
                 name,
                 discord_id,
                 email,
                 role,
                 status,
-                str(active_tasks)
+                str(active_tasks),
+                calendar_id or email  # Default to email if no calendar_id
             ]
 
-            worksheet.update(f'A{row_num}:F{row_num}', [row_data], value_input_option='USER_ENTERED')
-            logger.info(f"Updated team member: {name} (Discord: {discord_id}, Role: {role})")
+            worksheet.update(f'A{row_num}:G{row_num}', [row_data], value_input_option='USER_ENTERED')
+            logger.info(f"Updated team member: {name} (Discord: {discord_id}, Role: {role}, Calendar: {calendar_id or email})")
             return True
 
         except Exception as e:

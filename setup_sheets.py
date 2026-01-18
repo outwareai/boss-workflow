@@ -346,7 +346,8 @@ def setup_advanced_sheets(spreadsheet):
     # - Email: Google email for Calendar/Tasks integration
     # - Role: Developer, Marketing, or Admin (for channel routing)
     # - Status: Active, On Leave, Inactive
-    team_headers = ["Name", "Discord ID", "Email", "Role", "Status", "Active Tasks"]
+    # - Calendar ID: Google Calendar ID for direct event creation (usually same as email)
+    team_headers = ["Name", "Discord ID", "Email", "Role", "Status", "Active Tasks", "Calendar ID"]
 
     # Start with empty data - will be populated via /syncteam command
     # The setup script creates structure only, no mock data
@@ -355,18 +356,18 @@ def setup_advanced_sheets(spreadsheet):
     team_sheet.update(values=[team_headers] + team_examples, range_name='A1', value_input_option='USER_ENTERED')
 
     # Header formatting - blue theme
-    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 6}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
+    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 7}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
 
     requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 35}, 'fields': 'pixelSize'}})
     requests.append({'updateSheetProperties': {'properties': {'sheetId': team_id, 'gridProperties': {'frozenRowCount': 1}}, 'fields': 'gridProperties.frozenRowCount'}})
 
     # Column widths - optimized for new structure
-    # Name: 120, Discord ID: 200, Email: 220, Role: 100, Status: 80, Active Tasks: 100
-    for i, w in enumerate([120, 200, 220, 100, 80, 100]):
+    # Name: 120, Discord ID: 200, Email: 220, Role: 100, Status: 80, Active Tasks: 100, Calendar ID: 220
+    for i, w in enumerate([120, 200, 220, 100, 80, 100, 220]):
         requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i+1}, 'properties': {'pixelSize': w}, 'fields': 'pixelSize'}})
 
-    add_borders(requests, team_id, 0, 50, 0, 6)
-    add_alternating_colors(requests, team_id, 0, 50, 0, 6)
+    add_borders(requests, team_id, 0, 50, 0, 7)
+    add_alternating_colors(requests, team_id, 0, 50, 0, 7)
 
     # Role dropdown - 3 categories for Discord channel routing
     requests.append({
