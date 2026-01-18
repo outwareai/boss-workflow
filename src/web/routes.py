@@ -369,11 +369,13 @@ async def google_auth_start(service: str, state: Optional[str] = None):
         "created": datetime.now().isoformat()
     }
 
-    # Build OAuth URL
-    scopes = {
+    # Build OAuth URL - include email scope to identify user
+    service_scopes = {
         "calendar": "https://www.googleapis.com/auth/calendar",
         "tasks": "https://www.googleapis.com/auth/tasks"
     }
+    # Always include email scope to get user identity
+    full_scope = f"{service_scopes[service]} email"
 
     redirect_uri = f"{settings.webhook_base_url}/auth/google/callback"
 
@@ -382,7 +384,7 @@ async def google_auth_start(service: str, state: Optional[str] = None):
         f"client_id={client_id}&"
         f"redirect_uri={redirect_uri}&"
         "response_type=code&"
-        f"scope={scopes[service]}&"
+        f"scope={full_scope}&"
         f"state={state_token}&"
         "access_type=offline&"
         "prompt=consent"

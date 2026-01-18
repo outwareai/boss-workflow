@@ -43,11 +43,36 @@ class AttendanceService:
             for member in team_members:
                 discord_id = str(member.get("Discord ID", ""))
                 if discord_id:
+                    # Parse grace period (minutes)
+                    grace_str = str(member.get("Grace Period", ""))
+                    try:
+                        grace_period = int(grace_str) if grace_str else settings.default_grace_period_minutes
+                    except ValueError:
+                        grace_period = settings.default_grace_period_minutes
+
+                    # Parse max break (minutes)
+                    max_break_str = str(member.get("Max Break", ""))
+                    try:
+                        max_break = int(max_break_str) if max_break_str else 60
+                    except ValueError:
+                        max_break = 60
+
+                    # Parse hours per day
+                    hours_day_str = str(member.get("Hours/Day", ""))
+                    try:
+                        hours_per_day = int(hours_day_str) if hours_day_str else 8
+                    except ValueError:
+                        hours_per_day = 8
+
                     self._team_cache[discord_id] = {
                         "name": member.get("Name", ""),
                         "timezone": member.get("Timezone", settings.timezone),
                         "work_start": member.get("Work Start", f"{settings.default_work_start_hour:02d}:00"),
+                        "work_end": member.get("Work End", f"{settings.default_work_end_hour:02d}:00"),
                         "role": member.get("Role", ""),
+                        "grace_period": grace_period,
+                        "max_break": max_break,
+                        "hours_per_day": hours_per_day,
                     }
 
             self._cache_time = now
@@ -172,11 +197,13 @@ class AttendanceService:
         if member_info:
             work_start = member_info.get("work_start", f"{settings.default_work_start_hour:02d}:00")
             user_tz = member_info.get("timezone", settings.timezone)
+            grace_period = member_info.get("grace_period", settings.default_grace_period_minutes)
 
             is_late, late_minutes, expected_time = self.calculate_late_status(
                 clock_in_time_utc=now_utc,
                 user_timezone=user_tz,
                 work_start_time=work_start,
+                grace_period_minutes=grace_period,
             )
         else:
             # Use default settings for unknown users

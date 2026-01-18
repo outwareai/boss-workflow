@@ -2032,6 +2032,21 @@ Ready to send to boss? (yes/no)""", None
         if task.deadline:
             await self.calendar.create_task_event(task)
 
+        # Create Google Task for assignee if they have connected Tasks
+        google_task_created = False
+        if task.assignee_email:
+            try:
+                if await self.tasks.has_user_connected_tasks(task.assignee_email):
+                    google_task_id = await self.tasks.create_task_for_user(
+                        task.assignee_email,
+                        task
+                    )
+                    if google_task_id:
+                        google_task_created = True
+                        logger.info(f"Created Google Task for {task.assignee_email}: {google_task_id}")
+            except Exception as e:
+                logger.warning(f"Failed to create Google Task for {task.assignee_email}: {e}")
+
         conv.stage = ConversationStage.COMPLETED
         conv.task_id = task.id
         await self.context.save_conversation(conv)
@@ -2045,6 +2060,10 @@ Ready to send to boss? (yes/no)""", None
         # Add subtask info to response
         if subtask_ids:
             response += f"\n📝 + {len(subtask_ids)} subtasks"
+
+        # Add Google Tasks indicator
+        if google_task_created:
+            response += f"\n📱 Added to {task.assignee}'s Google Tasks"
 
         # Prepare notification for assignee if they have Telegram ID
         action = None
