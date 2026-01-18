@@ -485,19 +485,37 @@ Contact boss directly on Telegram.""",
                 auto_archive_duration=10080  # 7 days
             )
 
-            # thread_with_message is a tuple (Thread, Message) in newer discord.py
-            if isinstance(thread_with_message, tuple):
+            # Handle the return value - discord.py 2.0+ returns ThreadWithMessage object
+            # with .thread and .message attributes
+            thread = None
+            message = None
+
+            if thread_with_message is None:
+                logger.error(f"Forum thread creation returned None for task {task_id}")
+                return None
+
+            # Check if it's a ThreadWithMessage object (has .thread and .message attributes)
+            if hasattr(thread_with_message, 'thread') and hasattr(thread_with_message, 'message'):
+                thread = thread_with_message.thread
+                message = thread_with_message.message
+            # Fallback for older discord.py versions that might return a tuple
+            elif isinstance(thread_with_message, tuple):
                 thread = thread_with_message[0]
-                message = thread_with_message[1]
+                message = thread_with_message[1] if len(thread_with_message) > 1 else None
             else:
+                # Assume it's just the thread
                 thread = thread_with_message
-                message = None
+
+            if thread is None:
+                logger.error(f"Failed to get thread from forum post response for task {task_id}")
+                return None
 
             logger.info(f"Created forum post '{post_name}' for task {task_id} in forum {forum_channel_id}")
 
             # Add status reactions to the first message
             if message:
                 await self.add_status_reactions(message)
+                self.register_message_task(message.id, task_id)
             else:
                 # Try to get the first message
                 try:

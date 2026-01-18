@@ -1965,6 +1965,19 @@ Ready to send to boss? (yes/no)""", None
         try:
             from ..database.repositories import get_task_repository
             task_repo = get_task_repository()
+
+            # Convert timezone-aware deadline to naive datetime for PostgreSQL
+            db_deadline = None
+            if task.deadline:
+                if task.deadline.tzinfo is not None:
+                    # Convert to local timezone and strip tzinfo
+                    import pytz
+                    local_tz = pytz.timezone(settings.timezone)
+                    local_dt = task.deadline.astimezone(local_tz)
+                    db_deadline = local_dt.replace(tzinfo=None)
+                else:
+                    db_deadline = task.deadline
+
             db_task_data = {
                 'task_id': task.id,
                 'title': task.title,
@@ -1973,7 +1986,7 @@ Ready to send to boss? (yes/no)""", None
                 'priority': task.priority.value,
                 'status': task.status.value,
                 'task_type': task.task_type,
-                'deadline': task.deadline,
+                'deadline': db_deadline,
                 'discord_message_id': discord_message_id,
             }
             await task_repo.create(db_task_data)
