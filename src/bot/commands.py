@@ -399,6 +399,57 @@ Or use `/addteam [name] [role]`"""
             logger.error(f"Error clearing team: {e}")
             return f"❌ Error: {str(e)}"
 
+    async def handle_cleandiscord(self, user_id: str, channel_id: Optional[str] = None) -> str:
+        """
+        Handle /cleandiscord command - delete all task threads from Discord.
+
+        Args:
+            user_id: The user triggering the cleanup
+            channel_id: Optional specific channel ID to clean
+        """
+        try:
+            from config.settings import settings
+
+            # Determine channel to clean
+            target_channel = channel_id
+            if not target_channel:
+                # Try to get from settings
+                if settings.discord_forum_channel_id:
+                    target_channel = settings.discord_forum_channel_id
+                else:
+                    return """⚠️ No channel ID provided.
+
+Usage: `/cleandiscord [channel_id]`
+
+To get the channel ID:
+1. Enable Developer Mode in Discord (User Settings > Advanced)
+2. Right-click the #tasks channel
+3. Click "Copy Channel ID"
+
+Example: `/cleandiscord 1234567890123456789`"""
+
+            # Perform cleanup
+            results = await self.discord.cleanup_task_channel(target_channel)
+
+            threads_deleted = results.get("threads_deleted", 0)
+            threads_failed = results.get("threads_failed", 0)
+
+            if threads_deleted == 0 and threads_failed == 0:
+                return f"ℹ️ No task threads found in channel `{target_channel}`"
+
+            response = f"""✅ **Discord Cleanup Complete**
+
+🗑️ Threads deleted: **{threads_deleted}**
+❌ Failed: **{threads_failed}**
+
+Channel: `{target_channel}`"""
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error cleaning Discord: {e}", exc_info=True)
+            return f"❌ Error: {str(e)}"
+
     async def handle_note(self, user_id: str, task_id: str, note_content: str) -> str:
         """Handle /note command - add note to a task."""
         # This would need to update the task in sheets and discord

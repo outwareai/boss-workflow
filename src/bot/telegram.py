@@ -83,6 +83,7 @@ class TelegramBot:
         self.app.add_handler(TGCommandHandler("addteam", self._handle_addteam))
         self.app.add_handler(TGCommandHandler("syncteam", self._handle_syncteam))
         self.app.add_handler(TGCommandHandler("clearteam", self._handle_clearteam))
+        self.app.add_handler(TGCommandHandler("cleandiscord", self._handle_cleandiscord))
         self.app.add_handler(TGCommandHandler("note", self._handle_note))
         self.app.add_handler(TGCommandHandler("delay", self._handle_delay))
 
@@ -240,6 +241,17 @@ class TelegramBot:
         """Handle /clearteam command - clear mock data from Team sheet."""
         user_id = str(update.effective_user.id)
         response = await self.commands.handle_clearteam(user_id)
+        await update.message.reply_text(response, parse_mode='Markdown')
+
+    async def _handle_cleandiscord(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /cleandiscord command - delete all task threads from Discord."""
+        user_id = str(update.effective_user.id)
+
+        # Get optional channel ID from args
+        channel_id = context.args[0] if context.args else None
+
+        await update.message.reply_text("🔄 Cleaning Discord threads... This may take a moment.", parse_mode='Markdown')
+        response = await self.commands.handle_cleandiscord(user_id, channel_id)
         await update.message.reply_text(response, parse_mode='Markdown')
 
     async def _handle_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -8,7 +8,7 @@ Supports:
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List, Callable, Tuple
 from datetime import datetime
 from enum import Enum
 import aiohttp
@@ -499,6 +499,140 @@ class DiscordIntegration:
 
         # Fall back to webhook message deletion
         return await self.delete_message(message_id)
+
+    async def get_channel_threads(self, channel_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all active threads in a channel.
+
+        Args:
+            channel_id: The Discord channel ID
+
+        Returns:
+            List of thread objects
+        """
+        if not settings.discord_bot_token:
+            logger.warning("Bot token required to list threads")
+            return []
+
+        try:
+            headers = {
+                "Authorization": f"Bot {settings.discord_bot_token}",
+                "Content-Type": "application/json"
+            }
+
+            threads = []
+
+            async with aiohttp.ClientSession() as session:
+                # Get active threads
+                async with session.get(
+                    f"https://discord.com/api/v10/channels/{channel_id}/threads/active",
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        threads.extend(data.get("threads", []))
+
+                # Get archived threads (public)
+                async with session.get(
+                    f"https://discord.com/api/v10/channels/{channel_id}/threads/archived/public",
+                    headers=headers
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        threads.extend(data.get("threads", []))
+
+            return threads
+
+        except Exception as e:
+            logger.error(f"Error getting channel threads: {e}")
+            return []
+
+    async def bulk_delete_threads(self, channel_id: str, filter_prefix: str = "TASK-") -> Tuple[int, int]:
+        """
+        Delete all threads in a channel that match a prefix.
+
+        Args:
+            channel_id: The Discord channel ID
+            filter_prefix: Only delete threads whose name starts with this (default: "TASK-")
+
+        Returns:
+            Tuple of (deleted_count, failed_count)
+        """
+        if not settings.discord_bot_token:
+            logger.warning("Bot token required to delete threads")
+            return (0, 0)
+
+        try:
+            threads = await self.get_channel_threads(channel_id)
+
+            if not threads:
+                logger.info(f"No threads found in channel {channel_id}")
+                return (0, 0)
+
+            deleted = 0
+            failed = 0
+
+            for thread in threads:
+                thread_name = thread.get("name", "")
+                thread_id = thread.get("id")
+
+                # Filter by prefix
+                if filter_prefix and not thread_name.startswith(filter_prefix):
+                    continue
+
+                try:
+                    if await self.delete_thread(thread_id):
+                        deleted += 1
+                        logger.info(f"Deleted thread: {thread_name}")
+                    else:
+                        failed += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete thread {thread_name}: {e}")
+                    failed += 1
+
+                # Small delay to avoid rate limiting
+                await asyncio.sleep(0.5)
+
+            logger.info(f"Bulk delete complete: {deleted} deleted, {failed} failed")
+            return (deleted, failed)
+
+        except Exception as e:
+            logger.error(f"Error in bulk delete threads: {e}")
+            return (0, 0)
+
+    async def cleanup_task_channel(self, channel_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Clean up all task-related threads and messages in a channel.
+
+        Args:
+            channel_id: Optional channel ID (defaults to tasks channel or forum)
+
+        Returns:
+            Dict with cleanup results
+        """
+        results = {
+            "threads_deleted": 0,
+            "threads_failed": 0,
+            "messages_deleted": 0,
+            "messages_failed": 0,
+        }
+
+        # Determine channel ID
+        target_channel = channel_id
+        if not target_channel:
+            # Try forum channel first, then get channel ID from webhook
+            if settings.discord_forum_channel_id:
+                target_channel = settings.discord_forum_channel_id
+            else:
+                logger.warning("No channel ID provided and no forum channel configured")
+                return results
+
+        # Delete threads
+        deleted, failed = await self.bulk_delete_threads(target_channel)
+        results["threads_deleted"] = deleted
+        results["threads_failed"] = failed
+
+        return results
 
     async def post_standup(self, summary: str) -> bool:
         """Post daily standup summary to Discord."""
