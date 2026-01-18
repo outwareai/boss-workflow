@@ -187,81 +187,7 @@ async def submit_onboarding(data: OnboardingData):
 # Google OAuth2 Flow
 # ============================================================================
 
-@router.get("/auth/google/{service}")
-async def google_auth_start(service: str, state: Optional[str] = None):
-    """
-    Start Google OAuth2 flow for calendar or tasks.
-    """
-    if service not in ["calendar", "tasks"]:
-        raise HTTPException(status_code=400, detail="Invalid service")
-
-    # Check if OAuth client ID is configured
-    client_id = settings.google_oauth_client_id if hasattr(settings, 'google_oauth_client_id') else None
-
-    if not client_id:
-        # Return error page explaining setup needed
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head><title>Setup Required</title>
-        <style>
-            body {{ font-family: sans-serif; background: #0a0a0a; color: #fff; padding: 40px; }}
-            .error {{ background: #3d1a1a; border: 1px solid #ef4444; padding: 20px; border-radius: 8px; max-width: 500px; margin: 0 auto; }}
-            h2 {{ color: #ef4444; }}
-            code {{ background: #2a2a2a; padding: 2px 6px; border-radius: 4px; }}
-        </style>
-        </head>
-        <body>
-            <div class="error">
-                <h2>Google OAuth Not Configured</h2>
-                <p>To enable Google {service} integration, add these environment variables:</p>
-                <ul>
-                    <li><code>GOOGLE_OAUTH_CLIENT_ID</code></li>
-                    <li><code>GOOGLE_OAUTH_CLIENT_SECRET</code></li>
-                </ul>
-                <p>Get these from Google Cloud Console → APIs & Services → Credentials</p>
-                <script>
-                    setTimeout(() => {{
-                        window.opener.postMessage({{ type: '{service}_error', message: 'OAuth not configured' }}, '*');
-                        window.close();
-                    }}, 3000);
-                </script>
-            </div>
-        </body>
-        </html>
-        """
-        return HTMLResponse(content=html)
-
-    # Generate state token
-    state_token = secrets.token_urlsafe(32)
-    oauth_states[state_token] = {
-        "service": service,
-        "form_state": state,
-        "created": datetime.now().isoformat()
-    }
-
-    # Build OAuth URL
-    scopes = {
-        "calendar": "https://www.googleapis.com/auth/calendar",
-        "tasks": "https://www.googleapis.com/auth/tasks"
-    }
-
-    redirect_uri = f"{settings.webhook_base_url}/auth/google/callback"
-
-    auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth?"
-        f"client_id={client_id}&"
-        f"redirect_uri={redirect_uri}&"
-        "response_type=code&"
-        f"scope={scopes[service]}&"
-        f"state={state_token}&"
-        "access_type=offline&"
-        "prompt=consent"
-    )
-
-    return RedirectResponse(url=auth_url)
-
-
+# IMPORTANT: callback route must come BEFORE the parameterized {service} route
 @router.get("/auth/google/callback")
 async def google_auth_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
     """
@@ -357,6 +283,81 @@ async def google_auth_callback(code: Optional[str] = None, state: Optional[str] 
         </html>
         """
         return HTMLResponse(content=html)
+
+
+@router.get("/auth/google/{service}")
+async def google_auth_start(service: str, state: Optional[str] = None):
+    """
+    Start Google OAuth2 flow for calendar or tasks.
+    """
+    if service not in ["calendar", "tasks"]:
+        raise HTTPException(status_code=400, detail="Invalid service")
+
+    # Check if OAuth client ID is configured
+    client_id = settings.google_oauth_client_id if hasattr(settings, 'google_oauth_client_id') else None
+
+    if not client_id:
+        # Return error page explaining setup needed
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>Setup Required</title>
+        <style>
+            body {{ font-family: sans-serif; background: #0a0a0a; color: #fff; padding: 40px; }}
+            .error {{ background: #3d1a1a; border: 1px solid #ef4444; padding: 20px; border-radius: 8px; max-width: 500px; margin: 0 auto; }}
+            h2 {{ color: #ef4444; }}
+            code {{ background: #2a2a2a; padding: 2px 6px; border-radius: 4px; }}
+        </style>
+        </head>
+        <body>
+            <div class="error">
+                <h2>Google OAuth Not Configured</h2>
+                <p>To enable Google {service} integration, add these environment variables:</p>
+                <ul>
+                    <li><code>GOOGLE_OAUTH_CLIENT_ID</code></li>
+                    <li><code>GOOGLE_OAUTH_CLIENT_SECRET</code></li>
+                </ul>
+                <p>Get these from Google Cloud Console → APIs & Services → Credentials</p>
+                <script>
+                    setTimeout(() => {{
+                        window.opener.postMessage({{ type: '{service}_error', message: 'OAuth not configured' }}, '*');
+                        window.close();
+                    }}, 3000);
+                </script>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html)
+
+    # Generate state token
+    state_token = secrets.token_urlsafe(32)
+    oauth_states[state_token] = {
+        "service": service,
+        "form_state": state,
+        "created": datetime.now().isoformat()
+    }
+
+    # Build OAuth URL
+    scopes = {
+        "calendar": "https://www.googleapis.com/auth/calendar",
+        "tasks": "https://www.googleapis.com/auth/tasks"
+    }
+
+    redirect_uri = f"{settings.webhook_base_url}/auth/google/callback"
+
+    auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth?"
+        f"client_id={client_id}&"
+        f"redirect_uri={redirect_uri}&"
+        "response_type=code&"
+        f"scope={scopes[service]}&"
+        f"state={state_token}&"
+        "access_type=offline&"
+        "prompt=consent"
+    )
+
+    return RedirectResponse(url=auth_url)
 
 
 async def store_oauth_token(email: str, service: str, token: str):
