@@ -333,52 +333,58 @@ def setup_advanced_sheets(spreadsheet):
     print("  [OK] Dashboard: metrics, formulas, formatting")
 
     # ========================================
-    # 3. TEAM PERFORMANCE
+    # 3. TEAM DIRECTORY
     # ========================================
-    print("\n[3/8] Setting up Team Performance...")
+    print("\n[3/8] Setting up Team Directory...")
 
-    team_sheet = get_or_create_sheet(spreadsheet, "👥 Team", rows=50, cols=12)
+    team_sheet = get_or_create_sheet(spreadsheet, "👥 Team", rows=50, cols=6)
     team_id = team_sheet.id
 
-    team_headers = ["Name", "Telegram ID", "Role", "Email", "Active Tasks", "Completed (Week)", "Completed (Month)", "Completion Rate", "Avg Days", "Status"]
-    team_examples = [
-        ["John Smith", "123456789", "Developer", "john@example.com", "=COUNTIFS('📋 Daily Tasks'!D:D,A2,'📋 Daily Tasks'!F:F,\"<>completed\")", "3", "12", "85%", "2.5", "Active"],
-        ["Sarah Johnson", "987654321", "Designer", "sarah@example.com", "=COUNTIFS('📋 Daily Tasks'!D:D,A3,'📋 Daily Tasks'!F:F,\"<>completed\")", "5", "15", "92%", "1.8", "Active"],
-        ["Mike Wilson", "456789123", "QA Lead", "mike@example.com", "=COUNTIFS('📋 Daily Tasks'!D:D,A4,'📋 Daily Tasks'!F:F,\"<>completed\")", "2", "8", "78%", "3.2", "Active"],
-    ]
+    # New simplified structure:
+    # - Name: Used for Telegram mentions (e.g., "Mayank fix this")
+    # - Discord ID: Numeric ID for Discord @mentions (e.g., "392400310108291092")
+    # - Email: Google email for Calendar/Tasks integration
+    # - Role: Developer, Marketing, or Admin (for channel routing)
+    # - Status: Active, On Leave, Inactive
+    team_headers = ["Name", "Discord ID", "Email", "Role", "Status", "Active Tasks"]
+
+    # Start with empty data - will be populated via /syncteam command
+    # The setup script creates structure only, no mock data
+    team_examples = []
 
     team_sheet.update(values=[team_headers] + team_examples, range_name='A1', value_input_option='USER_ENTERED')
 
-    # Header formatting
-    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 10}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
+    # Header formatting - blue theme
+    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 6}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
 
     requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 35}, 'fields': 'pixelSize'}})
     requests.append({'updateSheetProperties': {'properties': {'sheetId': team_id, 'gridProperties': {'frozenRowCount': 1}}, 'fields': 'gridProperties.frozenRowCount'}})
 
-    # Column widths
-    for i, w in enumerate([130, 100, 100, 180, 100, 120, 130, 110, 80, 80]):
+    # Column widths - optimized for new structure
+    # Name: 120, Discord ID: 200, Email: 220, Role: 100, Status: 80, Active Tasks: 100
+    for i, w in enumerate([120, 200, 220, 100, 80, 100]):
         requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i+1}, 'properties': {'pixelSize': w}, 'fields': 'pixelSize'}})
 
-    add_borders(requests, team_id, 0, 20, 0, 10)
-    add_alternating_colors(requests, team_id, 0, 20, 0, 10)
+    add_borders(requests, team_id, 0, 50, 0, 6)
+    add_alternating_colors(requests, team_id, 0, 50, 0, 6)
+
+    # Role dropdown - 3 categories for Discord channel routing
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 3, 'endColumnIndex': 4},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['Developer', 'Marketing', 'Admin']]}, 'showCustomUi': True, 'strict': True}
+        }
+    })
 
     # Status dropdown
     requests.append({
         'setDataValidation': {
-            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 9, 'endColumnIndex': 10},
+            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 4, 'endColumnIndex': 5},
             'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['Active', 'On Leave', 'Inactive']]}, 'showCustomUi': True}
         }
     })
 
-    # Role dropdown
-    requests.append({
-        'setDataValidation': {
-            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 2, 'endColumnIndex': 3},
-            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['Developer', 'Designer', 'Manager', 'QA Lead', 'DevOps', 'Product', 'Other']]}, 'showCustomUi': True}
-        }
-    })
-
-    print("  [OK] Team: members, formulas, dropdowns")
+    print("  [OK] Team: headers, validation, no mock data (use /syncteam)")
 
     # ========================================
     # 4. WEEKLY REPORTS
@@ -629,11 +635,13 @@ def setup_advanced_sheets(spreadsheet):
         ["⚙️ WORKFLOW SETTINGS", "", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", ""],
         ["👥 TEAM MEMBERS", "", "", "", "", "", "", ""],
-        ["Name", "Telegram ID", "Role", "Email", "Active", "", "", ""],
-        ["John Smith", "123456789", "Developer", "john@example.com", "Yes", "", "", ""],
-        ["Sarah Johnson", "987654321", "Designer", "sarah@example.com", "Yes", "", "", ""],
-        ["Mike Wilson", "456789123", "QA Lead", "mike@example.com", "Yes", "", "", ""],
+        ["See '👥 Team' sheet for team directory", "", "", "", "", "", "", ""],
+        ["Use /syncteam command to populate from config/team.py", "", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", ""],
+        ["📋 ROLE CATEGORIES (for Discord routing)", "", "", "", "", "", "", ""],
+        ["Developer", "→ Dev category channels", "", "", "", "", "", ""],
+        ["Marketing", "→ Marketing category channels", "", "", "", "", "", ""],
+        ["Admin", "→ Admin category channels", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", ""],
         ["📋 TASK TYPES", "", "", "🎯 PRIORITIES", "", "", "", ""],
         ["Type", "Description", "", "Priority", "Description", "Color", "", ""],

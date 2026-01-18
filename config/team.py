@@ -1,75 +1,50 @@
 """
 Team member configuration.
 
-This file defines the default team members that will be loaded into the preferences system.
-Update this file to add, remove, or modify team members.
+This file defines the team members that will be synced to Google Sheets via /syncteam.
 
-Roles determine which Discord channel tasks are sent to:
-- developer, dev, backend, frontend, engineer → Dev channel
-- admin, administrator, manager, lead → Admin channel
-- marketing, content, social, growth → Marketing channel
-- design, designer, ui, ux, graphic → Design channel
+Structure (matches Team sheet columns):
+- name: Name used for Telegram mentions (e.g., "Mayank fix the login bug")
+- discord_id: Numeric Discord user ID for @mentions (e.g., "392400310108291092")
+- email: Google email for Calendar/Tasks integration
+- role: One of "Developer", "Marketing", "Admin" - determines Discord channel routing
+
+Role → Discord Channel Routing:
+- Developer → Dev category (forum, tasks, report, general)
+- Marketing → Marketing category (when configured)
+- Admin → Admin category (when configured)
 """
 
 from typing import Dict, Any, List
 
-# Valid roles for Discord channel routing
-VALID_ROLES = [
-    "developer",      # → Dev channel
-    "backend",        # → Dev channel
-    "frontend",       # → Dev channel
-    "admin",          # → Admin channel
-    "manager",        # → Admin channel
-    "marketing",      # → Marketing channel
-    "content",        # → Marketing channel (Graphic & Content)
-    "designer",       # → Design channel
-    "qa",             # → Dev channel
-    "devops",         # → Dev channel
-]
+# Valid roles for Discord channel routing (must match dropdown in Team sheet)
+VALID_ROLES = ["Developer", "Marketing", "Admin"]
 
-# Default team members
-# Add your team members here with their contact information
+# Team members
+# Add your team members here - each member needs:
+# 1. name - How you'll mention them in Telegram
+# 2. discord_id - Get this by: Discord Developer Mode → Right-click user → Copy ID
+# 3. email - Their Google email for Calendar/Tasks
+# 4. role - One of: Developer, Marketing, Admin
 DEFAULT_TEAM_MEMBERS: List[Dict[str, Any]] = [
     {
         "name": "Mayank",
-        "username": "mayank",
-        "role": "developer",  # Routes to Dev > #tasks
+        "discord_id": "392400310108291092",
         "email": "colmayank52@gmail.com",
-        "discord_username": "@MAYANK",
-        "discord_id": "392400310108291092",  # Numeric Discord user ID for @mentions
-        "telegram_id": "",  # Fill in if known
-        "skills": ["development", "general"],
+        "role": "Developer",
     },
     # Add more team members as needed:
     # {
     #     "name": "Sarah",
-    #     "username": "sarah",
-    #     "role": "designer",  # Routes to Graphic & Content channel
+    #     "discord_id": "123456789012345678",  # Get from Discord: Right-click → Copy ID
     #     "email": "sarah@example.com",
-    #     "discord_username": "@sarah",
-    #     "discord_id": "",  # Get from Discord: Right-click user > Copy ID
-    #     "telegram_id": "",
-    #     "skills": ["ui", "ux", "figma"],
+    #     "role": "Marketing",
     # },
     # {
     #     "name": "Mike",
-    #     "username": "mike",
-    #     "role": "admin",  # Routes to Admin > #tasks-admin
+    #     "discord_id": "987654321098765432",
     #     "email": "mike@example.com",
-    #     "discord_username": "@mike",
-    #     "discord_id": "",
-    #     "telegram_id": "",
-    #     "skills": ["management", "operations"],
-    # },
-    # {
-    #     "name": "Lisa",
-    #     "username": "lisa",
-    #     "role": "marketing",  # Routes to Marketing channel
-    #     "email": "lisa@example.com",
-    #     "discord_username": "@lisa",
-    #     "discord_id": "",
-    #     "telegram_id": "",
-    #     "skills": ["social media", "content", "analytics"],
+    #     "role": "Admin",
     # },
 ]
 

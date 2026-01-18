@@ -645,52 +645,72 @@ class GoogleSheetsIntegration:
             return {}
 
     # ============================================
-    # TEAM OPERATIONS
+    # TEAM OPERATIONS (v1.5 structure)
     # ============================================
-    # Columns: Name, Telegram ID, Role, Email, Active Tasks, Completed (Week),
-    #          Completed (Month), Completion Rate, Avg Days, Status
+    # Columns: Name, Discord ID, Email, Role, Status, Active Tasks
+    # - Name: For Telegram mentions
+    # - Discord ID: Numeric ID for Discord @mentions
+    # - Email: Google email for Calendar/Tasks
+    # - Role: Developer, Marketing, Admin (channel routing)
+    # - Status: Active, On Leave, Inactive
+    # - Active Tasks: Count of non-completed tasks
 
-    async def update_team_member(self, name: str, telegram_id: str, role: str,
-                                  email: str = '', status: str = 'Active') -> bool:
-        """Add or update a team member."""
+    async def update_team_member(
+        self,
+        name: str,
+        discord_id: str,
+        email: str,
+        role: str,
+        status: str = 'Active'
+    ) -> bool:
+        """
+        Add or update a team member in the Team sheet.
+
+        New column structure (v1.5):
+        - Name: Used for Telegram mentions
+        - Discord ID: Numeric ID for Discord @mentions
+        - Email: Google email for Calendar/Tasks
+        - Role: Developer, Marketing, Admin (for channel routing)
+        - Status: Active, On Leave, Inactive
+        - Active Tasks: Count (formula-driven)
+
+        Args:
+            name: Team member name (used for Telegram mentions)
+            discord_id: Numeric Discord user ID for @mentions
+            email: Google email address
+            role: One of Developer, Marketing, Admin
+            status: Active, On Leave, or Inactive
+        """
         if not await self.initialize():
             return False
 
         try:
             worksheet = self.spreadsheet.worksheet(SHEET_TEAM)
 
-            # Try to find existing member
+            # Try to find existing member by name
             try:
                 cell = worksheet.find(name, in_column=1)
                 row_num = cell.row
             except:
                 row_num = len(worksheet.get_all_values()) + 1
 
-            # Get task stats for this person
+            # Calculate active tasks for this person
             all_tasks = await self.get_all_tasks()
             person_tasks = [t for t in all_tasks if t.get('Assignee', '').lower() == name.lower()]
-
             active_tasks = len([t for t in person_tasks if t.get('Status') not in ['completed', 'cancelled']])
-            completed_week = 0  # Would need date filtering
-            completed_month = len([t for t in person_tasks if t.get('Status') == 'completed'])
-            total_assigned = len(person_tasks)
-            completion_rate = round((completed_month / total_assigned * 100) if total_assigned > 0 else 0, 1)
 
+            # New column structure: Name, Discord ID, Email, Role, Status, Active Tasks
             row_data = [
                 name,
-                telegram_id,
-                role,
+                discord_id,
                 email,
-                str(active_tasks),
-                str(completed_week),
-                str(completed_month),
-                f"{completion_rate}%",
-                '',  # Avg days
-                status
+                role,
+                status,
+                str(active_tasks)
             ]
 
-            worksheet.update(f'A{row_num}:J{row_num}', [row_data], value_input_option='USER_ENTERED')
-            logger.info(f"Updated team member: {name}")
+            worksheet.update(f'A{row_num}:F{row_num}', [row_data], value_input_option='USER_ENTERED')
+            logger.info(f"Updated team member: {name} (Discord: {discord_id}, Role: {role})")
             return True
 
         except Exception as e:
@@ -750,6 +770,9 @@ class GoogleSheetsIntegration:
         """
         Sync team members from config/team.py to the Team sheet.
 
+        Uses new column structure (v1.5):
+        - Name, Discord ID, Email, Role, Status, Active Tasks
+
         Returns:
             Tuple of (synced_count, failed_count)
         """
@@ -772,9 +795,9 @@ class GoogleSheetsIntegration:
                 try:
                     success = await self.update_team_member(
                         name=member.get("name", ""),
-                        telegram_id=member.get("telegram_id", ""),
-                        role=member.get("role", "developer"),
+                        discord_id=member.get("discord_id", ""),
                         email=member.get("email", ""),
+                        role=member.get("role", "Developer"),
                         status="Active"
                     )
                     if success:
