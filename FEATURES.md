@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-18
-> **Version:** 1.4.3
+> **Version:** 1.5.0
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -425,22 +425,88 @@ Create these subtasks? Reply yes or no.
 
 ## Discord Integration
 
-### Webhook Features (`src/integrations/discord.py`)
+### Channel-Based Bot API (NEW in v1.5.0)
+
+**MAJOR CHANGE:** Discord integration now uses Bot API with Channel IDs instead of webhooks. This provides full permissions for message management, thread creation/deletion, and @mentions.
+
+### Features (`src/integrations/discord.py`)
 
 | Function | Description |
 |----------|-------------|
-| `post_task()` | Create rich embed with task details |
-| `update_task_embed()` | Edit existing task embed |
-| `post_standup()` | Daily standup summary |
+| `send_message()` | Send message to any channel |
+| `edit_message()` | Edit existing message |
+| `delete_message()` | Delete message from channel |
+| `create_forum_thread()` | Create forum post with embed |
+| `delete_thread()` | Delete thread/forum post |
+| `add_reaction()` | Add reaction to message |
+| `get_channel_threads()` | List all threads in channel |
+| `bulk_delete_threads()` | Delete threads matching prefix |
+| `post_task()` | Smart task posting (forum or text) |
+| `post_spec_sheet()` | Detailed spec as forum thread |
+| `post_standup()` | Daily standup to report channel |
 | `post_weekly_summary()` | Weekly report embed |
-| `post_alert()` | Urgent notifications |
-| `post_review_feedback()` | Quality assessment for developer |
-| `post_submission_approved()` | Approval notification |
-| `post_help()` | Discord help message with reaction guide |
+| `post_alert()` | Alerts to tasks channel |
+| `post_general_message()` | Post to general channel |
+| `post_help()` | Help message with reaction guide |
+| `cleanup_task_channel()` | Clean all task threads |
 
-### Discord Bot Reaction Listener (NEW in v1.2)
+### Channel Structure (Per Department)
 
-The system now includes a full Discord bot (`src/integrations/discord_bot.py`) that listens for reactions on task messages and automatically updates task status in both PostgreSQL and Google Sheets.
+Each department (Dev, Admin, Marketing, Design) has 4 dedicated channels:
+
+| Channel Type | Purpose | Content |
+|--------------|---------|---------|
+| **Forum** | Detailed specs, creates threads per task | Spec sheets, complex tasks |
+| **Tasks** | Regular tasks, status updates | Simple tasks, overdue alerts, cancellations |
+| **Report** | Standup and reports | Daily standup, weekly summary |
+| **General** | General messages | Help, announcements |
+
+### Channel Configuration
+
+**Dev Category (Primary - configured):**
+```bash
+DISCORD_DEV_FORUM_CHANNEL_ID=1459834094304104653
+DISCORD_DEV_TASKS_CHANNEL_ID=1461760665873158349
+DISCORD_DEV_REPORT_CHANNEL_ID=1461760697334632651
+DISCORD_DEV_GENERAL_CHANNEL_ID=1461760791719182590
+```
+
+**Other Categories (Future - set when needed):**
+- `DISCORD_ADMIN_*_CHANNEL_ID` - Admin department
+- `DISCORD_MARKETING_*_CHANNEL_ID` - Marketing department
+- `DISCORD_DESIGN_*_CHANNEL_ID` - Design department
+
+### Role-Based Routing
+
+Tasks are automatically routed to department channels based on assignee's role:
+
+| Role Keywords | Target Category |
+|---------------|-----------------|
+| developer, backend, frontend, engineer, qa, devops | Dev |
+| admin, administrator, manager, lead, director | Admin |
+| marketing, content, social, growth, seo, ads | Marketing |
+| designer, ui, ux, graphic, creative, artist | Design |
+
+**How it works:**
+1. Task created with assignee
+2. System looks up assignee's role from database
+3. Routes to matching department's channels
+4. Falls back to Dev category if no match
+
+### Content Routing
+
+Within each department, content goes to appropriate channel:
+
+| Content Type | Target Channel |
+|--------------|----------------|
+| Detailed specs, complex tasks | Forum (creates thread) |
+| Simple tasks, overdue, cancelled | Tasks |
+| Daily standup, weekly summary | Report |
+| Help, announcements | General |
+
+### Discord Bot Reaction Listener
+
+The system includes a full Discord bot (`src/integrations/discord_bot.py`) that listens for reactions on task messages and automatically updates task status.
 
 **Setup Requirements:**
 - `DISCORD_BOT_TOKEN` - Bot token from Discord Developer Portal
@@ -460,94 +526,42 @@ The system now includes a full Discord bot (`src/integrations/discord_bot.py`) t
 | 👀 | in_review |
 | 🔴 | urgent (changes priority) |
 
-**How It Works:**
-1. Task is posted to Discord via webhook
-2. Discord message ID is saved to task (PostgreSQL + mapping cache)
-3. Bot listens for `on_raw_reaction_add` events
-4. When reaction detected, bot looks up task by message ID
-5. Callback updates status in PostgreSQL and Google Sheets
-6. Audit log records the change with Discord user who reacted
-
-**Bot Features:**
-- Automatic message-task mapping registration
-- Database lookup fallback if mapping not in cache
-- Extract task ID from embed footer as last resort
-- Visual feedback (thumbs up reaction briefly appears to confirm update)
-- Priority change support via 🔴 reaction
-
 ### Embed Format
 
 - Task ID and title
 - Priority emoji (🟢🟡🟠🔴)
 - Status with emoji
-- Assignee with Discord mention
+- Assignee with Discord @mention
 - Deadline
 - Estimated effort
 - Acceptance criteria with checkmarks
 - Pinned notes
 - Delay reason if delayed
 
-### Discord Forum Channel Support (NEW in v1.4)
+### @Mention Format
 
-Tasks can be posted as organized forum threads instead of regular messages. Each task becomes its own forum post with automatic tagging.
-
-**Setup:**
-1. Create a Forum channel in Discord
-2. Add tags for priority (Urgent, High, Medium, Low) and status
-3. Set `DISCORD_FORUM_CHANNEL_ID` environment variable
-4. Ensure bot has "Create Posts" permission
-
-**Features:**
-- Each task = organized forum thread
-- Auto-applies matching tags (priority, status)
-- Proper @mentions using numeric Discord user IDs
-- Reaction-based status updates work on forum posts
-- Falls back to webhook + thread if forum not configured
-
-**@Mention Format:**
 Team members must have numeric Discord user IDs in `config/team.py`:
 ```python
 "discord_id": "392400310108291092",  # Numeric ID, not username
 ```
 To get numeric ID: Discord Developer Mode → Right-click user → Copy ID
 
-### Role-Based Channel Routing (NEW in v1.4.3)
+### Discord Cleanup Command
 
-Tasks are automatically routed to different Discord channels based on the assignee's role:
+`/cleandiscord [channel_id]` - Delete all task threads from a channel
 
-| Role Keywords | Target Channel | Webhook Variable |
-|---------------|----------------|------------------|
-| developer, backend, frontend, engineer | Dev > #tasks | `DISCORD_DEV_TASKS_WEBHOOK` |
-| admin, administrator, manager, lead | Admin > #tasks-admin | `DISCORD_ADMIN_TASKS_WEBHOOK` |
-| marketing, content, social, growth | Marketing channel | `DISCORD_MARKETING_TASKS_WEBHOOK` |
-| designer, ui, ux, graphic, creative | Design channel | `DISCORD_DESIGN_TASKS_WEBHOOK` |
-
-**How it works:**
-1. When a task is created with an assignee
-2. System looks up assignee's role from database
-3. Routes to matching department channel
-4. Falls back to default tasks channel if no match
-
-**Setup:**
-1. Create webhooks in each department channel
-2. Set environment variables in Railway:
-```bash
-railway variables set -s boss-workflow "DISCORD_DEV_TASKS_WEBHOOK=https://discord.com/api/webhooks/..."
-railway variables set -s boss-workflow "DISCORD_ADMIN_TASKS_WEBHOOK=https://discord.com/api/webhooks/..."
+```
+/cleandiscord                    # Uses default dev forum channel
+/cleandiscord 1459834094304104653  # Specific channel
 ```
 
-### Configured Webhooks
+### Legacy Webhooks (Deprecated)
 
-| Webhook | Purpose |
-|---------|---------|
-| `DISCORD_WEBHOOK_URL` | General notifications |
-| `DISCORD_TASKS_CHANNEL_WEBHOOK` | Task postings (default fallback) |
-| `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Standup/report summaries |
-| `DISCORD_FORUM_CHANNEL_ID` | Forum channel for organized task posts (NEW v1.4) |
-| `DISCORD_DEV_TASKS_WEBHOOK` | Dev department tasks (NEW v1.4.3) |
-| `DISCORD_ADMIN_TASKS_WEBHOOK` | Admin department tasks (NEW v1.4.3) |
-| `DISCORD_MARKETING_TASKS_WEBHOOK` | Marketing department tasks (NEW v1.4.3) |
-| `DISCORD_DESIGN_TASKS_WEBHOOK` | Design department tasks (NEW v1.4.3) |
+Webhooks are still supported for backward compatibility but not recommended:
+- `DISCORD_WEBHOOK_URL`
+- `DISCORD_TASKS_CHANNEL_WEBHOOK`
+- `DISCORD_STANDUP_CHANNEL_WEBHOOK`
+- `DISCORD_SPECS_CHANNEL_WEBHOOK`
 
 ---
 
@@ -1049,11 +1063,17 @@ project_repo = get_project_repository()
 | `DEEPSEEK_API_KEY` | DeepSeek AI API key |
 | `DEEPSEEK_BASE_URL` | DeepSeek API endpoint |
 | `OPENAI_API_KEY` | OpenAI API key for Whisper voice transcription (NEW v1.2) |
-| `DISCORD_BOT_TOKEN` | Discord bot token for reaction listener (NEW v1.2) |
-| `DISCORD_WEBHOOK_URL` | Main Discord webhook |
-| `DISCORD_TASKS_CHANNEL_WEBHOOK` | Tasks channel webhook |
-| `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Standup channel webhook |
-| `DISCORD_FORUM_CHANNEL_ID` | Forum channel ID for organized task posts (NEW v1.4) |
+| `DISCORD_BOT_TOKEN` | Discord bot token (REQUIRED for v1.5+) |
+| `DISCORD_DEV_FORUM_CHANNEL_ID` | Dev forum channel for specs (NEW v1.5) |
+| `DISCORD_DEV_TASKS_CHANNEL_ID` | Dev tasks channel for regular tasks (NEW v1.5) |
+| `DISCORD_DEV_REPORT_CHANNEL_ID` | Dev report channel for standup (NEW v1.5) |
+| `DISCORD_DEV_GENERAL_CHANNEL_ID` | Dev general channel (NEW v1.5) |
+| `DISCORD_ADMIN_*_CHANNEL_ID` | Admin department channels (optional) |
+| `DISCORD_MARKETING_*_CHANNEL_ID` | Marketing department channels (optional) |
+| `DISCORD_DESIGN_*_CHANNEL_ID` | Design department channels (optional) |
+| `DISCORD_WEBHOOK_URL` | Legacy webhook (deprecated) |
+| `DISCORD_TASKS_CHANNEL_WEBHOOK` | Legacy webhook (deprecated) |
+| `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Legacy webhook (deprecated) |
 | `GOOGLE_CREDENTIALS_JSON` | Service account JSON |
 | `GOOGLE_SHEET_ID` | Google Sheets document ID |
 | `GOOGLE_CALENDAR_ID` | Google Calendar ID |
@@ -1441,6 +1461,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.0 | 2026-01-18 | **MAJOR: Channel-Based Discord Integration:** Complete rewrite from webhooks to Bot API with channel IDs. Full permissions for message/thread management. **4 Channels Per Department:** Forum (specs), Tasks (regular tasks), Report (standup), General. **Dev Category Configured:** Forum `1459834094304104653`, Tasks `1461760665873158349`, Report `1461760697334632651`, General `1461760791719182590`. **Smart Content Routing:** Specs→Forum, tasks→Tasks channel, standup→Report, help→General. **Role-Based Department Routing:** Tasks route to matching department's channels based on assignee role. |
 | 1.4.3 | 2026-01-18 | **Role-Based Discord Routing:** Tasks automatically route to department-specific Discord channels based on assignee role (Dev, Admin, Marketing, Design). **Team Sync Commands:** `/syncteam` syncs team from config/team.py to Sheets + DB. `/clearteam` removes mock data. **Team Config:** config/team.py defines team with roles for channel routing. |
 | 1.4.2 | 2026-01-18 | **True Task Deletion:** Clearing tasks now permanently deletes from Google Sheets, Discord (messages + threads), and PostgreSQL database. Previously only marked as "cancelled". Supports single task deletion and bulk deletion with confirmation. |
 | 1.4.1 | 2026-01-18 | **Email Digest in Standup:** Daily standup now sends comprehensive email summary as separate Telegram message (boss only, not Discord). All email digests are now Telegram-only for privacy. Includes AI summary, action items, priority emails, and latest 15 emails with status icons. |

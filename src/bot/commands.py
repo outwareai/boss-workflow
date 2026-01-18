@@ -413,9 +413,9 @@ Or use `/addteam [name] [role]`"""
             # Determine channel to clean
             target_channel = channel_id
             if not target_channel:
-                # Try to get from settings
-                if settings.discord_forum_channel_id:
-                    target_channel = settings.discord_forum_channel_id
+                # Try to get from settings (use dev forum as default)
+                if settings.discord_dev_forum_channel_id:
+                    target_channel = settings.discord_dev_forum_channel_id
                 else:
                     return """⚠️ No channel ID provided.
 

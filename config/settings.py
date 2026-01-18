@@ -34,19 +34,42 @@ class Settings(BaseSettings):
     # OpenAI (for Whisper voice transcription)
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
 
-    # Discord - Main webhooks
+    # Discord Bot Configuration (Required - uses Bot API instead of webhooks)
+    discord_bot_token: str = Field(default="", env="DISCORD_BOT_TOKEN")
+
+    # Discord - Dev Category Channel IDs (Primary)
+    # Forum for specs/detailed tasks (creates threads per task)
+    discord_dev_forum_channel_id: str = Field(default="1459834094304104653", env="DISCORD_DEV_FORUM_CHANNEL_ID")
+    # Tasks text channel for regular tasks, overdue, cancel notifications
+    discord_dev_tasks_channel_id: str = Field(default="1461760665873158349", env="DISCORD_DEV_TASKS_CHANNEL_ID")
+    # Report channel for standup and reports
+    discord_dev_report_channel_id: str = Field(default="1461760697334632651", env="DISCORD_DEV_REPORT_CHANNEL_ID")
+    # General messages channel
+    discord_dev_general_channel_id: str = Field(default="1461760791719182590", env="DISCORD_DEV_GENERAL_CHANNEL_ID")
+
+    # Discord - Admin Category Channel IDs (Future)
+    discord_admin_forum_channel_id: str = Field(default="", env="DISCORD_ADMIN_FORUM_CHANNEL_ID")
+    discord_admin_tasks_channel_id: str = Field(default="", env="DISCORD_ADMIN_TASKS_CHANNEL_ID")
+    discord_admin_report_channel_id: str = Field(default="", env="DISCORD_ADMIN_REPORT_CHANNEL_ID")
+    discord_admin_general_channel_id: str = Field(default="", env="DISCORD_ADMIN_GENERAL_CHANNEL_ID")
+
+    # Discord - Marketing Category Channel IDs (Future)
+    discord_marketing_forum_channel_id: str = Field(default="", env="DISCORD_MARKETING_FORUM_CHANNEL_ID")
+    discord_marketing_tasks_channel_id: str = Field(default="", env="DISCORD_MARKETING_TASKS_CHANNEL_ID")
+    discord_marketing_report_channel_id: str = Field(default="", env="DISCORD_MARKETING_REPORT_CHANNEL_ID")
+    discord_marketing_general_channel_id: str = Field(default="", env="DISCORD_MARKETING_GENERAL_CHANNEL_ID")
+
+    # Discord - Design Category Channel IDs (Future)
+    discord_design_forum_channel_id: str = Field(default="", env="DISCORD_DESIGN_FORUM_CHANNEL_ID")
+    discord_design_tasks_channel_id: str = Field(default="", env="DISCORD_DESIGN_TASKS_CHANNEL_ID")
+    discord_design_report_channel_id: str = Field(default="", env="DISCORD_DESIGN_REPORT_CHANNEL_ID")
+    discord_design_general_channel_id: str = Field(default="", env="DISCORD_DESIGN_GENERAL_CHANNEL_ID")
+
+    # Legacy webhooks (deprecated - kept for backward compatibility)
     discord_webhook_url: str = Field(default="", env="DISCORD_WEBHOOK_URL")
     discord_tasks_channel_webhook: str = Field(default="", env="DISCORD_TASKS_CHANNEL_WEBHOOK")
     discord_standup_channel_webhook: str = Field(default="", env="DISCORD_STANDUP_CHANNEL_WEBHOOK")
     discord_specs_channel_webhook: str = Field(default="", env="DISCORD_SPECS_CHANNEL_WEBHOOK")
-    discord_bot_token: Optional[str] = Field(default=None, env="DISCORD_BOT_TOKEN")
-    discord_forum_channel_id: Optional[str] = Field(default=None, env="DISCORD_FORUM_CHANNEL_ID")  # Forum channel for organized task posts
-
-    # Discord - Role-based task channel webhooks (route tasks by assignee role)
-    discord_dev_tasks_webhook: str = Field(default="", env="DISCORD_DEV_TASKS_WEBHOOK")  # Dev > #tasks
-    discord_admin_tasks_webhook: str = Field(default="", env="DISCORD_ADMIN_TASKS_WEBHOOK")  # Admin > #tasks-admin
-    discord_marketing_tasks_webhook: str = Field(default="", env="DISCORD_MARKETING_TASKS_WEBHOOK")  # Marketing channel
-    discord_design_tasks_webhook: str = Field(default="", env="DISCORD_DESIGN_TASKS_WEBHOOK")  # Design/Content channel
 
     # Google Sheets
     google_credentials_json: str = Field(default="", env="GOOGLE_CREDENTIALS_JSON")
