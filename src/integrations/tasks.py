@@ -281,6 +281,215 @@ class GoogleTasksIntegration:
             logger.error(f"Error syncing from Google Tasks: {e}")
             return []
 
+    # =========================================================================
+    # User-Level OAuth Methods (for personal Google Tasks)
+    # =========================================================================
+
+    async def _refresh_user_token(self, refresh_token: str) -> Optional[Dict[str, Any]]:
+        """
+        Refresh a user's access token using their refresh token.
+
+        Returns dict with access_token, expires_in if successful.
+        """
+        try:
+            client_id = settings.google_oauth_client_id
+            client_secret = settings.google_oauth_client_secret
+
+            if not client_id or not client_secret:
+                logger.error("OAuth client credentials not configured")
+                return None
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "refresh_token": refresh_token,
+                        "grant_type": "refresh_token"
+                    }
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"Token refresh failed: {response.text}")
+                    return None
+
+                return response.json()
+
+        except Exception as e:
+            logger.error(f"Error refreshing token: {e}")
+            return None
+
+    async def _get_user_service(self, email: str):
+        """
+        Get a Google Tasks service for a specific user.
+
+        Uses their stored OAuth refresh token.
+        """
+        try:
+            from ..database.repositories import get_oauth_repository
+            oauth_repo = get_oauth_repository()
+
+            # Get stored token
+            token_data = await oauth_repo.get_token(email, "tasks")
+            if not token_data:
+                logger.warning(f"No Tasks OAuth token for {email}")
+                return None
+
+            refresh_token = token_data.get("refresh_token")
+            if not refresh_token:
+                logger.warning(f"No refresh token for {email}")
+                return None
+
+            # Refresh to get valid access token
+            new_tokens = await self._refresh_user_token(refresh_token)
+            if not new_tokens:
+                return None
+
+            access_token = new_tokens.get("access_token")
+
+            # Update stored access token
+            await oauth_repo.update_access_token(
+                email=email,
+                service="tasks",
+                access_token=access_token,
+                expires_in=new_tokens.get("expires_in")
+            )
+
+            # Build credentials and service
+            credentials = UserCredentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=settings.google_oauth_client_id,
+                client_secret=settings.google_oauth_client_secret
+            )
+
+            service = build('tasks', 'v1', credentials=credentials)
+            return service
+
+        except Exception as e:
+            logger.error(f"Error getting user Tasks service for {email}: {e}")
+            return None
+
+    async def _get_user_tasklist(self, service, list_name: str = "Boss Workflow") -> Optional[str]:
+        """Get or create a tasklist for the user."""
+        try:
+            # List all tasklists
+            results = service.tasklists().list().execute()
+            tasklists = results.get('items', [])
+
+            # Find existing
+            for tl in tasklists:
+                if tl.get('title') == list_name:
+                    return tl.get('id')
+
+            # Create new
+            new_list = service.tasklists().insert(
+                body={'title': list_name}
+            ).execute()
+
+            logger.info(f"Created tasklist '{list_name}' for user")
+            return new_list.get('id')
+
+        except Exception as e:
+            logger.error(f"Error getting/creating user tasklist: {e}")
+            return None
+
+    async def create_task_for_user(
+        self,
+        user_email: str,
+        task: Task
+    ) -> Optional[str]:
+        """
+        Create a task in a specific user's personal Google Tasks.
+
+        Args:
+            user_email: Email of the user (must have connected Google Tasks)
+            task: Task to create
+
+        Returns:
+            Google Task ID if successful
+        """
+        try:
+            # Get user's Tasks service
+            service = await self._get_user_service(user_email)
+            if not service:
+                logger.warning(f"Could not get Tasks service for {user_email}")
+                return None
+
+            # Get or create tasklist
+            tasklist_id = await self._get_user_tasklist(service)
+            if not tasklist_id:
+                return None
+
+            # Build task body
+            task_body = {
+                'title': f"[{task.priority.value.upper()}] {task.title}",
+                'notes': self._build_notes(task),
+                'status': 'needsAction'
+            }
+
+            # Add due date if exists
+            if task.deadline:
+                task_body['due'] = task.deadline.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+            # Create task
+            result = service.tasks().insert(
+                tasklist=tasklist_id,
+                body=task_body
+            ).execute()
+
+            google_task_id = result.get('id')
+            logger.info(f"Created Google Task for {user_email}: {task.id} -> {google_task_id}")
+
+            return google_task_id
+
+        except Exception as e:
+            logger.error(f"Error creating task for user {user_email}: {e}")
+            return None
+
+    async def has_user_connected_tasks(self, email: str) -> bool:
+        """Check if a user has connected their Google Tasks."""
+        try:
+            from ..database.repositories import get_oauth_repository
+            oauth_repo = get_oauth_repository()
+            return await oauth_repo.has_token(email, "tasks")
+        except Exception as e:
+            logger.error(f"Error checking Tasks connection for {email}: {e}")
+            return False
+
+    async def update_user_task_status(
+        self,
+        user_email: str,
+        google_task_id: str,
+        completed: bool
+    ) -> bool:
+        """Update task completion status in a user's Google Tasks."""
+        try:
+            service = await self._get_user_service(user_email)
+            if not service:
+                return False
+
+            tasklist_id = await self._get_user_tasklist(service)
+            if not tasklist_id:
+                return False
+
+            status = 'completed' if completed else 'needsAction'
+
+            service.tasks().patch(
+                tasklist=tasklist_id,
+                task=google_task_id,
+                body={'status': status}
+            ).execute()
+
+            logger.info(f"Updated Google Task {google_task_id} for {user_email}: {status}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating task for {user_email}: {e}")
+            return False
+
 
 # Singleton
 tasks_integration = GoogleTasksIntegration()

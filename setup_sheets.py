@@ -337,10 +337,10 @@ def setup_advanced_sheets(spreadsheet):
     # ========================================
     print("\n[3/10] Setting up Team Directory...")
 
-    team_sheet = get_or_create_sheet(spreadsheet, "👥 Team", rows=50, cols=9)
+    team_sheet = get_or_create_sheet(spreadsheet, "👥 Team", rows=50, cols=15)
     team_id = team_sheet.id
 
-    # New structure with attendance columns:
+    # Full structure with attendance/working hours columns:
     # - Name: Used for Telegram mentions (e.g., "Mayank fix this")
     # - Discord ID: Numeric ID for Discord @mentions (e.g., "392400310108291092")
     # - Email: Google email for Calendar/Tasks integration
@@ -349,8 +349,15 @@ def setup_advanced_sheets(spreadsheet):
     # - Active Tasks: Count of non-completed tasks
     # - Calendar ID: Google Calendar ID for direct event creation (usually same as email)
     # - Timezone: User's timezone for attendance (e.g., Asia/Bangkok, Asia/Kolkata)
-    # - Work Start: Expected start time in local time (e.g., 09:00)
-    team_headers = ["Name", "Discord ID", "Email", "Role", "Status", "Active Tasks", "Calendar ID", "Timezone", "Work Start"]
+    # - Work Start: Expected clock-in time (e.g., 09:00)
+    # - Work End: Expected clock-out time (e.g., 18:00)
+    # - Hours/Day: Expected working hours per day (e.g., 8)
+    # - Hours/Week: Expected working hours per week (e.g., 40)
+    # - Max Break: Maximum break time allowed in minutes (e.g., 60)
+    # - Grace Period: Late grace period in minutes (e.g., 15)
+    # - Notes: Additional notes
+    team_headers = ["Name", "Discord ID", "Email", "Role", "Status", "Active Tasks", "Calendar ID",
+                    "Timezone", "Work Start", "Work End", "Hours/Day", "Hours/Week", "Max Break", "Grace Period", "Notes"]
 
     # Start with empty data - will be populated via /syncteam command
     # The setup script creates structure only, no mock data
@@ -359,18 +366,18 @@ def setup_advanced_sheets(spreadsheet):
     team_sheet.update(values=[team_headers] + team_examples, range_name='A1', value_input_option='USER_ENTERED')
 
     # Header formatting - blue theme
-    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 9}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
+    requests.append({'repeatCell': {'range': {'sheetId': team_id, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 15}, 'cell': {'userEnteredFormat': {'backgroundColor': rgb(51, 77, 128), 'textFormat': {'bold': True, 'foregroundColor': rgb(255, 255, 255), 'fontSize': 10}, 'horizontalAlignment': 'CENTER'}}, 'fields': 'userEnteredFormat'}})
 
     requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 35}, 'fields': 'pixelSize'}})
     requests.append({'updateSheetProperties': {'properties': {'sheetId': team_id, 'gridProperties': {'frozenRowCount': 1}}, 'fields': 'gridProperties.frozenRowCount'}})
 
-    # Column widths - optimized for new structure with attendance columns
-    # Name: 120, Discord ID: 200, Email: 220, Role: 100, Status: 80, Active Tasks: 100, Calendar ID: 220, Timezone: 140, Work Start: 90
-    for i, w in enumerate([120, 200, 220, 100, 80, 100, 220, 140, 90]):
+    # Column widths - optimized for all columns
+    # Name, Discord ID, Email, Role, Status, Active Tasks, Calendar ID, Timezone, Work Start, Work End, Hours/Day, Hours/Week, Max Break, Grace Period, Notes
+    for i, w in enumerate([120, 200, 220, 100, 80, 90, 220, 140, 80, 80, 70, 80, 80, 90, 200]):
         requests.append({'updateDimensionProperties': {'range': {'sheetId': team_id, 'dimension': 'COLUMNS', 'startIndex': i, 'endIndex': i+1}, 'properties': {'pixelSize': w}, 'fields': 'pixelSize'}})
 
-    add_borders(requests, team_id, 0, 50, 0, 9)
-    add_alternating_colors(requests, team_id, 0, 50, 0, 9)
+    add_borders(requests, team_id, 0, 50, 0, 15)
+    add_alternating_colors(requests, team_id, 0, 50, 0, 15)
 
     # Role dropdown - 3 categories for Discord channel routing
     requests.append({
@@ -397,7 +404,39 @@ def setup_advanced_sheets(spreadsheet):
         }
     })
 
-    print("  [OK] Team: headers, validation, timezone/work start columns")
+    # Hours/Day dropdown (common values)
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 10, 'endColumnIndex': 11},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['4', '6', '8', '9', '10']]}, 'showCustomUi': True}
+        }
+    })
+
+    # Hours/Week dropdown (common values)
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 11, 'endColumnIndex': 12},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['20', '30', '35', '40', '45', '48']]}, 'showCustomUi': True}
+        }
+    })
+
+    # Max Break dropdown (in minutes)
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 12, 'endColumnIndex': 13},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['30', '45', '60', '90', '120']]}, 'showCustomUi': True}
+        }
+    })
+
+    # Grace Period dropdown (in minutes)
+    requests.append({
+        'setDataValidation': {
+            'range': {'sheetId': team_id, 'startRowIndex': 1, 'endRowIndex': 50, 'startColumnIndex': 13, 'endColumnIndex': 14},
+            'rule': {'condition': {'type': 'ONE_OF_LIST', 'values': [{'userEnteredValue': v} for v in ['5', '10', '15', '20', '30']]}, 'showCustomUi': True}
+        }
+    })
+
+    print("  [OK] Team: full attendance columns (timezone, hours, breaks, grace period)")
 
     # ========================================
     # 4. WEEKLY REPORTS

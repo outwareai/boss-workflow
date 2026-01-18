@@ -22,6 +22,7 @@ from ..integrations.discord import get_discord_integration
 from ..integrations.sheets import get_sheets_integration
 from ..integrations.calendar import get_calendar_integration
 from ..integrations.gmail import get_gmail_integration
+from ..integrations.tasks import get_tasks_integration
 from ..ai.email_summarizer import get_email_summarizer
 from ..ai.reviewer import get_submission_reviewer, ReviewResult
 from ..database.repositories import get_task_repository
@@ -50,6 +51,7 @@ class UnifiedHandler:
         self.discord = get_discord_integration()
         self.sheets = get_sheets_integration()
         self.calendar = get_calendar_integration()
+        self.tasks = get_tasks_integration()
         self.reviewer = get_submission_reviewer()
 
         # Track active sessions
