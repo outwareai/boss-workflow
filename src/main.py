@@ -233,6 +233,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register web routes (onboarding, OAuth, team management)
+from .web.routes import router as web_router
+app.include_router(web_router)
+
 
 @app.get("/")
 async def root():

@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     # Google Calendar
     google_calendar_id: str = Field(default="primary", env="GOOGLE_CALENDAR_ID")
 
+    # Google OAuth2 (for user-level auth - Calendar/Tasks on personal accounts)
+    google_oauth_client_id: str = Field(default="", env="GOOGLE_OAUTH_CLIENT_ID")
+    google_oauth_client_secret: str = Field(default="", env="GOOGLE_OAUTH_CLIENT_SECRET")
+
     # Gmail / Email Digest Settings
     gmail_user_email: str = Field(default="corporationout@gmail.com", env="GMAIL_USER_EMAIL")
     gmail_oauth_credentials: str = Field(default="", env="GMAIL_OAUTH_CREDENTIALS")

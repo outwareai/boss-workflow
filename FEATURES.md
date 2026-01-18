@@ -648,6 +648,76 @@ Task Created for Minty →
 
 ---
 
+## Web Onboarding Portal (NEW in v1.5.2)
+
+### Staff Self-Service Onboarding
+
+A web-based onboarding page for new team members to register themselves.
+
+**URL:** `https://boss-workflow-production.up.railway.app/onboard`
+
+### Features (`src/web/routes.py`)
+
+| Endpoint | Description |
+|----------|-------------|
+| `/onboard` | Staff onboarding form (4-step wizard) |
+| `/team` | View team members list |
+| `/auth/google/calendar` | Google Calendar OAuth flow |
+| `/auth/google/tasks` | Google Tasks OAuth flow |
+| `/api/onboard` | Form submission API |
+
+### Onboarding Flow
+
+**Step 1: Basic Information**
+- Full name
+- Email address
+- Role/Department (Developer, Admin, Marketing, Designer, etc.)
+
+**Step 2: Discord Setup**
+- Discord User ID (with instructions to get it)
+- Optional Discord username
+
+**Step 3: Google Integration**
+- Connect Google Calendar (OAuth2)
+- Connect Google Tasks (OAuth2)
+- Both are optional
+
+**Step 4: Confirmation**
+- Review details
+- Complete setup
+
+### What Happens on Submit
+
+1. Staff info saved to 👥 Team sheet
+2. Staff info saved to PostgreSQL database
+3. Google OAuth tokens stored (if connected)
+4. Staff appears in system immediately
+
+### Google OAuth Setup Required
+
+To enable "Connect Google Calendar/Tasks" buttons:
+
+1. Go to Google Cloud Console → APIs & Services → OAuth consent screen
+2. Create consent screen (External type for personal accounts)
+3. Add scopes: `calendar`, `tasks`
+4. Create OAuth2 credentials (Web application)
+5. Add redirect URI: `https://boss-workflow-production.up.railway.app/auth/google/callback`
+6. Set environment variables:
+   - `GOOGLE_OAUTH_CLIENT_ID`
+   - `GOOGLE_OAUTH_CLIENT_SECRET`
+
+### Design
+
+Dark minimalist theme matching outsupplements.com:
+- Dark background (#0a0a0a)
+- Card style (#1a1a1a)
+- Green accent (#4ade80)
+- Inter font family
+- Step indicator with progress
+- Mobile responsive
+
+---
+
 ## Scheduler & Automation
 
 ### Scheduled Jobs (`src/scheduler/jobs.py`)
@@ -1125,6 +1195,8 @@ project_repo = get_project_repository()
 | `GMAIL_USER_EMAIL` | Gmail for digests |
 | `DATABASE_URL` | PostgreSQL connection string (auto-set by Railway) |
 | `REDIS_URL` | Redis connection string (optional) |
+| `GOOGLE_OAUTH_CLIENT_ID` | OAuth2 client ID for user Google auth (NEW v1.5.2) |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth2 client secret for user Google auth (NEW v1.5.2) |
 
 ---
 
@@ -1145,6 +1217,11 @@ boss-workflow/
 │   │   ├── reviewer.py      # Auto-review
 │   │   ├── transcriber.py   # Voice transcription (Whisper) [NEW v1.2]
 │   │   └── vision.py        # Image analysis (DeepSeek VL) [NEW v1.3]
+│   ├── web/                  # Web onboarding portal [NEW v1.5.2]
+│   │   ├── __init__.py
+│   │   ├── routes.py         # FastAPI routes for web pages
+│   │   └── templates/
+│   │       └── onboard.html  # Staff onboarding form
 │   ├── bot/
 │   │   ├── commands.py      # Slash commands
 │   │   ├── conversation.py  # Conversation flow
@@ -1504,6 +1581,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.2 | 2026-01-18 | **Web Onboarding Portal:** Staff self-service registration page at `/onboard` with dark minimalist design. 4-step wizard: Basic Info → Discord Setup → Google Integration → Confirmation. Saves to Sheets + PostgreSQL. **Google OAuth2:** User-level authentication for Calendar & Tasks with popup flow. New env vars: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`. **Team View:** `/team` endpoint shows all team members. |
 | 1.5.1 | 2026-01-18 | **Admin Department Setup:** Added Admin category Discord channels - Forum `1462370539858432145`, Report `1462370845908402268`, General `1462370950627725362`. **Team Member Minty:** Added (Discord: 834982814910775306, Role: Admin, Email: sutima2543@gmail.com). **Fallback Routing:** Tasks for departments without a tasks channel automatically post to forum. **Post to All Departments:** Added `post_standup_to_all()` for multi-department reports. **Per-User Google Calendar:** Events now created directly on assignee's personal calendar (if shared with service account). Team sheet has Calendar ID column. System looks up from Sheets, falls back to config/team.py. |
 | 1.5.0 | 2026-01-18 | **MAJOR: Channel-Based Discord Integration:** Complete rewrite from webhooks to Bot API with channel IDs. Full permissions for message/thread management. **4 Channels Per Department:** Forum (specs), Tasks (regular tasks), Report (standup), General. **Dev Category Configured:** Forum `1459834094304104653`, Tasks `1461760665873158349`, Report `1461760697334632651`, General `1461760791719182590`. **Smart Content Routing:** Specs→Forum, tasks→Tasks channel, standup→Report, help→General. **Role-Based Department Routing:** Tasks route to matching department's channels based on assignee role. |
 | 1.4.3 | 2026-01-18 | **Role-Based Discord Routing:** Tasks automatically route to department-specific Discord channels based on assignee role (Dev, Admin, Marketing, Design). **Team Sync Commands:** `/syncteam` syncs team from config/team.py to Sheets + DB. `/clearteam` removes mock data. **Team Config:** config/team.py defines team with roles for channel routing. |
