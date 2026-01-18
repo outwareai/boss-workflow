@@ -189,6 +189,22 @@ class UnifiedHandler:
             if msg_lower.startswith("make it ") or msg_lower.startswith("make this "):
                 return await self._handle_task_correction(user_id, active_conv, message, user_name)
 
+            # User says "sorry", "actually", "wait" followed by correction
+            if msg_lower.startswith("sorry ") or msg_lower.startswith("sorry,"):
+                correction = message[6:].strip() if msg_lower.startswith("sorry ") else message[6:].strip()
+                if correction:
+                    return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+
+            if msg_lower.startswith("actually ") or msg_lower.startswith("actually,"):
+                correction = message[9:].strip() if msg_lower.startswith("actually ") else message[9:].strip()
+                if correction:
+                    return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+
+            if msg_lower.startswith("wait ") or msg_lower.startswith("wait,"):
+                correction = message[5:].strip() if msg_lower.startswith("wait ") else message[5:].strip()
+                if correction:
+                    return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+
             # User just says "no" = cancel
             elif msg_lower == "no":
                 await self.context.clear_active_conversation(user_id)
@@ -515,20 +531,30 @@ The user wants to modify the task. Understand what they mean:
 - "assign to X" = change assignee
 - "also X" or "don't forget X" = add X to description/criteria
 - "change title to X" = update title
+- TIME CHANGES like "9am to 10am" or "until 5pm" = UPDATE BOTH deadline AND estimated_effort!
 - etc.
+
+CRITICAL FOR TIME CHANGES:
+- If user changes the time (e.g., "9am to 10am" instead of "9am to 10pm"):
+  1. Update the deadline to the NEW end time
+  2. Recalculate estimated_effort based on the NEW duration
+  3. Update the description to reflect the new times
+- Example: "9am to 10am" = deadline at 10:00, effort = "1 hour"
+- Example: "2pm to 6pm" = deadline at 18:00, effort = "4 hours"
 
 Return the COMPLETE updated task as JSON (include all fields, even unchanged ones):
 {{
     "title": "Task title",
     "assignee": "person name or null",
     "priority": "urgent/high/medium/low",
-    "deadline": "ISO datetime or keep existing",
-    "description": "Full description including any additions",
-    "estimated_effort": "time estimate",
+    "deadline": "ISO datetime - MUST UPDATE if time changed!",
+    "description": "Full description - update times here too!",
+    "estimated_effort": "RECALCULATE if time changed!",
     "acceptance_criteria": ["criterion 1", "criterion 2"]
 }}
 
-IMPORTANT: Merge the user's request INTO the existing task. Don't remove information, add to it."""
+IMPORTANT: Merge the user's request INTO the existing task. Don't remove information, add to it.
+IMPORTANT: When times change, you MUST update deadline AND estimated_effort!"""
 
         try:
             response = await self.ai.chat(
