@@ -571,16 +571,59 @@ Webhooks are still supported for backward compatibility but not recommended:
 
 | Function | Description |
 |----------|-------------|
-| `create_task_event()` | Add task deadline to calendar |
+| `create_task_event()` | Add task deadline to assignee's personal calendar |
 | `update_task_event()` | Modify event if deadline changes |
 | `delete_task_event()` | Remove event if task cancelled |
 | `get_events_today()` | Retrieve today's events |
+| `get_upcoming_deadlines()` | Get tasks due within X hours |
+| `create_reminder_event()` | Create standalone reminder |
+| `get_daily_schedule()` | Get all events for a day |
+
+### Per-User Calendar Support (NEW in v1.5.1)
+
+Events are created directly on the assignee's personal Google Calendar when:
+1. Staff member shares their calendar with the service account
+2. Their Calendar ID is stored in the Team sheet
+
+**Setup for Staff Members:**
+
+1. **Share Calendar with Service Account:**
+   - Open Google Calendar → Settings → Select your calendar
+   - Under "Share with specific people", add:
+     `tasking-boss-bot@tasking-boss-bot.iam.gserviceaccount.com`
+   - Give "Make changes to events" permission
+
+2. **Get Calendar ID:**
+   - In Calendar Settings → "Integrate calendar"
+   - Copy the Calendar ID (usually your email, or a long string ending in @group.calendar.google.com)
+
+3. **Add to Team Sheet:**
+   - Open the 👥 Team sheet
+   - Add the Calendar ID in the "Calendar ID" column for that team member
+
+**How It Works:**
+```
+Task Created for Minty →
+  System looks up Minty's Calendar ID from Sheets →
+  Creates event on Minty's personal calendar →
+  Minty sees task deadline directly in her Google Calendar
+```
+
+**Fallback Behavior:**
+- If no Calendar ID configured: Event created on default (primary) calendar
+- If calendar not shared: Error logged, event creation fails gracefully
+- Email invites still sent as attendees if email configured
 
 ### Event Properties
 
 - Color-coded by priority (Green/Yellow/Orange/Red)
-- Multi-step reminders: 2 hours, 1 day, 1 week before
+- Multi-step reminders based on priority:
+  - Low: 1 hour before
+  - Medium: 1 hour, 30 min before
+  - High: 2 hours, 1 hour, 30 min before
+  - Urgent: 4 hours, 2 hours, 1 hour, 30 min before
 - Description includes: task description, assignee, acceptance criteria, task ID
+- Status prefix in title: ⏰ DELAYED or 🚨 OVERDUE
 
 ---
 
@@ -1461,7 +1504,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.5.1 | 2026-01-18 | **Admin Department Setup:** Added Admin category Discord channels - Forum `1462370539858432145`, Report `1462370845908402268`, General `1462370950627725362`. **Team Member Minty:** Added (Discord: 834982814910775306, Role: Admin, Email: sutima2543@gmail.com). **Fallback Routing:** Tasks for departments without a tasks channel automatically post to forum. **Post to All Departments:** Added `post_standup_to_all()` for multi-department reports. |
+| 1.5.1 | 2026-01-18 | **Admin Department Setup:** Added Admin category Discord channels - Forum `1462370539858432145`, Report `1462370845908402268`, General `1462370950627725362`. **Team Member Minty:** Added (Discord: 834982814910775306, Role: Admin, Email: sutima2543@gmail.com). **Fallback Routing:** Tasks for departments without a tasks channel automatically post to forum. **Post to All Departments:** Added `post_standup_to_all()` for multi-department reports. **Per-User Google Calendar:** Events now created directly on assignee's personal calendar (if shared with service account). Team sheet has Calendar ID column. System looks up from Sheets, falls back to config/team.py. |
 | 1.5.0 | 2026-01-18 | **MAJOR: Channel-Based Discord Integration:** Complete rewrite from webhooks to Bot API with channel IDs. Full permissions for message/thread management. **4 Channels Per Department:** Forum (specs), Tasks (regular tasks), Report (standup), General. **Dev Category Configured:** Forum `1459834094304104653`, Tasks `1461760665873158349`, Report `1461760697334632651`, General `1461760791719182590`. **Smart Content Routing:** Specs→Forum, tasks→Tasks channel, standup→Report, help→General. **Role-Based Department Routing:** Tasks route to matching department's channels based on assignee role. |
 | 1.4.3 | 2026-01-18 | **Role-Based Discord Routing:** Tasks automatically route to department-specific Discord channels based on assignee role (Dev, Admin, Marketing, Design). **Team Sync Commands:** `/syncteam` syncs team from config/team.py to Sheets + DB. `/clearteam` removes mock data. **Team Config:** config/team.py defines team with roles for channel routing. |
 | 1.4.2 | 2026-01-18 | **True Task Deletion:** Clearing tasks now permanently deletes from Google Sheets, Discord (messages + threads), and PostgreSQL database. Previously only marked as "cancelled". Supports single task deletion and bulk deletion with confirmation. |
