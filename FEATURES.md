@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-19
-> **Version:** 1.6.2
+> **Version:** 1.6.3
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1959,6 +1959,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6.3 | 2026-01-19 | **Critical Multi-Task Detection Fix:** ALL splitting patterns now require 2+ DIFFERENT team member names. (1) Pattern 1 (numbered lists): "1. Users can..." no longer splits - only splits if items have different assignees. (2) Pattern 2 (separators): Removed generic "also", "plus" patterns - now ONLY splits on explicit "another task" phrases. (3) Pattern 4 (semicolons): Also requires multiple team names. This prevents feature descriptions with numbered steps, "also" clauses, or semicolons from being incorrectly split into multiple tasks. |
 | 1.6.2 | 2026-01-19 | **Bug Fixes:** (1) **Multi-Task Detection Fix:** "Task 1 of N" no longer triggers incorrectly. Now requires 2+ DIFFERENT team member names to split tasks. Single tasks with repeated mentions stay as one task. (2) **Voice Transcription Context:** "Create that task" and similar phrases now use the previous message content (voice transcription, etc.) as the task description. Stores recent messages for context reference. (3) **Skip Questions When Detailed:** Bot no longer asks clarifying questions when the message is already comprehensive (30+ words, 3+ sentences, or feature-like keywords like "users can", "the system should", etc.). (4) **Image Task Creation Fix:** When sending images with task-related captions ("add a new task", "fix", "spec sheet"), the bot treats it as task creation with reference image instead of analyzing image content as email/report. |
 | 1.6.1 | 2026-01-19 | **Smart AI Conversation for Spec Sheets:** SPECSHEETS mode now asks PRD-focused questions BEFORE generating the document. AI generates 3-5 intelligent questions about: technical approach/architecture, user flows/UX, data models/integrations, scope/priorities, success criteria. Questions are conversational like a senior PM would ask. Bot shows "📋 Spec Sheet Mode" header. Users can /skip to let AI assume, or /done to generate PRD with current info. |
 | 1.6.0 | 2026-01-19 | **Comprehensive PRD Documents:** SPECSHEETS mode now generates FULL specification documents with: (1) 5-paragraph main description (executive summary, business value, technical approach, integrations, success metrics), (2) Each subtask has 1-2 paragraph detailed description with technical approach, components, edge cases, (3) 6-8 detailed acceptance criteria, (4) Technical details section with DB schema, API structure, patterns, performance, security. AI prompt completely rewritten for PRD-level output. |

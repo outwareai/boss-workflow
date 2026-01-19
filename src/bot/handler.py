@@ -2328,39 +2328,44 @@ When done, tell me "I finished {task.id}" and show me proof!"""
         message = message.strip()
 
         # Pattern 1: Numbered list (1. 2. 3. or 1) 2) 3))
+        # ONLY split if items look like separate tasks (have team names or task verbs)
+        # NOT for numbered feature requirements like "1. Users can..."
         numbered_pattern = r'(?:^|\s)(\d+[\.\)]\s*)'
         if re.search(numbered_pattern, message):
             parts = re.split(r'\s*\d+[\.\)]\s*', message)
             tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
             if len(tasks) >= 2:
-                return tasks
+                # Check if these look like separate tasks (have team names) or just numbered steps
+                team_names_lower = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+                tasks_with_names = [t for t in tasks if any(name in t.lower() for name in team_names_lower)]
+                # Only split if at least 2 items have different team names
+                if len(tasks_with_names) >= 2:
+                    names_in_tasks = set()
+                    for t in tasks_with_names:
+                        for name in team_names_lower:
+                            if name in t.lower():
+                                names_in_tasks.add(name)
+                    if len(names_in_tasks) >= 2:
+                        return tasks
+                # Otherwise, don't split - it's likely a single task with numbered steps
 
-        # Pattern 2: Explicit separators - combine into one regex to split on ALL at once
-        # This handles messages with multiple separators like:
-        # "Task 1... Then another task... And another task being..."
-        combined_separator = r'(?:' + '|'.join([
+        # Pattern 2: Explicit "another task" separators ONLY
+        # Must explicitly say "another task" - NOT generic "also" or "plus"
+        # This prevents splitting natural language like "Users can also..."
+        another_task_separator = r'(?:' + '|'.join([
             # "Then another task" patterns
             r'\.\s*[Tt]hen\s+another\s+task\s*',
             r'\s+[Tt]hen\s+another\s+task\s*',
-            # "And another task" patterns (including "being", "with", "for", "is")
-            r'\.\s*[Aa]nd\s+another\s+task\s+(?:being\s+|with\s+|for\s+|is\s+)?',
-            r'\s+[Aa]nd\s+another\s+task\s+(?:being\s+|with\s+|for\s+|is\s+)?',
+            # "And another task" patterns
             r'\.\s*[Aa]nd\s+another\s+task\s*',
             r'\s+[Aa]nd\s+another\s+task\s*',
-            # Generic "another task" patterns
-            r'\.\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
-            r',\s+another\s+task\s*(?:being\s+|with\s+|for\s+|is\s+)?',
-            # Also patterns
-            r'\.\s+also\s+',
-            r',\s+also\s+',
-            r'\s+and\s+also\s+',
-            # Plus patterns
-            r'\.\s+plus\s+',
-            r',\s+plus\s+',
+            # Generic "another task" patterns (must say "another task" explicitly)
+            r'\.\s+[Aa]nother\s+task\s*',
+            r',\s+[Aa]nother\s+task\s*',
         ]) + r')'
 
-        if re.search(combined_separator, message, re.IGNORECASE):
-            parts = re.split(combined_separator, message, flags=re.IGNORECASE)
+        if re.search(another_task_separator, message, re.IGNORECASE):
+            parts = re.split(another_task_separator, message, flags=re.IGNORECASE)
             tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
             if len(tasks) >= 2:
                 return tasks
@@ -2404,12 +2409,21 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 if len(tasks) >= 2:
                     return tasks
 
-        # Pattern 4: Semicolon separated
+        # Pattern 4: Semicolon separated - also requires multiple team names
         if ';' in message:
             parts = message.split(';')
             tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
             if len(tasks) >= 2:
-                return tasks
+                # Check for multiple team names
+                tasks_with_names = [t for t in tasks if any(name in t.lower() for name in team_names_lower)]
+                if len(tasks_with_names) >= 2:
+                    names_in_tasks = set()
+                    for t in tasks_with_names:
+                        for name in team_names_lower:
+                            if name in t.lower():
+                                names_in_tasks.add(name)
+                    if len(names_in_tasks) >= 2:
+                        return tasks
 
         # No multiple tasks detected
         return [message]
