@@ -233,16 +233,16 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         analysis["suggested_questions"] = normalized_questions
 
         # If message is comprehensive (detailed description), skip questions
-        if is_comprehensive and not detailed_mode:
+        # This applies to BOTH regular and spec sheet mode - if user gave detail, don't ask!
+        if is_comprehensive:
             can_proceed = True
             analysis["suggested_questions"] = []  # Clear questions
-            logger.info("Comprehensive message detected - proceeding without questions")
-
-        # For SPECSHEETS/detailed mode - always ask questions for comprehensive PRD
-        if detailed_mode:
-            # Don't skip questions for spec sheets - we need thorough conversation
+            logger.info("Comprehensive message detected - proceeding without questions (even for spec sheets)")
+        elif detailed_mode:
+            # Only ask questions for spec sheets if the message was SHORT/VAGUE
+            # User didn't provide much detail, so we need to gather requirements
             can_proceed = False
-            logger.info("Detailed mode: forcing questions for comprehensive PRD")
+            logger.info("Detailed mode with vague message: asking questions for PRD")
 
         # Apply preference overrides (only for non-detailed mode)
         if not detailed_mode:
