@@ -571,19 +571,23 @@ class DiscordIntegration:
         spec_content.append(description)
         spec_content.append("")
 
-        # Subtasks section
+        # Subtasks section - each with full paragraph description
         if subtasks:
             spec_content.append("## 🔨 Implementation Tasks")
+            spec_content.append("")
             for i, st in enumerate(subtasks, 1):
                 if isinstance(st, dict):
                     st_title = st.get("title", f"Subtask {i}")
                     st_desc = st.get("description", "")
-                    spec_content.append(f"### {i}. {st_title}")
+                    spec_content.append(f"### Task {i}: {st_title}")
+                    spec_content.append("")
                     if st_desc:
-                        spec_content.append(f"   {st_desc}")
+                        # Full paragraph description
+                        spec_content.append(st_desc)
+                        spec_content.append("")
                 else:
-                    spec_content.append(f"### {i}. {st}")
-            spec_content.append("")
+                    spec_content.append(f"### Task {i}: {st}")
+                    spec_content.append("")
 
         # Acceptance criteria section
         if acceptance_criteria:

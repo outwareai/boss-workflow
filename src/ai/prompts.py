@@ -189,28 +189,45 @@ Respond with a JSON object in this exact format:
         detailed_instructions = ""
         if detailed_mode:
             detailed_instructions = """
-⚠️ SPECSHEET MODE ACTIVATED - GENERATE COMPREHENSIVE SPEC ⚠️
+⚠️ SPECSHEET MODE ACTIVATED - GENERATE COMPREHENSIVE PRD DOCUMENT ⚠️
 
-The user requested a DETAILED specification. You MUST generate:
-1. A thorough, multi-paragraph description explaining the full scope
-2. At least 4-6 specific acceptance criteria
-3. Break down into subtasks with implementation details
-4. Add technical considerations, risks, and dependencies if relevant
-5. Estimate effort more precisely
+The user requested a DETAILED specification (PRD-style). This is NOT a simple task - generate a COMPLETE DOCUMENT.
 
-The description should be 3-5 paragraphs covering:
-- What needs to be done (detailed explanation)
-- Why it's needed / context / business value
-- Technical approach or implementation considerations
-- Any constraints, requirements, or dependencies
-- Success metrics or how to verify completion
+MAIN DESCRIPTION (3-5 paragraphs):
+- Paragraph 1: Executive summary - what is being built and why
+- Paragraph 2: User/business value - who benefits and how
+- Paragraph 3: Technical approach overview - how it will be implemented
+- Paragraph 4: Integration points - what it connects with
+- Paragraph 5: Success metrics - how we know it's done right
 
-DO NOT generate a minimal spec - this needs to be COMPREHENSIVE!
+SUBTASKS - EACH MUST BE A FULL SECTION (1-2 paragraphs each):
+Each subtask needs a COMPREHENSIVE description including:
+- What exactly needs to be built/implemented
+- Technical approach and considerations
+- Database/API/UI components involved
+- Edge cases to handle
+- How it connects to other subtasks
+
+Example subtask description (THIS LEVEL OF DETAIL):
+"Design and implement the email group tagging system that allows users to organize contacts into named groups. This includes creating a database schema for tags with many-to-many relationships to contacts, building a REST API with CRUD endpoints for tag management, and developing a React component with multi-select dropdown for tag assignment. The UI should support bulk operations, tag search/filter, and display tag counts. Consider implementing tag colors and hierarchical tag groups for better organization."
+
+ACCEPTANCE CRITERIA (6-8 items):
+Each criterion should be specific, measurable, and testable with clear pass/fail conditions.
+
+TECHNICAL DETAILS:
+Include a "technical_details" field with:
+- Database schema considerations
+- API endpoint structure
+- Key algorithms or patterns to use
+- Performance considerations
+- Security requirements
+
+DO NOT generate minimal output - this needs to be a COMPLETE SPECIFICATION DOCUMENT!
 """
 
-        description_instruction = "COMPREHENSIVE multi-paragraph description (3-5 paragraphs) covering scope, context, approach, and success criteria" if detailed_mode else "Description of the main task - NOT the subtasks"
-        criteria_instruction = "Generate 4-6 detailed, specific, testable acceptance criteria" if detailed_mode else "Clear, testable criterion"
-        subtask_desc_instruction = "Include implementation details, technical notes, and approach" if detailed_mode else "Additional context if the title can't fit everything"
+        description_instruction = "COMPREHENSIVE multi-paragraph description (3-5 paragraphs) covering scope, business value, technical approach, integrations, and success metrics" if detailed_mode else "Description of the main task - NOT the subtasks"
+        criteria_instruction = "Generate 6-8 detailed, specific, testable acceptance criteria with clear pass/fail conditions" if detailed_mode else "Clear, testable criterion"
+        subtask_desc_instruction = "FULL PARAGRAPH (1-2 paragraphs) explaining what to build, technical approach, components involved, edge cases, and integration points" if detailed_mode else "Additional context if the title can't fit everything"
 
         return f"""Generate a complete task specification based on all gathered information.
 
