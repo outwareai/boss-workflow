@@ -514,6 +514,260 @@ class AttendanceService:
                 "message": f"Unknown event type: {event_type}",
             }
 
+    async def record_boss_reported_attendance(
+        self,
+        affected_person: str,
+        status_type: str,
+        affected_date: str,
+        reason: Optional[str],
+        duration_minutes: Optional[int],
+        reported_by: str,
+        reported_by_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Record an attendance event reported by the boss.
+
+        Args:
+            affected_person: Name of the team member
+            status_type: Type of attendance event (absence_reported, late_reported, etc.)
+            affected_date: Date of the event (YYYY-MM-DD)
+            reason: Optional reason/context
+            duration_minutes: For late arrivals, minutes late
+            reported_by: Name of the boss reporting
+            reported_by_id: Boss's user ID
+
+        Returns:
+            Dict with success status, record_id, and notification status
+        """
+        from datetime import datetime
+
+        try:
+            # Parse the affected date
+            try:
+                affected_dt = datetime.strptime(affected_date, "%Y-%m-%d").date()
+            except ValueError:
+                affected_dt = date.today()
+
+            # Look up team member by name to get Discord ID
+            team_member = await self._find_team_member_by_name(affected_person)
+
+            user_id = team_member.get("discord_id", "") if team_member else ""
+            user_name = affected_person
+
+            now_utc = datetime.now(pytz.UTC)
+            now_local = now_utc.astimezone(pytz.timezone(settings.timezone))
+
+            # Record the event in the database
+            record = await self.repo.record_boss_reported_event(
+                user_id=user_id,
+                user_name=user_name,
+                event_type=status_type,
+                event_time=now_local.replace(tzinfo=None),
+                event_time_utc=now_utc.replace(tzinfo=None),
+                is_boss_reported=True,
+                reported_by=reported_by,
+                reported_by_id=reported_by_id,
+                reason=reason,
+                affected_date=affected_dt,
+                duration_minutes=duration_minutes,
+            )
+
+            if not record:
+                return {
+                    "success": False,
+                    "error": "Failed to create attendance record",
+                }
+
+            # Sync to Google Sheets with [BR] prefix
+            await self._sync_boss_reported_to_sheets(
+                record_id=record.record_id,
+                user_name=user_name,
+                status_type=status_type,
+                affected_date=affected_dt,
+                reason=reason,
+                duration_minutes=duration_minutes,
+                reported_by=reported_by,
+            )
+
+            # Send Discord notification to the affected team member
+            notification_status = ""
+            if user_id:
+                notification_status = await self._send_attendance_notification(
+                    user_id=user_id,
+                    user_name=user_name,
+                    status_type=status_type,
+                    affected_date=affected_dt,
+                    reason=reason,
+                    team_member=team_member,
+                )
+
+            # Get emoji based on status type
+            emoji = self._get_status_emoji(status_type)
+
+            return {
+                "success": True,
+                "record_id": record.record_id,
+                "emoji": emoji,
+                "notification_status": notification_status,
+            }
+
+        except Exception as e:
+            logger.error(f"Error recording boss-reported attendance: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def _find_team_member_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """Find a team member by name (case-insensitive partial match)."""
+        await self._refresh_team_cache()
+
+        name_lower = name.lower()
+
+        # First try exact match in cache values
+        for discord_id, member in self._team_cache.items():
+            member_name = member.get("name", "").lower()
+            if member_name == name_lower:
+                return {"discord_id": discord_id, **member}
+
+        # Then try partial match
+        for discord_id, member in self._team_cache.items():
+            member_name = member.get("name", "").lower()
+            if name_lower in member_name or member_name in name_lower:
+                return {"discord_id": discord_id, **member}
+
+        # Try fetching from sheets directly
+        try:
+            team_members = await self.sheets.get_all_team_members()
+            for member in team_members:
+                member_name = str(member.get("Name", "")).lower()
+                if name_lower in member_name or member_name in name_lower:
+                    return {
+                        "discord_id": str(member.get("Discord ID", "")),
+                        "name": member.get("Name", ""),
+                        "role": member.get("Role", ""),
+                        "email": member.get("Email", ""),
+                    }
+        except Exception as e:
+            logger.error(f"Error fetching team members: {e}")
+
+        return None
+
+    async def _sync_boss_reported_to_sheets(
+        self,
+        record_id: str,
+        user_name: str,
+        status_type: str,
+        affected_date: date,
+        reason: Optional[str],
+        duration_minutes: Optional[int],
+        reported_by: str,
+    ) -> bool:
+        """Sync a boss-reported attendance event to Google Sheets."""
+        try:
+            # Get display name for the status
+            status_display = {
+                "absence_reported": "[BR] Absent",
+                "late_reported": f"[BR] Late ({duration_minutes}min)" if duration_minutes else "[BR] Late",
+                "early_departure_reported": "[BR] Left Early",
+                "sick_leave_reported": "[BR] Sick Leave",
+                "excused_absence_reported": "[BR] Excused",
+            }.get(status_type, f"[BR] {status_type}")
+
+            # Build record dict for sheets
+            record_dict = {
+                "record_id": record_id,
+                "date": affected_date.strftime("%Y-%m-%d"),
+                "time": datetime.now().strftime("%H:%M"),
+                "name": user_name,
+                "event": status_display,
+                "late": "Yes" if status_type == "late_reported" else "-",
+                "late_min": duration_minutes if duration_minutes else 0,
+                "channel": "boss",
+                "notes": f"Reported by {reported_by}: {reason}" if reason else f"Reported by {reported_by}",
+            }
+
+            success = await self.sheets.add_attendance_log(record_dict)
+            if success:
+                logger.info(f"Synced boss-reported attendance to Sheets: {record_id}")
+            else:
+                logger.warning(f"Failed to sync boss-reported attendance to Sheets: {record_id}")
+            return success
+
+        except Exception as e:
+            logger.error(f"Error syncing boss-reported attendance to Sheets: {e}")
+            return False
+
+    async def _send_attendance_notification(
+        self,
+        user_id: str,
+        user_name: str,
+        status_type: str,
+        affected_date: date,
+        reason: Optional[str],
+        team_member: Optional[Dict[str, Any]],
+    ) -> str:
+        """Send Discord notification to the affected team member."""
+        try:
+            from ..integrations.discord import get_discord_integration
+
+            discord = get_discord_integration()
+
+            # Get status display
+            status_display = {
+                "absence_reported": "Absent",
+                "late_reported": "Late",
+                "early_departure_reported": "Left Early",
+                "sick_leave_reported": "Sick Leave",
+                "excused_absence_reported": "Excused Absence",
+            }.get(status_type, status_type.replace("_", " ").title())
+
+            # Build notification embed
+            embed = {
+                "title": "📋 Attendance Report",
+                "description": f"The boss has recorded the following for <@{user_id}>:",
+                "color": 0xFF9800,  # Orange
+                "fields": [
+                    {"name": "Status", "value": status_display, "inline": True},
+                    {"name": "Date", "value": affected_date.strftime("%Y-%m-%d"), "inline": True},
+                ],
+                "footer": {"text": "Boss Workflow Attendance System"},
+            }
+
+            if reason:
+                embed["fields"].append({"name": "Reason", "value": reason, "inline": False})
+
+            # Determine which channel to post to based on role
+            role = team_member.get("role", "").lower() if team_member else "dev"
+            channel_type = "admin" if role in ["admin", "marketing"] else "dev"
+
+            # Send via Discord webhook
+            success = await discord.send_attendance_notification(
+                embed=embed,
+                channel_type=channel_type,
+                mention_user_id=user_id,
+            )
+
+            if success:
+                return "Notification sent to team member."
+            else:
+                return "Note: Could not send Discord notification."
+
+        except Exception as e:
+            logger.error(f"Error sending attendance notification: {e}")
+            return "Note: Could not send Discord notification."
+
+    def _get_status_emoji(self, status_type: str) -> str:
+        """Get emoji for attendance status type."""
+        emoji_map = {
+            "absence_reported": "🚫",
+            "late_reported": "⏰",
+            "early_departure_reported": "🚪",
+            "sick_leave_reported": "🤒",
+            "excused_absence_reported": "✅",
+        }
+        return emoji_map.get(status_type, "📋")
+
     async def get_user_daily_summary(self, user_id: str) -> Dict[str, Any]:
         """Get a user's attendance summary for today."""
         today = date.today()

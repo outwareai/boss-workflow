@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-19
-> **Version:** 1.5.5
+> **Version:** 1.5.6
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1854,6 +1854,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.6 | 2026-01-19 | **SPECSHEETS Intent Detection Fix:** Messages with "SPECSHEETS", "spec sheet for", "detailed spec for" now properly trigger task creation with detailed_mode. **Direct Assignee Detection:** Messages starting with team member names (mayank, sarah, john, etc.) now trigger task creation. Previously these fell through to incorrect intents. |
 | 1.5.5 | 2026-01-19 | **Attendance Sheets Sync Fix:** Clock in/out/break events now properly sync to Google Sheets ⏰ Time Logs sheet. Previously events were only saved to PostgreSQL database. |
 | 1.5.4 | 2026-01-18 | **Time Clock / Attendance System:** Staff check-in/check-out via Discord messages ("in", "out", "break"). **Discord Channels:** Dev attendance (1462451610184843449), Admin attendance (1462451782470078628). **Late Detection:** Automatic late detection with ⏰ reaction, timezone-aware calculations, configurable grace period. **Break Toggle:** Single "break" message toggles break on/off (☕/💪 reactions). **New Sheets:** ⏰ Time Logs for attendance records, 📊 Time Reports for weekly summaries. **Team Sheet Update:** Added Timezone and Work Start columns. **Database Model:** AttendanceRecordDB with full event tracking. **Service Layer:** AttendanceService for business logic with timezone handling. **Repository:** AttendanceRepository with daily/weekly summary methods. **Scheduler Jobs:** sync_attendance (every 15 min), weekly_time_report (Monday 10 AM). **Settings:** New attendance config options (channel IDs, work hours, grace period). |
 | 1.5.3 | 2026-01-18 | **Centralized Utility Modules:** New `src/utils/` package with datetime, team lookup, and validation utilities. **Datetime Utils:** `to_naive_local()`, `parse_deadline()`, `get_local_now()` for consistent timezone handling (fixes PostgreSQL offset-naive/aware datetime errors). **Team Utils:** `get_assignee_info()`, `lookup_team_member()` with 3-tier fallback (DB → Sheets → config). **Validation Utils:** `validate_task_data()` with field validation and warnings before database save. **Task Model Fix:** Added `spec_sheet_url`, `discord_thread_id` optional fields to prevent AttributeError on forum posting. **Improved Error Messages:** More descriptive error messages with error type hints. **ThreadWithMessage Fix:** Updated discord_bot.py to handle discord.py 2.0+ `ThreadWithMessage` object (has `.thread`/`.message` attributes, not tuple). |
