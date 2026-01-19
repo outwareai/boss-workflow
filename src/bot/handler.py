@@ -2327,6 +2327,17 @@ When done, tell me "I finished {task.id}" and show me proof!"""
 
         message = message.strip()
 
+        # Pattern 0: Explicit "First task", "Second task" phrases
+        # This is a CLEAR signal from the user that they want multiple tasks
+        ordinal_pattern = r'(?:first|second|third|fourth|fifth)\s+task\s+(?:will\s+be|is|:)'
+        if re.search(ordinal_pattern, message, re.IGNORECASE):
+            # Split on ordinal task markers
+            parts = re.split(r'(?:first|second|third|fourth|fifth)\s+task\s+(?:will\s+be|is|:)\s*', message, flags=re.IGNORECASE)
+            tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
+            if len(tasks) >= 2:
+                logger.info(f"Detected {len(tasks)} tasks via ordinal pattern (First task, Second task...)")
+                return tasks
+
         # Pattern 1: Numbered list (1. 2. 3. or 1) 2) 3))
         # ONLY split if items look like separate tasks (have team names or task verbs)
         # NOT for numbered feature requirements like "1. Users can..."

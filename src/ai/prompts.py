@@ -97,13 +97,21 @@ CRITICAL RULES:
 3. If priority signals exist ("urgent", "ASAP", "when you can"), INFER IT - don't ask about it
 4. DEFAULT priority to "medium" if not specified - don't ask unless truly ambiguous
 5. ONLY ask questions if something is TRULY UNCLEAR, not just unspecified
+6. If PRONOUNS used ("him", "her", "them", "he", "she", "they") without a name, you MUST ask who - set assignee to null and add a question
+
+⚠️ PRONOUN HANDLING:
+If the message uses pronouns like "him", "her", "them", "he", "she", "they" WITHOUT explicitly naming the person:
+- Set assignee to null (NOT to a guess)
+- Add to suggested_questions: "Who should this task be assigned to?"
+- Do NOT assume or guess the assignee from pronouns
 
 SET can_proceed_without_questions=TRUE when:
-- Assignee is identified (even partially - match against team members)
+- Assignee is EXPLICITLY identified by name (match against team members)
 - Task action is clear (what needs to be done)
 - Priority can be inferred or defaulted
 
-SET can_proceed_without_questions=FALSE ONLY when:
+SET can_proceed_without_questions=FALSE when:
+- Pronouns like "him", "her", "them" are used without a name - ASK WHO
 - No assignee can be determined AND it's not a general task
 - The action itself is ambiguous (what exactly needs to be done?)
 

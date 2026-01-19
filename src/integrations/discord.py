@@ -540,7 +540,7 @@ class DiscordIntegration:
             "medium": "🟡",
             "low": "🔵",
         }
-        p_emoji = priority_emoji.get(priority.lower(), "⚪")
+        p_emoji = priority_emoji.get((priority or "medium").lower(), "⚪")
 
         # Build PRD-style spec sheet content
         spec_content = []
@@ -560,7 +560,7 @@ class DiscordIntegration:
         # Metadata section
         spec_content.append("## 📊 Task Metadata")
         spec_content.append(f"- **Task ID:** `{task_id}`")
-        spec_content.append(f"- **Priority:** {p_emoji} {priority.upper()}")
+        spec_content.append(f"- **Priority:** {p_emoji} {(priority or 'medium').upper()}")
         spec_content.append(f"- **Deadline:** {deadline or 'Not specified'}")
         spec_content.append(f"- **Estimated Effort:** {estimated_effort or 'TBD'}")
         spec_content.append(f"- **Status:** ⏳ Pending")
