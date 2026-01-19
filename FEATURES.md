@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-20
-> **Version:** 1.7.0
+> **Version:** 1.7.1
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1959,6 +1959,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7.1 | 2026-01-20 | **"No Questions" Override:** When you explicitly say "no need to ask questions", "just use what I'm giving you", "don't ask questions", etc., the bot now SKIPS ALL QUESTIONS regardless of what the AI thinks. This is a hard override. **Discord Error Feedback:** If Discord posting fails, you now see "⚠️ Discord posting failed - check bot config" in the response instead of silent failure. |
 | 1.7.0 | 2026-01-20 | **🧠 INTELLIGENT SELF-ANSWERING AI LOOP:** Major upgrade - AI now tries to answer its own questions before bothering you. (1) AI analyzes what info is missing (2) Uses context + best practices to fill gaps itself (3) Only asks user for truly ambiguous decisions. Example: Instead of asking "What priority?", AI infers from message context. Instead of asking "What architecture?", AI picks industry-standard approach. The result: Fewer questions, smarter defaults, faster task creation. |
 | 1.6.6 | 2026-01-20 | **Skip Questions When Details Already Provided:** SPECSHEETS mode was forcing questions even when user gave comprehensive requirements. Now if your message is detailed (30+ words, feature descriptions, etc.), the bot skips questions and generates the PRD directly - even in spec sheet mode. Questions only asked when message is short/vague. |
 | 1.6.5 | 2026-01-20 | **Deadline vs Effort Fix:** AI prompts now clearly distinguish: "tomorrow" = DEADLINE (when to finish), NOT effort. Effort = HOW LONG it takes (2 hours, 1 day). Added explicit ISO format examples for deadline parsing: "tomorrow" → "2026-01-21T23:59:00". Deadlines are properly saved to Google Calendar. |

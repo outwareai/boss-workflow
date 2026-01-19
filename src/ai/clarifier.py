@@ -193,6 +193,19 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         """
         message = conversation.original_message
 
+        # EARLY EXIT: Check if user explicitly says "no questions"
+        no_question_phrases = [
+            "no need to ask", "don't ask", "dont ask", "no questions",
+            "just use what", "use what i'm giving", "use what im giving",
+            "already gave you", "i've given you", "ive given you",
+            "don't need questions", "skip questions", "no need for questions"
+        ]
+        message_lower = message.lower()
+        user_said_no_questions = any(phrase in message_lower for phrase in no_question_phrases)
+
+        if user_said_no_questions:
+            logger.info("User explicitly said no questions - will skip ALL questions")
+
         # First, detect and apply templates
         template_info = self.detect_and_apply_template(conversation, preferences)
         if template_info:
@@ -267,6 +280,13 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         if not normalized_questions:
             can_proceed = True
             logger.info("All questions self-answered by AI - proceeding without user input")
+
+        # OVERRIDE: If user explicitly said "no questions", skip ALL questions
+        if user_said_no_questions:
+            can_proceed = True
+            analysis["suggested_questions"] = []
+            normalized_questions = []
+            logger.info("User explicitly requested no questions - proceeding directly")
 
         # Apply preference overrides (only for non-detailed mode)
         if not detailed_mode:

@@ -2161,26 +2161,43 @@ Ready to send to boss? (yes/no)""", None
         is_detailed_mode = conv.extracted_info.get("_detailed_mode", False)
 
         # Post to integrations and capture Discord message ID
+        discord_post_failed = False
         if is_detailed_mode:
             # Use spec sheet format for forum posting with full PRD details
             logger.info(f"Posting task {task.id} as spec sheet (detailed mode)")
-            discord_message_id = await self.discord.post_spec_sheet(
-                task_id=task.id,
-                title=task.title,
-                assignee=task.assignee or "Unassigned",
-                priority=task.priority.value,
-                deadline=task.deadline.strftime('%Y-%m-%d %H:%M') if task.deadline else None,
-                description=task.description,
-                acceptance_criteria=[c.description for c in task.acceptance_criteria],
-                technical_details=spec.get("technical_details"),
-                dependencies=spec.get("dependencies"),
-                notes=spec.get("notes"),
-                estimated_effort=task.estimated_effort,
-                assignee_discord_id=assignee_discord_id,
-                subtasks=spec.get("subtasks", [])  # Pass subtasks for spec sheet
-            )
+            try:
+                discord_message_id = await self.discord.post_spec_sheet(
+                    task_id=task.id,
+                    title=task.title,
+                    assignee=task.assignee or "Unassigned",
+                    priority=task.priority.value,
+                    deadline=task.deadline.strftime('%Y-%m-%d %H:%M') if task.deadline else None,
+                    description=task.description,
+                    acceptance_criteria=[c.description for c in task.acceptance_criteria],
+                    technical_details=spec.get("technical_details"),
+                    dependencies=spec.get("dependencies"),
+                    notes=spec.get("notes"),
+                    estimated_effort=task.estimated_effort,
+                    assignee_discord_id=assignee_discord_id,
+                    subtasks=spec.get("subtasks", [])  # Pass subtasks for spec sheet
+                )
+                if not discord_message_id:
+                    logger.warning(f"Discord spec sheet posting returned None for {task.id}")
+                    discord_post_failed = True
+            except Exception as e:
+                logger.error(f"Failed to post spec sheet to Discord: {e}")
+                discord_post_failed = True
+                discord_message_id = None
         else:
-            discord_message_id = await self.discord.post_task(task)
+            try:
+                discord_message_id = await self.discord.post_task(task)
+                if not discord_message_id:
+                    logger.warning(f"Discord task posting returned None for {task.id}")
+                    discord_post_failed = True
+            except Exception as e:
+                logger.error(f"Failed to post task to Discord: {e}")
+                discord_post_failed = True
+                discord_message_id = None
 
         # Convert task to dict for sheets
         task_dict = {
@@ -2283,6 +2300,12 @@ Ready to send to boss? (yes/no)""", None
         # Add subtask info to response
         if subtask_ids:
             response += f"\n📝 + {len(subtask_ids)} subtasks"
+
+        # Add Discord status
+        if discord_message_id:
+            response += f"\n📣 Posted to Discord"
+        elif discord_post_failed:
+            response += f"\n⚠️ Discord posting failed - check bot config"
 
         # Add Google Tasks indicator
         if google_task_created:
