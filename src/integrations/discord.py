@@ -639,14 +639,98 @@ class DiscordIntegration:
         spec_content.append("**Actions:** React ✅=Done | 🚧=Working | 🚫=Blocked | ⏸️=Paused | 🔄=Review")
 
         thread_name = f"📋 {task_id}: {title}"[:100]
+        full_content = "\n".join(spec_content)
 
-        # Create forum thread with PRD content
-        return await self.create_forum_thread(
+        # Discord has 2000 char limit per message - split if needed
+        if len(full_content) <= 2000:
+            # Single message fits
+            return await self.create_forum_thread(
+                forum_channel_id=forum_channel_id,
+                name=thread_name,
+                content=full_content,
+                embed=None
+            )
+
+        # Split content into chunks for multiple messages
+        # First message: thread creation with initial content
+        # Subsequent messages: continuation in the thread
+        chunks = self._split_content_for_discord(full_content)
+        logger.info(f"Spec sheet content is {len(full_content)} chars, splitting into {len(chunks)} messages")
+
+        # Create thread with first chunk
+        thread_id = await self.create_forum_thread(
             forum_channel_id=forum_channel_id,
             name=thread_name,
-            content="\n".join(spec_content),
-            embed=None  # Use content instead of embed for PRD format
+            content=chunks[0],
+            embed=None
         )
+
+        if not thread_id:
+            logger.error("Failed to create forum thread for spec sheet")
+            return None
+
+        # Send remaining chunks as follow-up messages in the thread
+        for i, chunk in enumerate(chunks[1:], start=2):
+            await asyncio.sleep(0.3)  # Rate limit protection
+            msg_id = await self.send_message(
+                channel_id=thread_id,  # Thread ID is also a channel ID
+                content=chunk
+            )
+            if msg_id:
+                logger.debug(f"Posted continuation message {i}/{len(chunks)} to thread {thread_id}")
+            else:
+                logger.warning(f"Failed to post continuation message {i}/{len(chunks)} to thread {thread_id}")
+
+        return thread_id
+
+    def _split_content_for_discord(self, content: str, max_length: int = 1900) -> List[str]:
+        """
+        Split content into chunks that fit Discord's message limit.
+        Tries to split at natural boundaries (sections, paragraphs, lines).
+        """
+        if len(content) <= max_length:
+            return [content]
+
+        chunks = []
+        remaining = content
+
+        while remaining:
+            if len(remaining) <= max_length:
+                chunks.append(remaining)
+                break
+
+            # Find a good split point
+            chunk = remaining[:max_length]
+
+            # Try to split at section boundary (##)
+            section_split = chunk.rfind("\n## ")
+            if section_split > max_length // 2:
+                chunk = remaining[:section_split]
+                remaining = remaining[section_split:]
+                chunks.append(chunk.strip())
+                continue
+
+            # Try to split at double newline (paragraph)
+            para_split = chunk.rfind("\n\n")
+            if para_split > max_length // 2:
+                chunk = remaining[:para_split]
+                remaining = remaining[para_split + 2:]
+                chunks.append(chunk.strip())
+                continue
+
+            # Try to split at single newline
+            line_split = chunk.rfind("\n")
+            if line_split > max_length // 2:
+                chunk = remaining[:line_split]
+                remaining = remaining[line_split + 1:]
+                chunks.append(chunk.strip())
+                continue
+
+            # Hard split at max length (last resort)
+            chunks.append(remaining[:max_length].strip())
+            remaining = remaining[max_length:]
+
+        return [c for c in chunks if c]  # Remove empty chunks
 
     async def update_task_embed(self, task: Task, message_id: str, channel_id: Optional[str] = None) -> bool:
         """Update an existing task embed."""

@@ -519,11 +519,22 @@ What would you like to do?""", None
         )
 
         # For SPECSHEETS, we want to have a conversation even if message seems complete
-        if detailed_mode and not should_ask:
-            # Force asking PRD-specific questions for spec sheets
+        # BUT respect user's explicit "no questions" request
+        no_question_phrases = [
+            "no need to ask", "don't ask", "dont ask", "no questions",
+            "just use what", "use what i'm giving", "use what im giving",
+            "already gave you", "i've given you", "ive given you",
+            "don't need questions", "skip questions", "no need for questions"
+        ]
+        user_said_no_questions = any(phrase in message.lower() for phrase in no_question_phrases)
+
+        if detailed_mode and not should_ask and not user_said_no_questions:
+            # Force asking PRD-specific questions for spec sheets (unless user said no)
             should_ask = True
             analysis = analysis or {}
             analysis["force_prd_questions"] = True
+        elif user_said_no_questions:
+            logger.info(f"User explicitly said no questions - respecting request for SPECSHEETS mode")
 
         if should_ask:
             # Generate questions (PRD-focused if detailed_mode)
