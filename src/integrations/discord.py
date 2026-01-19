@@ -312,8 +312,10 @@ class DiscordIntegration:
             Thread ID if successful, None otherwise
         """
         if not forum_channel_id:
-            logger.warning("No forum channel ID provided")
+            logger.warning("No forum channel ID provided for create_forum_thread")
             return None
+
+        logger.info(f"Creating forum thread in channel {forum_channel_id}: {name}")
 
         payload = {
             "name": name[:100],  # Discord limit
@@ -322,20 +324,23 @@ class DiscordIntegration:
         }
 
         if content:
-            payload["message"]["content"] = content
+            payload["message"]["content"] = content[:2000] if len(content) > 2000 else content  # Discord limit
         if embed:
             payload["message"]["embeds"] = [embed]
 
         if not payload["message"]:
             payload["message"]["content"] = "Thread created"
 
+        logger.debug(f"Forum thread payload: name={name[:50]}..., content_length={len(content) if content else 0}")
+
         status, data = await self._api_request("POST", f"/channels/{forum_channel_id}/threads", payload)
 
         if data:
             thread_id = data.get("id")
-            logger.info(f"Created forum thread: {name} (ID: {thread_id})")
+            logger.info(f"Created forum thread successfully: {name} (ID: {thread_id})")
             return thread_id
 
+        logger.error(f"Failed to create forum thread '{name}' in channel {forum_channel_id} - API returned status {status}")
         return None
 
     async def delete_thread(self, thread_id: str) -> bool:
@@ -435,6 +440,8 @@ class DiscordIntegration:
         Returns:
             Discord message/thread ID if successful
         """
+        logger.info(f"post_task called for {task.id}, assignee: {task.assignee}, channel hint: {channel}")
+
         # Determine role category for routing
         role_category = RoleCategory.DEV
         if task.assignee:
@@ -442,6 +449,8 @@ class DiscordIntegration:
             if assignee_role:
                 role_category = self._get_role_category(assignee_role)
                 logger.info(f"Routing task {task.id} to {role_category.value} channels (assignee: {task.assignee})")
+            else:
+                logger.info(f"No role found for {task.assignee}, using default DEV category")
 
         # Build the embed
         embed = task.to_discord_embed_dict()
@@ -458,6 +467,7 @@ class DiscordIntegration:
         # Check if tasks channel is configured for this category
         tasks_channel_id = self._get_channel_id(ChannelType.TASKS, role_category)
         forum_channel_id = self._get_channel_id(ChannelType.FORUM, role_category)
+        logger.info(f"Channel IDs for {role_category.value}: tasks={tasks_channel_id}, forum={forum_channel_id}")
 
         # Post to forum channel (creates a thread) if:
         # - Explicitly requested (channel="specs" or "forum")
@@ -522,16 +532,23 @@ class DiscordIntegration:
         Returns:
             Thread ID if successful
         """
+        logger.info(f"post_spec_sheet called for task {task_id}, assignee: {assignee}")
+
         # Determine role category
         role_category = RoleCategory.DEV
         if assignee:
             assignee_role = await self.get_assignee_role(assignee)
             if assignee_role:
                 role_category = self._get_role_category(assignee_role)
+                logger.info(f"Assignee {assignee} has role '{assignee_role}' -> category {role_category.value}")
+            else:
+                logger.info(f"No role found for assignee {assignee}, using default DEV category")
 
         forum_channel_id = self._get_channel_id(ChannelType.FORUM, role_category)
+        logger.info(f"Forum channel ID for {role_category.value}: {forum_channel_id}")
+
         if not forum_channel_id:
-            logger.warning("No forum channel configured for spec sheets")
+            logger.warning(f"No forum channel configured for spec sheets (role: {role_category.value})")
             return None
 
         priority_emoji = {
