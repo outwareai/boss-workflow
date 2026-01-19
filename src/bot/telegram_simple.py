@@ -103,26 +103,41 @@ class TelegramBotSimple:
             from ..ai.vision import get_vision
             vision = get_vision()
 
-            await update.message.reply_text("🔍 Analyzing image...")
+            # Check if caption indicates task creation - don't analyze image content in that case
+            task_creation_keywords = [
+                "add a new task", "add new task", "new task", "create task", "fix", "update",
+                "add a task", "task for", "assign", "spec sheet", "specsheet"
+            ]
+            caption_lower = (caption or "").lower()
+            is_task_creation = any(kw in caption_lower for kw in task_creation_keywords)
 
-            # Choose analysis type based on context
-            if caption:
-                # User provided context, use it
-                analysis = await vision.analyze_image(
-                    bytes(photo_bytes),
-                    prompt=f"The user sent this image with the message: '{caption}'\n\nAnalyze the image in this context. What does it show? What action might be needed?"
-                )
+            if is_task_creation and caption:
+                # Task creation with reference image - don't analyze image content
+                # Just pass the caption as the task description with image attached
+                logger.info("Image sent with task creation caption - treating as task with reference image")
+                message_with_analysis = f"{caption}\n\n[📷 Reference image attached]"
+                analysis = "Reference image for task"
             else:
-                # No caption, do general analysis
-                analysis = await vision.describe_for_task(bytes(photo_bytes))
+                await update.message.reply_text("🔍 Analyzing image...")
 
-            # Build message with analysis
-            if analysis:
-                message_with_analysis = f"[Image Analysis: {analysis}]"
+                # Choose analysis type based on context
                 if caption:
-                    message_with_analysis = f"{caption}\n\n{message_with_analysis}"
-            else:
-                message_with_analysis = caption or "[Photo received]"
+                    # User provided context, use it
+                    analysis = await vision.analyze_image(
+                        bytes(photo_bytes),
+                        prompt=f"The user sent this image with the message: '{caption}'\n\nAnalyze the image in this context. What does it show? What action might be needed?"
+                    )
+                else:
+                    # No caption, do general analysis
+                    analysis = await vision.describe_for_task(bytes(photo_bytes))
+
+                # Build message with analysis
+                if analysis:
+                    message_with_analysis = f"[Image Analysis: {analysis}]"
+                    if caption:
+                        message_with_analysis = f"{caption}\n\n{message_with_analysis}"
+                else:
+                    message_with_analysis = caption or "[Photo received]"
 
             response, action = await self.handler.handle_message(
                 user_id=user_id,

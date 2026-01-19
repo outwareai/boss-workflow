@@ -188,6 +188,12 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         Returns:
             Tuple of (should_ask_questions, analysis_result)
         """
+        # Check if message is already comprehensive (detailed description provided)
+        message = conversation.original_message
+        is_comprehensive = self._is_comprehensive_message(message)
+        if is_comprehensive and not detailed_mode:
+            logger.info("Message is comprehensive - skipping questions")
+
         # First, detect and apply templates
         template_info = self.detect_and_apply_template(conversation, preferences)
         if template_info:
@@ -225,6 +231,12 @@ Only include tasks that are clearly related. Return empty array if no dependenci
             elif isinstance(q, dict):
                 normalized_questions.append(q)
         analysis["suggested_questions"] = normalized_questions
+
+        # If message is comprehensive (detailed description), skip questions
+        if is_comprehensive and not detailed_mode:
+            can_proceed = True
+            analysis["suggested_questions"] = []  # Clear questions
+            logger.info("Comprehensive message detected - proceeding without questions")
 
         # For SPECSHEETS/detailed mode - always ask questions for comprehensive PRD
         if detailed_mode:
@@ -315,6 +327,42 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         """Filter to only the most critical questions for urgent tasks."""
         critical_fields = ["assignee", "deadline"]  # Priority is implied by urgency
         return [q for q in questions if q.get("field") in critical_fields][:2]
+
+    def _is_comprehensive_message(self, message: str) -> bool:
+        """
+        Detect if a message is comprehensive enough to skip questions.
+
+        A message is comprehensive if it contains:
+        - Detailed description (multiple sentences or long text)
+        - Feature specifications
+        - User flows or technical details
+        """
+        # Check word count - detailed messages have more words
+        word_count = len(message.split())
+        if word_count > 30:
+            logger.debug(f"Message is comprehensive: {word_count} words")
+            return True
+
+        # Check for multiple sentences (indicates detailed description)
+        sentence_count = len([s for s in message.replace("...", ".").split(".") if s.strip()])
+        if sentence_count >= 3:
+            logger.debug(f"Message is comprehensive: {sentence_count} sentences")
+            return True
+
+        # Check for feature-like keywords indicating detailed spec
+        feature_keywords = [
+            "users can", "user can", "should be able to", "must be able to",
+            "when the user", "the system should", "feature", "functionality",
+            "integration", "connect to", "api", "database", "the flow",
+            "step 1", "step 2", "first,", "then,", "finally,",
+            "requirements:", "acceptance criteria", "spec:"
+        ]
+        message_lower = message.lower()
+        if any(kw in message_lower for kw in feature_keywords):
+            logger.debug("Message is comprehensive: contains feature keywords")
+            return True
+
+        return False
 
     async def generate_question_message(
         self,

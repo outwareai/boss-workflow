@@ -62,6 +62,7 @@ class UnifiedHandler:
         self._pending_actions: Dict[str, Dict] = {}  # user_id -> pending dangerous action
         self._batch_tasks: Dict[str, Dict] = {}  # user_id -> batch task session
         self._spec_sessions: Dict[str, Dict] = {}  # user_id -> spec generation session
+        self._recent_messages: Dict[str, Dict] = {}  # user_id -> recent message context
 
     async def handle_message(
         self,
@@ -98,6 +99,24 @@ class UnifiedHandler:
         if is_boss and user_id in self._pending_reviews:
             del self._pending_reviews[user_id]
             logger.info(f"Cleared review session for boss {user_id}")
+
+        # Check for "create that task" type references to previous message
+        msg_lower = message.lower().strip()
+        create_that_patterns = [
+            "create that task", "create that", "make that a task", "make that task",
+            "turn that into a task", "add that as a task", "task that", "make it a task",
+            "create the task", "create a task from that", "add that task",
+            "yes create", "yes make", "yes add", "create it", "make it"
+        ]
+
+        if any(pattern in msg_lower for pattern in create_that_patterns):
+            recent = self._recent_messages.get(user_id)
+            if recent and recent.get("content"):
+                # Use the recent message content as the task description
+                logger.info(f"'Create that task' detected - using recent message: {recent['content'][:100]}...")
+                message = recent["content"]
+                # Clear the recent message after using it
+                del self._recent_messages[user_id]
 
         # Build context for intent detection
         context = await self._build_context(user_id, is_boss)
@@ -214,6 +233,17 @@ class UnifiedHandler:
             # User says "yes" = confirm and create
             elif msg_lower in ["yes", "y", "ok", "confirm", "create", "looks good", "lgtm", "good", "perfect"]:
                 return await self._finalize_task(active_conv, user_id)
+
+        # Store recent message for "create that task" type references
+        # Only store substantive messages (not simple confirmations)
+        simple_responses = ["yes", "y", "no", "n", "ok", "confirm", "cancel", "stop", "skip",
+                           "done", "create", "looks good", "lgtm", "good", "perfect", "fine"]
+        if msg_lower not in simple_responses and len(message) > 10:
+            self._recent_messages[user_id] = {
+                "content": message,
+                "timestamp": datetime.now()
+            }
+            logger.debug(f"Stored recent message for user {user_id}: {message[:50]}...")
 
         # Detect intent
         intent, data = await self.intent.detect_intent(message, context)
@@ -2336,21 +2366,28 @@ When done, tell me "I finished {task.id}" and show me proof!"""
                 return tasks
 
         # Pattern 3: Multiple names with actions - "Name1 action1, Name2 action2"
-        # Look for pattern: CapitalName + verb/action, repeated
-        name_action_pattern = r'([A-Z][a-z]+)\s+(?:needs?\s+to\s+|should\s+|must\s+|has\s+to\s+|will\s+)?(\w+)'
-        matches = re.findall(name_action_pattern, message)
+        # STRICT: Only split if there are MULTIPLE DISTINCT TEAM MEMBER NAMES
+        # This prevents splitting natural sentences with commas
+        team_names_lower = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+        message_lower = message.lower()
 
-        if len(matches) >= 2:
-            # Try to split by comma or "and" between name-action pairs
-            # Split by comma first
+        # Count distinct team member names mentioned
+        names_found = [name for name in team_names_lower if name in message_lower]
+        unique_names = list(set(names_found))
+
+        # Only try to split if 2+ DIFFERENT team members are mentioned
+        if len(unique_names) >= 2:
+            # Try to split by comma between different assignees
             comma_parts = re.split(r',\s*', message)
             if len(comma_parts) >= 2:
+                # Verify each part has a team name
                 tasks = []
                 for part in comma_parts:
                     part = part.strip()
-                    # Remove leading "and"
                     part = re.sub(r'^and\s+', '', part, flags=re.IGNORECASE)
-                    if part and len(part) > 5:
+                    part_lower = part.lower()
+                    # Only include if it mentions a team member
+                    if part and len(part) > 10 and any(name in part_lower for name in team_names_lower):
                         tasks.append(part)
                 if len(tasks) >= 2:
                     return tasks
@@ -2358,7 +2395,12 @@ When done, tell me "I finished {task.id}" and show me proof!"""
             # Try splitting by " and " if commas didn't work
             and_parts = re.split(r'\s+and\s+', message, flags=re.IGNORECASE)
             if len(and_parts) >= 2:
-                tasks = [p.strip() for p in and_parts if p.strip() and len(p.strip()) > 5]
+                tasks = []
+                for part in and_parts:
+                    part = part.strip()
+                    part_lower = part.lower()
+                    if part and len(part) > 10 and any(name in part_lower for name in team_names_lower):
+                        tasks.append(part)
                 if len(tasks) >= 2:
                     return tasks
 
