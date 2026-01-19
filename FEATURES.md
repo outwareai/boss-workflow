@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
-> **Last Updated:** 2026-01-18
-> **Version:** 1.5.4
+> **Last Updated:** 2026-01-19
+> **Version:** 1.5.5
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1854,6 +1854,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.5 | 2026-01-19 | **Attendance Sheets Sync Fix:** Clock in/out/break events now properly sync to Google Sheets ⏰ Time Logs sheet. Previously events were only saved to PostgreSQL database. |
 | 1.5.4 | 2026-01-18 | **Time Clock / Attendance System:** Staff check-in/check-out via Discord messages ("in", "out", "break"). **Discord Channels:** Dev attendance (1462451610184843449), Admin attendance (1462451782470078628). **Late Detection:** Automatic late detection with ⏰ reaction, timezone-aware calculations, configurable grace period. **Break Toggle:** Single "break" message toggles break on/off (☕/💪 reactions). **New Sheets:** ⏰ Time Logs for attendance records, 📊 Time Reports for weekly summaries. **Team Sheet Update:** Added Timezone and Work Start columns. **Database Model:** AttendanceRecordDB with full event tracking. **Service Layer:** AttendanceService for business logic with timezone handling. **Repository:** AttendanceRepository with daily/weekly summary methods. **Scheduler Jobs:** sync_attendance (every 15 min), weekly_time_report (Monday 10 AM). **Settings:** New attendance config options (channel IDs, work hours, grace period). |
 | 1.5.3 | 2026-01-18 | **Centralized Utility Modules:** New `src/utils/` package with datetime, team lookup, and validation utilities. **Datetime Utils:** `to_naive_local()`, `parse_deadline()`, `get_local_now()` for consistent timezone handling (fixes PostgreSQL offset-naive/aware datetime errors). **Team Utils:** `get_assignee_info()`, `lookup_team_member()` with 3-tier fallback (DB → Sheets → config). **Validation Utils:** `validate_task_data()` with field validation and warnings before database save. **Task Model Fix:** Added `spec_sheet_url`, `discord_thread_id` optional fields to prevent AttributeError on forum posting. **Improved Error Messages:** More descriptive error messages with error type hints. **ThreadWithMessage Fix:** Updated discord_bot.py to handle discord.py 2.0+ `ThreadWithMessage` object (has `.thread`/`.message` attributes, not tuple). |
 | 1.5.2 | 2026-01-18 | **Web Onboarding Portal:** Staff self-service registration page at `/onboard` with dark minimalist design. 4-step wizard: Basic Info → Discord Setup → Google Integration → Confirmation. Saves to Sheets + PostgreSQL. **Google OAuth2:** User-level authentication for Calendar & Tasks with popup flow. Includes embedded screenshot showing Google's "unverified app" warning with click-through instructions. **Auto Calendar ID:** Form automatically sets Calendar ID to user's email. Existing users backfilled. **Route Fix:** OAuth callback route ordering fixed to prevent "Invalid service" error. New env vars: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`. **Team View:** `/team` endpoint shows all team members. |
