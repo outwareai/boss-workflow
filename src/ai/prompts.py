@@ -1,7 +1,7 @@
 """Prompt templates for DeepSeek AI interactions."""
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from config.settings import settings
 
 
@@ -47,12 +47,15 @@ USER'S MESSAGE:
 - Timezone: {settings.timezone}
 - Day of Week: {datetime.now().strftime('%A')}
 
-When parsing deadlines like "tonight", "tomorrow", "next week":
-- "tonight" = today's date at the specified time (default 23:59 if no time)
-- "today" = today's date at EOD (23:59) unless specific time given
-- "tomorrow" = tomorrow's date
-- "by Friday" = this coming Friday
-- "8PM tonight" = today at 20:00 in timezone {settings.timezone}
+⚠️ DEADLINE PARSING - Convert to ISO format:
+- "tonight" = "{datetime.now().strftime('%Y-%m-%d')}T23:59:00" (today at EOD)
+- "today" = "{datetime.now().strftime('%Y-%m-%d')}T23:59:00" (today at EOD)
+- "tomorrow" = "{(datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')}T23:59:00" (tomorrow at EOD)
+- "by Friday" = calculate next Friday date at 23:59
+- "8PM tonight" = "{datetime.now().strftime('%Y-%m-%d')}T20:00:00"
+
+IMPORTANT: "tomorrow", "tonight", "by Friday" are DEADLINES (when to finish), NOT effort!
+Effort is HOW LONG it takes (e.g., "2 hours", "1 day").
 
 ALWAYS use timezone {settings.timezone} for deadline times!
 
@@ -252,7 +255,23 @@ USER PREFERENCES:
 {preferences}
 
 📅 CURRENT DATE/TIME: {datetime.now().strftime('%Y-%m-%d %H:%M')} ({settings.timezone})
-Use this to properly format deadlines like "tonight", "tomorrow", etc.
+
+⚠️ DEADLINE vs EFFORT - IMPORTANT DISTINCTION:
+- "deadline" = WHEN it must be done (a date/time) - "tomorrow", "by Friday", "tonight 8PM"
+- "estimated_effort" = HOW LONG it takes to do - "2 hours", "1 day", "1 week"
+
+DEADLINE EXAMPLES (convert to ISO format):
+- "tomorrow" → "{(datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')}T23:59:00"
+- "tonight" → "{datetime.now().strftime('%Y-%m-%d')}T23:59:00"
+- "by Friday" → Calculate the next Friday date
+
+EFFORT should reflect ACTUAL WORK TIME, not deadline:
+- Simple bug fix: "2-4 hours"
+- Feature with UI: "1-2 days"
+- Complex system: "1-2 weeks"
+
+If user says "tomorrow" that's the DEADLINE, not the effort!
+Effort should be estimated based on task complexity.
 {detailed_instructions}
 ⚠️ CRITICAL - FILTER INSTRUCTION WORDS FROM TASK CONTENT:
 The boss gives instructions to the BOT (like "tell him", "ask her"). These should NOT appear in the task.

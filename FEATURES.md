@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-20
-> **Version:** 1.6.4
+> **Version:** 1.6.5
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1959,6 +1959,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6.5 | 2026-01-20 | **Deadline vs Effort Fix:** AI prompts now clearly distinguish: "tomorrow" = DEADLINE (when to finish), NOT effort. Effort = HOW LONG it takes (2 hours, 1 day). Added explicit ISO format examples for deadline parsing: "tomorrow" → "2026-01-21T23:59:00". Deadlines are properly saved to Google Calendar. |
 | 1.6.4 | 2026-01-20 | **Bug Fixes:** (1) **TypeError Fix:** Fixed `priority.lower()` crash when priority is None in Discord spec sheet posting. (2) **Explicit Multi-Task Detection:** Added Pattern 0 that detects "First task will be...", "Second task is..." phrases - this is a CLEAR signal to split into multiple tasks. (3) **Pronoun Handling:** When user says "him", "her", "them" without naming the person, AI now asks "Who should this task be assigned to?" instead of setting assignee to None silently. |
 | 1.6.3 | 2026-01-19 | **Critical Multi-Task Detection Fix:** ALL splitting patterns now require 2+ DIFFERENT team member names. (1) Pattern 1 (numbered lists): "1. Users can..." no longer splits - only splits if items have different assignees. (2) Pattern 2 (separators): Removed generic "also", "plus" patterns - now ONLY splits on explicit "another task" phrases. (3) Pattern 4 (semicolons): Also requires multiple team names. This prevents feature descriptions with numbered steps, "also" clauses, or semicolons from being incorrectly split into multiple tasks. |
 | 1.6.2 | 2026-01-19 | **Bug Fixes:** (1) **Multi-Task Detection Fix:** "Task 1 of N" no longer triggers incorrectly. Now requires 2+ DIFFERENT team member names to split tasks. Single tasks with repeated mentions stay as one task. (2) **Voice Transcription Context:** "Create that task" and similar phrases now use the previous message content (voice transcription, etc.) as the task description. Stores recent messages for context reference. (3) **Skip Questions When Detailed:** Bot no longer asks clarifying questions when the message is already comprehensive (30+ words, 3+ sentences, or feature-like keywords like "users can", "the system should", etc.). (4) **Image Task Creation Fix:** When sending images with task-related captions ("add a new task", "fix", "spec sheet"), the bot treats it as task creation with reference image instead of analyzing image content as email/report. |
