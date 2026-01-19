@@ -205,30 +205,34 @@ async def lifespan(app: FastAPI):
                 """Handle task submission from Discord staff."""
                 logger.info(f"Task submission from {user_name}: {task_ids}")
                 try:
-                    # Get telegram bot to notify boss
-                    telegram = get_telegram_bot_simple()
+                    import aiohttp
 
                     # Build notification message for boss
                     task_list = ", ".join(task_ids)
                     proof_info = f"\n📎 {len(attachment_urls)} attachment(s)" if attachment_urls else ""
 
-                    notification = f"""📨 **Task Submission from Discord**
+                    notification = f"""📨 *Task Submission from Discord*
 
-👤 **From:** {user_name}
-📋 **Task(s):** {task_list}
-💬 **Message:** {message_content[:300]}{'...' if len(message_content) > 300 else ''}{proof_info}
+👤 *From:* {user_name}
+📋 *Task(s):* {task_list}
+💬 *Message:* {message_content[:300]}{'...' if len(message_content) > 300 else ''}{proof_info}
 
 🔗 [View on Discord]({message_url})
 
 Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
 
-                    # Send to boss
-                    await telegram.send_message(
-                        chat_id=settings.telegram_boss_chat_id,
-                        text=notification,
-                        parse_mode="Markdown",
-                        disable_web_page_preview=True,
-                    )
+                    # Send to boss via Telegram API directly
+                    telegram_api = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
+                    async with aiohttp.ClientSession() as session:
+                        await session.post(
+                            telegram_api,
+                            json={
+                                "chat_id": settings.telegram_boss_chat_id,
+                                "text": notification,
+                                "parse_mode": "Markdown",
+                                "disable_web_page_preview": True,
+                            }
+                        )
 
                     # Update task status to in_review
                     from .database.repositories import get_task_repository
