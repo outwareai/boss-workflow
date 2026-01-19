@@ -355,6 +355,56 @@ class DiscordIntegration:
             return True
         return False
 
+    async def pin_thread(self, thread_id: str) -> bool:
+        """
+        Pin a forum thread so it appears at the top of the forum.
+
+        Args:
+            thread_id: The thread/post ID to pin
+
+        Returns:
+            True if pinned successfully
+        """
+        if not thread_id:
+            return False
+
+        # Discord forum threads use flags field - PINNED = 1 << 1 = 2
+        payload = {"flags": 2}
+
+        status, _ = await self._api_request("PATCH", f"/channels/{thread_id}", payload)
+
+        if status == 200:
+            logger.info(f"Pinned forum thread {thread_id}")
+            return True
+        else:
+            logger.warning(f"Failed to pin thread {thread_id}, status: {status}")
+            return False
+
+    async def unpin_thread(self, thread_id: str) -> bool:
+        """
+        Unpin a forum thread.
+
+        Args:
+            thread_id: The thread/post ID to unpin
+
+        Returns:
+            True if unpinned successfully
+        """
+        if not thread_id:
+            return False
+
+        # Remove PINNED flag by setting flags to 0
+        payload = {"flags": 0}
+
+        status, _ = await self._api_request("PATCH", f"/channels/{thread_id}", payload)
+
+        if status == 200:
+            logger.info(f"Unpinned forum thread {thread_id}")
+            return True
+        else:
+            logger.warning(f"Failed to unpin thread {thread_id}, status: {status}")
+            return False
+
     async def add_reaction(self, channel_id: str, message_id: str, emoji: str) -> bool:
         """Add a reaction to a message."""
         if not channel_id or not message_id:
@@ -489,7 +539,9 @@ class DiscordIntegration:
                 embed=embed
             )
             if thread_id:
-                logger.info(f"Posted task {task.id} to forum channel {forum_channel_id}")
+                # Auto-pin the thread so it appears at top of forum
+                await self.pin_thread(thread_id)
+                logger.info(f"Posted task {task.id} to forum channel {forum_channel_id} (pinned)")
                 return thread_id
 
         # Post to tasks channel (regular message)
@@ -644,12 +696,16 @@ class DiscordIntegration:
         # Discord has 2000 char limit per message - split if needed
         if len(full_content) <= 2000:
             # Single message fits
-            return await self.create_forum_thread(
+            thread_id = await self.create_forum_thread(
                 forum_channel_id=forum_channel_id,
                 name=thread_name,
                 content=full_content,
                 embed=None
             )
+            if thread_id:
+                # Auto-pin the thread so it appears at top of forum
+                await self.pin_thread(thread_id)
+            return thread_id
 
         # Split content into chunks for multiple messages
         # First message: thread creation with initial content
@@ -668,6 +724,9 @@ class DiscordIntegration:
         if not thread_id:
             logger.error("Failed to create forum thread for spec sheet")
             return None
+
+        # Auto-pin the thread so it appears at top of forum
+        await self.pin_thread(thread_id)
 
         # Send remaining chunks as follow-up messages in the thread
         for i, chunk in enumerate(chunks[1:], start=2):
