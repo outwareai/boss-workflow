@@ -19,6 +19,14 @@ from ..integrations.sheets import get_sheets_integration, SHEET_TEAM
 
 logger = logging.getLogger(__name__)
 
+# Event type to display name mapping
+EVENT_DISPLAY_NAMES = {
+    "clock_in": "in",
+    "clock_out": "out",
+    "break_start": "break in",
+    "break_end": "break out",
+}
+
 
 class AttendanceService:
     """Service for attendance operations."""
@@ -29,6 +37,64 @@ class AttendanceService:
         self._team_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_time: Optional[datetime] = None
         self._cache_ttl = timedelta(minutes=15)
+
+    async def _sync_to_sheets(
+        self,
+        record_id: str,
+        user_name: str,
+        event_type: str,
+        event_time: datetime,
+        channel_name: str,
+        is_late: bool = False,
+        late_minutes: int = 0,
+    ) -> bool:
+        """
+        Sync an attendance event to Google Sheets.
+
+        Args:
+            record_id: The database record ID
+            user_name: Staff member name
+            event_type: clock_in, clock_out, break_start, break_end
+            event_time: Local event time
+            channel_name: Channel name (dev/admin)
+            is_late: Whether the clock-in was late
+            late_minutes: Minutes late
+
+        Returns:
+            True if synced successfully
+        """
+        try:
+            # Determine late status display
+            if event_type == "clock_in":
+                late_display = "Yes" if is_late else "No"
+            else:
+                late_display = "-"
+
+            # Get event display name
+            event_display = EVENT_DISPLAY_NAMES.get(event_type, event_type)
+
+            # Build record dict for sheets
+            record_dict = {
+                "record_id": record_id,
+                "date": event_time.strftime("%Y-%m-%d"),
+                "time": event_time.strftime("%H:%M"),
+                "name": user_name,
+                "event": event_display,
+                "late": late_display,
+                "late_min": late_minutes if is_late else 0,
+                "channel": channel_name.replace("attendance-", ""),  # dev or admin
+            }
+
+            success = await self.sheets.add_attendance_log(record_dict)
+            if success:
+                logger.info(f"Synced attendance to Sheets: {record_id}")
+            else:
+                logger.warning(f"Failed to sync attendance to Sheets: {record_id}")
+            return success
+
+        except Exception as e:
+            logger.error(f"Error syncing attendance to Sheets: {e}")
+            return False
 
     async def _refresh_team_cache(self) -> None:
         """Refresh the team member cache from Sheets."""
@@ -228,6 +294,17 @@ class AttendanceService:
         )
 
         if record:
+            # Sync to Google Sheets
+            await self._sync_to_sheets(
+                record_id=record.record_id,
+                user_name=user_name,
+                event_type="clock_in",
+                event_time=now_local.replace(tzinfo=None),
+                channel_name=channel_name,
+                is_late=is_late,
+                late_minutes=late_minutes,
+            )
+
             return {
                 "success": True,
                 "emoji": "✅",
@@ -305,6 +382,15 @@ class AttendanceService:
             work_hours = round(work_duration.total_seconds() / 3600, 2)
 
         if record:
+            # Sync to Google Sheets
+            await self._sync_to_sheets(
+                record_id=record.record_id,
+                user_name=user_name,
+                event_type="clock_out",
+                event_time=now_local.replace(tzinfo=None),
+                channel_name=channel_name,
+            )
+
             return {
                 "success": True,
                 "emoji": "👋",
@@ -374,6 +460,15 @@ class AttendanceService:
         )
 
         if record:
+            # Sync to Google Sheets
+            await self._sync_to_sheets(
+                record_id=record.record_id,
+                user_name=user_name,
+                event_type=event_type,
+                event_time=now_local.replace(tzinfo=None),
+                channel_name=channel_name,
+            )
+
             return {
                 "success": True,
                 "emoji": emoji,
