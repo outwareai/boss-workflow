@@ -222,7 +222,7 @@ class Task(BaseModel):
             "color": color_map[self.priority],
             "fields": fields,
             "footer": {
-                "text": f"Created: {self.created_at.strftime('%Y-%m-%d %H:%M')} | React: ✅ Started | 🔄 In Review | ✔️ Done"
+                "text": f"Created: {self.created_at.strftime('%Y-%m-%d %H:%M')}"
             },
             "timestamp": self.created_at.isoformat()
         }

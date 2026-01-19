@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-19
-> **Version:** 1.5.8
+> **Version:** 1.5.9
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1959,6 +1959,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.9 | 2026-01-19 | **PRD-Style Forum Spec Sheets:** SPECSHEETS tasks now post as proper PRD documents to Discord Forum. Format includes: task metadata, multi-paragraph description, numbered implementation tasks, acceptance criteria checklist, technical considerations, and action buttons. **AI Assistant Conversation:** Preview messages for SPECSHEETS are now more conversational ("I've prepared a comprehensive specification...") rather than robotic. **Forum Thread Title:** Uses 📋 emoji prefix for spec sheets. |
 | 1.5.8 | 2026-01-19 | **SPECSHEETS Handler Fix:** Handler now properly checks `detailed_mode` flag from intent detection. When SPECSHEETS/detailed mode detected: skips multi-task splitting, skips clarifier questions, goes directly to comprehensive spec generation. **Extended Trigger Keywords:** Added `more developed`, `more detailed`, `with details`, and `spec sheet` (without "for") as triggers. Previously the message was incorrectly split into multiple tasks. |
 | 1.5.6 | 2026-01-19 | **SPECSHEETS Intent Detection Fix:** Messages with "SPECSHEETS", "spec sheet for", "detailed spec for" now properly trigger task creation with detailed_mode. **Direct Assignee Detection:** Messages starting with team member names (mayank, sarah, john, etc.) now trigger task creation. Previously these fell through to incorrect intents. |
 | 1.5.5 | 2026-01-19 | **Attendance Sheets Sync Fix:** Clock in/out/break events now properly sync to Google Sheets ⏰ Time Logs sheet. Previously events were only saved to PostgreSQL database. |

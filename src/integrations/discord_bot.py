@@ -94,6 +94,9 @@ class TaskingBot(commands.Bot):
         # Callback for attendance events (set by main app)
         self.on_attendance_callback = None
 
+        # Callback for task submissions (staff completing tasks with proof)
+        self.on_task_submission_callback = None
+
     async def setup_hook(self):
         """Called when bot is ready to set up."""
         logger.info("Discord bot setup hook called")
@@ -220,9 +223,9 @@ Contact boss directly on Telegram.""",
 
     async def on_message(self, message: discord.Message):
         """
-        Handle messages - primarily for attendance tracking.
-
-        Listens for "in", "out", "break" messages in attendance channels.
+        Handle messages for:
+        1. Attendance tracking ("in", "out", "break")
+        2. Task completion submissions ("I finished TASK-XXX")
         """
         # Ignore bot's own messages
         if message.author.bot:
@@ -230,10 +233,19 @@ Contact boss directly on Telegram.""",
 
         # Check if this is an attendance channel
         channel_name = ATTENDANCE_CHANNELS.get(message.channel.id)
-        if not channel_name:
-            # Not an attendance channel, process commands normally
-            await self.process_commands(message)
+        if channel_name:
+            # Handle attendance in attendance channels
+            await self._handle_attendance_message(message, channel_name)
             return
+
+        # Check for task completion messages in any other channel
+        await self._handle_potential_submission(message)
+
+        # Process commands normally
+        await self.process_commands(message)
+
+    async def _handle_attendance_message(self, message: discord.Message, channel_name: str):
+        """Handle attendance commands in attendance channels."""
 
         # Parse attendance command (case-insensitive, strip whitespace)
         cmd = message.content.strip().lower()
@@ -279,6 +291,81 @@ Contact boss directly on Telegram.""",
                     pass
         else:
             logger.warning("Attendance callback not registered, ignoring attendance command")
+
+    async def _handle_potential_submission(self, message: discord.Message):
+        """
+        Check if message contains task completion/submission.
+
+        Detects patterns like:
+        - "I have finished TASK-XXX"
+        - "Completed TASK-XXX, TASK-YYY"
+        - "Done with TASK-XXX"
+        - "TASK-XXX is complete, here is proof"
+        """
+        import re
+
+        content = message.content.lower()
+
+        # Keywords indicating task completion
+        completion_keywords = [
+            "finished", "completed", "done", "complete",
+            "submission", "submitting", "submit",
+            "proof of work", "proof", "here is", "attached"
+        ]
+
+        # Check if message contains completion indicators
+        has_completion_keyword = any(kw in content for kw in completion_keywords)
+
+        # Extract task IDs (TASK-YYYYMMDD-XXX pattern)
+        task_pattern = r'TASK-\d{8}-[A-Z0-9]+'
+        task_ids = re.findall(task_pattern, message.content, re.IGNORECASE)
+
+        # If no task IDs or no completion keywords, skip
+        if not task_ids or not has_completion_keyword:
+            return
+
+        logger.info(f"Detected task submission from {message.author.display_name}: {task_ids}")
+
+        # Extract attachment URLs (images as proof)
+        attachment_urls = []
+        for attachment in message.attachments:
+            if attachment.content_type and attachment.content_type.startswith("image/"):
+                attachment_urls.append(attachment.url)
+
+        # Call the submission callback if registered
+        if self.on_task_submission_callback:
+            try:
+                result = await self.on_task_submission_callback(
+                    user_id=str(message.author.id),
+                    user_name=message.author.display_name,
+                    task_ids=task_ids,
+                    message_content=message.content,
+                    attachment_urls=attachment_urls,
+                    channel_id=str(message.channel.id),
+                    channel_name=message.channel.name if hasattr(message.channel, 'name') else "unknown",
+                    message_url=message.jump_url,
+                )
+
+                # React based on result
+                if result.get("success"):
+                    await message.add_reaction("📨")  # Submission received
+                    logger.info(f"Task submission processed: {result.get('message', 'Success')}")
+
+                    # Optionally reply to confirm
+                    if result.get("reply_message"):
+                        await message.reply(result.get("reply_message"), mention_author=False)
+                else:
+                    await message.add_reaction("⚠️")  # Issue
+                    logger.warning(f"Task submission issue: {result.get('message', 'Unknown error')}")
+
+            except Exception as e:
+                logger.error(f"Error processing task submission: {e}")
+                try:
+                    await message.add_reaction("⚠️")
+                except:
+                    pass
+        else:
+            logger.warning("Task submission callback not registered")
 
     async def _get_task_for_message(self, message_id: int, channel_id: int) -> Optional[str]:
         """Look up task ID for a Discord message."""
@@ -682,6 +769,14 @@ def setup_attendance_callback(callback):
     if bot:
         bot.on_attendance_callback = callback
         logger.info("Discord bot attendance callback registered")
+
+
+def setup_task_submission_callback(callback):
+    """Set the callback function for task submissions from staff."""
+    bot = get_discord_bot()
+    if bot:
+        bot.on_task_submission_callback = callback
+        logger.info("Discord bot task submission callback registered")
 
 
 async def create_task_thread(

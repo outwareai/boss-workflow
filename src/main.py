@@ -8,6 +8,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 from typing import Dict, Any
+from datetime import datetime
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +30,7 @@ from .integrations.discord_bot import (
     stop_discord_bot,
     setup_status_callback,
     setup_attendance_callback,
+    setup_task_submission_callback,
 )
 from .database import init_database, close_database, get_database
 from .database.sync import get_sheets_sync
@@ -188,6 +190,73 @@ async def lifespan(app: FastAPI):
                     }
 
             setup_attendance_callback(handle_attendance)
+
+            # Set up task submission callback (staff completing tasks)
+            async def handle_task_submission(
+                user_id: str,
+                user_name: str,
+                task_ids: list,
+                message_content: str,
+                attachment_urls: list,
+                channel_id: str,
+                channel_name: str,
+                message_url: str,
+            ):
+                """Handle task submission from Discord staff."""
+                logger.info(f"Task submission from {user_name}: {task_ids}")
+                try:
+                    # Get telegram bot to notify boss
+                    telegram = get_telegram_bot_simple()
+
+                    # Build notification message for boss
+                    task_list = ", ".join(task_ids)
+                    proof_info = f"\n📎 {len(attachment_urls)} attachment(s)" if attachment_urls else ""
+
+                    notification = f"""📨 **Task Submission from Discord**
+
+👤 **From:** {user_name}
+📋 **Task(s):** {task_list}
+💬 **Message:** {message_content[:300]}{'...' if len(message_content) > 300 else ''}{proof_info}
+
+🔗 [View on Discord]({message_url})
+
+Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
+
+                    # Send to boss
+                    await telegram.send_message(
+                        chat_id=settings.telegram_boss_chat_id,
+                        text=notification,
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True,
+                    )
+
+                    # Update task status to in_review
+                    from .database.repositories import get_task_repository
+                    task_repo = get_task_repository()
+                    for task_id in task_ids:
+                        try:
+                            await task_repo.update(task_id, {
+                                "status": "in_review",
+                                "updated_at": datetime.now(),
+                            })
+                            logger.info(f"Task {task_id} status updated to in_review")
+                        except Exception as e:
+                            logger.warning(f"Could not update task {task_id} status: {e}")
+
+                    return {
+                        "success": True,
+                        "message": f"Submission received for {len(task_ids)} task(s)",
+                        "reply_message": f"📨 Submission received! Boss has been notified about: {task_list}",
+                    }
+
+                except Exception as e:
+                    logger.error(f"Error handling task submission: {e}")
+                    return {
+                        "success": False,
+                        "message": f"Error: {e}",
+                    }
+
+            setup_task_submission_callback(handle_task_submission)
 
             # Start bot in background
             discord_bot_task = asyncio.create_task(start_discord_bot())

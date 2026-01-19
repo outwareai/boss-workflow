@@ -460,12 +460,16 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         Returns:
             Tuple of (preview_message, spec_dict)
         """
-        # Detect SPECSHEETS keyword for detailed spec generation
-        message_lower = conversation.original_message.lower()
-        detailed_mode = any(kw in message_lower for kw in [
-            "specsheet", "spec sheet", "detailed spec", "detailed for:",
-            "full spec", "comprehensive", "with details"
-        ])
+        # Check if detailed mode was set by handler (from intent detection)
+        detailed_mode = conversation.extracted_info.get("_detailed_mode", False)
+
+        # Also detect SPECSHEETS keyword in message as fallback
+        if not detailed_mode:
+            message_lower = conversation.original_message.lower()
+            detailed_mode = any(kw in message_lower for kw in [
+                "specsheet", "spec sheet", "detailed spec", "detailed for:",
+                "full spec", "comprehensive", "with details", "more developed", "more detailed"
+            ])
 
         # Generate the spec
         spec = await self.ai.generate_task_spec(
@@ -479,12 +483,12 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         # Store in conversation
         conversation.generated_spec = spec
 
-        # Format as preview message
-        preview = await self._format_preview_message(spec)
+        # Format as preview message (pass detailed_mode for different formatting)
+        preview = await self._format_preview_message(spec, detailed_mode)
 
         return preview, spec
 
-    async def _format_preview_message(self, spec: Dict[str, Any]) -> str:
+    async def _format_preview_message(self, spec: Dict[str, Any], detailed_mode: bool = False) -> str:
         """Format spec as a readable preview message."""
         priority_emoji = {
             "low": "🟢",
@@ -493,49 +497,85 @@ Only include tasks that are clearly related. Return empty array if no dependenci
             "urgent": "🔴"
         }
 
-        lines = [
-            "📋 **Task Preview**",
-            "",
-            f"**Title:** {spec.get('title', 'Untitled')}",
-            f"**Assignee:** {spec.get('assignee', 'Unassigned')}",
-            f"**Priority:** {priority_emoji.get(spec.get('priority', 'medium'), '🟡')} {spec.get('priority', 'medium').upper()}",
-        ]
+        if detailed_mode:
+            # AI Assistant style for SPECSHEETS - more conversational
+            lines = [
+                "📋 **Spec Sheet Ready**",
+                "",
+                f"I've prepared a comprehensive specification for **{spec.get('assignee', 'the assignee')}**:",
+                "",
+                f"**{spec.get('title', 'Untitled')}**",
+                f"Priority: {priority_emoji.get(spec.get('priority', 'medium'), '🟡')} {spec.get('priority', 'medium').upper()} | Effort: {spec.get('estimated_effort', 'TBD')}",
+            ]
 
-        if spec.get("deadline"):
-            lines.append(f"**Deadline:** {spec.get('deadline')}")
+            if spec.get("deadline"):
+                lines.append(f"Deadline: {spec.get('deadline')}")
 
-        if spec.get("estimated_effort"):
-            lines.append(f"**Estimated Effort:** {spec.get('estimated_effort')}")
+            lines.extend(["", "**Overview:**", spec.get("description", "No description")[:500] + "..." if len(spec.get("description", "")) > 500 else spec.get("description", "No description"), ""])
 
-        lines.extend(["", f"**Description:**", spec.get("description", "No description"), ""])
+            # Show subtasks count
+            subtasks = spec.get("subtasks", [])
+            criteria = spec.get("acceptance_criteria", [])
+            if subtasks or criteria:
+                summary = []
+                if subtasks:
+                    summary.append(f"{len(subtasks)} implementation tasks")
+                if criteria:
+                    summary.append(f"{len(criteria)} acceptance criteria")
+                lines.append(f"📊 Includes: {' and '.join(summary)}")
+                lines.append("")
 
-        # Show subtasks if present
-        subtasks = spec.get("subtasks", [])
-        if subtasks:
-            lines.append(f"**Subtasks ({len(subtasks)}):**")
-            for i, st in enumerate(subtasks, 1):
-                title = st.get("title", f"Subtask {i}") if isinstance(st, dict) else str(st)
-                lines.append(f"  {i}. {title}")
-            lines.append("")
+            lines.extend([
+                "---",
+                "When confirmed, this will be posted to Discord as a **forum thread spec sheet** with full details.",
+                "",
+                "Reply **yes** to create | Or tell me what to change"
+            ])
+        else:
+            # Standard task preview (non-detailed)
+            lines = [
+                "📋 **Task Preview**",
+                "",
+                f"**Title:** {spec.get('title', 'Untitled')}",
+                f"**Assignee:** {spec.get('assignee', 'Unassigned')}",
+                f"**Priority:** {priority_emoji.get(spec.get('priority', 'medium'), '🟡')} {spec.get('priority', 'medium').upper()}",
+            ]
 
-        criteria = spec.get("acceptance_criteria", [])
-        if criteria:
-            lines.append("**Acceptance Criteria:**")
-            for c in criteria:
-                lines.append(f"☐ {c}")
-            lines.append("")
+            if spec.get("deadline"):
+                lines.append(f"**Deadline:** {spec.get('deadline')}")
 
-        # Show notes if present
-        notes = spec.get("notes")
-        if notes and notes != "null":
-            lines.append(f"**Notes:** {notes}")
-            lines.append("")
+            if spec.get("estimated_effort"):
+                lines.append(f"**Estimated Effort:** {spec.get('estimated_effort')}")
 
-        lines.extend([
-            "---",
-            "Reply ✅ to confirm and create this task",
-            "Or tell me what to change"
-        ])
+            lines.extend(["", f"**Description:**", spec.get("description", "No description"), ""])
+
+            # Show subtasks if present
+            subtasks = spec.get("subtasks", [])
+            if subtasks:
+                lines.append(f"**Subtasks ({len(subtasks)}):**")
+                for i, st in enumerate(subtasks, 1):
+                    title = st.get("title", f"Subtask {i}") if isinstance(st, dict) else str(st)
+                    lines.append(f"  {i}. {title}")
+                lines.append("")
+
+            criteria = spec.get("acceptance_criteria", [])
+            if criteria:
+                lines.append("**Acceptance Criteria:**")
+                for c in criteria:
+                    lines.append(f"☐ {c}")
+                lines.append("")
+
+            # Show notes if present
+            notes = spec.get("notes")
+            if notes and notes != "null":
+                lines.append(f"**Notes:** {notes}")
+                lines.append("")
+
+            lines.extend([
+                "---",
+                "Reply ✅ to confirm and create this task",
+                "Or tell me what to change"
+            ])
 
         return "\n".join(lines)
 

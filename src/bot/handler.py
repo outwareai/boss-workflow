@@ -2119,8 +2119,30 @@ Ready to send to boss? (yes/no)""", None
         for c in spec.get("acceptance_criteria", []):
             task.acceptance_criteria.append(AcceptanceCriteria(description=c))
 
+        # Check if this is a detailed spec (SPECSHEETS mode)
+        is_detailed_mode = conv.extracted_info.get("_detailed_mode", False)
+
         # Post to integrations and capture Discord message ID
-        discord_message_id = await self.discord.post_task(task)
+        if is_detailed_mode:
+            # Use spec sheet format for forum posting with full PRD details
+            logger.info(f"Posting task {task.id} as spec sheet (detailed mode)")
+            discord_message_id = await self.discord.post_spec_sheet(
+                task_id=task.id,
+                title=task.title,
+                assignee=task.assignee or "Unassigned",
+                priority=task.priority.value,
+                deadline=task.deadline.strftime('%Y-%m-%d %H:%M') if task.deadline else None,
+                description=task.description,
+                acceptance_criteria=[c.description for c in task.acceptance_criteria],
+                technical_details=spec.get("technical_details"),
+                dependencies=spec.get("dependencies"),
+                notes=spec.get("notes"),
+                estimated_effort=task.estimated_effort,
+                assignee_discord_id=assignee_discord_id,
+                subtasks=spec.get("subtasks", [])  # Pass subtasks for spec sheet
+            )
+        else:
+            discord_message_id = await self.discord.post_task(task)
 
         # Convert task to dict for sheets
         task_dict = {

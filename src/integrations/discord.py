@@ -509,10 +509,15 @@ class DiscordIntegration:
         dependencies: Optional[List[str]] = None,
         notes: Optional[str] = None,
         estimated_effort: Optional[str] = None,
-        assignee_discord_id: Optional[str] = None
+        assignee_discord_id: Optional[str] = None,
+        subtasks: Optional[List[dict]] = None
     ) -> Optional[str]:
         """
-        Post a detailed spec sheet to the forum channel as a thread.
+        Post a detailed spec sheet (PRD-style) to the forum channel as a thread.
+
+        Creates a comprehensive specification document with:
+        - Full PRD-style content as the first message
+        - Task summary embed as the second message
 
         Returns:
             Thread ID if successful
@@ -529,64 +534,97 @@ class DiscordIntegration:
             logger.warning("No forum channel configured for spec sheets")
             return None
 
-        # Build the embed
-        priority_colors = {
-            "urgent": 0xE74C3C,
-            "high": 0xE67E22,
-            "medium": 0xF1C40F,
-            "low": 0x3498DB,
-        }
         priority_emoji = {
             "urgent": "🔴",
             "high": "🟠",
             "medium": "🟡",
             "low": "🔵",
         }
-
-        color = priority_colors.get(priority.lower(), 0x95A5A6)
         p_emoji = priority_emoji.get(priority.lower(), "⚪")
 
-        criteria_text = "\n".join([f"☐ {c}" for c in acceptance_criteria]) if acceptance_criteria else "None specified"
+        # Build PRD-style spec sheet content
+        spec_content = []
 
-        embed = {
-            "title": f"📋 SPEC: {title}",
-            "description": f"**Task ID:** `{task_id}`\n\n{description}",
-            "color": color,
-            "fields": [
-                {"name": "👤 Assignee", "value": assignee or "Unassigned", "inline": True},
-                {"name": f"{p_emoji} Priority", "value": priority.upper(), "inline": True},
-                {"name": "📅 Deadline", "value": deadline or "Not set", "inline": True},
-            ],
-            "timestamp": datetime.now().isoformat(),
-            "footer": {"text": f"Spec Sheet | {task_id}"}
-        }
-
-        if estimated_effort:
-            embed["fields"].append({"name": "⏱️ Estimated Effort", "value": estimated_effort, "inline": True})
-
-        embed["fields"].append({"name": "✅ Acceptance Criteria", "value": criteria_text[:1024], "inline": False})
-
-        if technical_details:
-            embed["fields"].append({"name": "🔧 Technical Details", "value": technical_details[:1024], "inline": False})
-
-        if dependencies:
-            deps_text = "\n".join([f"• {d}" for d in dependencies])
-            embed["fields"].append({"name": "🔗 Dependencies", "value": deps_text[:1024], "inline": False})
-
-        if notes:
-            embed["fields"].append({"name": "📝 Additional Notes", "value": notes[:1024], "inline": False})
-
-        # Build mention content
-        mention_content = None
+        # Header with assignee mention
         if assignee_discord_id:
-            mention_content = f"<@{assignee_discord_id}> - New spec sheet for your review!"
+            spec_content.append(f"**Assigned to:** <@{assignee_discord_id}>")
+        else:
+            spec_content.append(f"**Assigned to:** {assignee or 'Unassigned'}")
 
-        thread_name = f"{task_id}: {title}"[:100]
+        spec_content.append("")
+        spec_content.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        spec_content.append(f"# 📋 {title}")
+        spec_content.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        spec_content.append("")
+
+        # Metadata section
+        spec_content.append("## 📊 Task Metadata")
+        spec_content.append(f"- **Task ID:** `{task_id}`")
+        spec_content.append(f"- **Priority:** {p_emoji} {priority.upper()}")
+        spec_content.append(f"- **Deadline:** {deadline or 'Not specified'}")
+        spec_content.append(f"- **Estimated Effort:** {estimated_effort or 'TBD'}")
+        spec_content.append(f"- **Status:** ⏳ Pending")
+        spec_content.append("")
+
+        # Description section
+        spec_content.append("## 📝 Description")
+        spec_content.append(description)
+        spec_content.append("")
+
+        # Subtasks section
+        if subtasks:
+            spec_content.append("## 🔨 Implementation Tasks")
+            for i, st in enumerate(subtasks, 1):
+                if isinstance(st, dict):
+                    st_title = st.get("title", f"Subtask {i}")
+                    st_desc = st.get("description", "")
+                    spec_content.append(f"### {i}. {st_title}")
+                    if st_desc:
+                        spec_content.append(f"   {st_desc}")
+                else:
+                    spec_content.append(f"### {i}. {st}")
+            spec_content.append("")
+
+        # Acceptance criteria section
+        if acceptance_criteria:
+            spec_content.append("## ✅ Acceptance Criteria")
+            for c in acceptance_criteria:
+                spec_content.append(f"- [ ] {c}")
+            spec_content.append("")
+
+        # Technical details
+        if technical_details:
+            spec_content.append("## 🔧 Technical Considerations")
+            spec_content.append(technical_details)
+            spec_content.append("")
+
+        # Dependencies
+        if dependencies:
+            spec_content.append("## 🔗 Dependencies")
+            for dep in dependencies:
+                spec_content.append(f"- {dep}")
+            spec_content.append("")
+
+        # Notes
+        if notes:
+            spec_content.append("## 📌 Additional Notes")
+            spec_content.append(notes)
+            spec_content.append("")
+
+        # Footer
+        spec_content.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        spec_content.append(f"*Created: {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
+        spec_content.append("")
+        spec_content.append("**Actions:** React ✅=Done | 🚧=Working | 🚫=Blocked | ⏸️=Paused | 🔄=Review")
+
+        thread_name = f"📋 {task_id}: {title}"[:100]
+
+        # Create forum thread with PRD content
         return await self.create_forum_thread(
             forum_channel_id=forum_channel_id,
             name=thread_name,
-            content=mention_content,
-            embed=embed
+            content="\n".join(spec_content),
+            embed=None  # Use content instead of embed for PRD format
         )
 
     async def update_task_embed(self, task: Task, message_id: str, channel_id: Optional[str] = None) -> bool:
