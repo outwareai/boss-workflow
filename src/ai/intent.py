@@ -52,6 +52,9 @@ class UserIntent(str, Enum):
     # Team management
     ADD_TEAM_MEMBER = "add_team"             # "john is our backend dev"
 
+    # Boss attendance reporting
+    REPORT_ABSENCE = "report_absence"        # "Mayank didn't come today", "Sarah was late"
+
     # Learning/preferences
     TEACH_PREFERENCE = "teach"               # "when I say urgent, deadline is today"
 
@@ -231,6 +234,20 @@ class IntentDetector:
             if "submit" in message and any(w in message for w in ["task", "title", "assignee", "mayank", "sarah", "john"]):
                 return UserIntent.CREATE_TASK, {"message": message}
 
+            # SPECSHEETS mode - detailed spec creation for NEW tasks
+            # "SPECSHEETS for Mayank:", "spec sheet for john:", "detailed spec for:", "specsheets detailed for:"
+            specsheet_patterns = ["specsheets", "specsheet", "spec sheet for", "detailed spec for", "full spec for", "comprehensive spec"]
+            if any(pattern in message for pattern in specsheet_patterns):
+                return UserIntent.CREATE_TASK, {"message": message, "detailed_mode": True}
+
+            # Direct assignee mention with task description = task creation
+            # "Mayank: build the API", "john fix the bug", "sarah create homepage"
+            team_names = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+            for name in team_names:
+                if message.startswith(name) or f"{name}:" in message or f"{name} " in message[:50]:
+                    # Likely a task assignment
+                    return UserIntent.CREATE_TASK, {"message": message}
+
         # Greetings
         if message in ["hi", "hello", "hey", "yo", "sup", "morning", "evening"]:
             return UserIntent.GREETING, {}
@@ -354,6 +371,21 @@ class IntentDetector:
         if any(phrase in message for phrase in archive_phrases):
             return UserIntent.ARCHIVE_TASKS, {"message": message}
 
+        # Boss attendance reporting - BEFORE task creation to avoid false positives
+        if is_boss:
+            absence_keywords = [
+                "absent", "absence", "didn't come", "didnt come", "not coming",
+                "missed", "missed work", "no show", "no-show",
+                "late", "came late", "was late", "arrived late", "minutes late",
+                "left early", "leaving early", "early departure", "left at",
+                "sick leave", "sick day", "on leave", "day off", "called in sick",
+                "not present", "count as absence", "mark as absent",
+                "didn't show", "not in office", "not in today", "wasn't here",
+                "took off", "taking off", "on sick", "out sick"
+            ]
+            if any(kw in message for kw in absence_keywords):
+                return UserIntent.REPORT_ABSENCE, {"message": message}
+
         # If message mentions a person and an action, likely a task
         action_words = ["needs to", "should", "must", "has to", "can you",
                        "fix", "build", "create", "make", "update", "add", "check",
@@ -396,6 +428,7 @@ POSSIBLE INTENTS:
 - reject_task: Boss is rejecting with feedback
 - check_status: User wants status overview
 - email_recap: User wants to see/read/check their OWN emails (not delegate)
+- report_absence: Boss reporting attendance event (absence, late, early departure, sick leave)
 - delay_task: User wants to delay/postpone a task
 - add_team: User is telling about a team member
 - teach: User wants bot to learn something
@@ -406,6 +439,7 @@ POSSIBLE INTENTS:
 
 IMPORTANT: If user asks about their OWN emails (fetch, recap, check, see emails), use email_recap NOT create_task.
 Only use create_task when user wants to DELEGATE something to another person.
+If boss says someone "didn't come", "was late", "left early", "sick leave", use report_absence.
 
 Respond with JSON:
 {{

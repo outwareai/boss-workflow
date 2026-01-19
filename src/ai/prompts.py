@@ -678,3 +678,58 @@ Rules:
 - Use depends_on to indicate which subtask must be done first (by order number)
 - Keep subtask titles under 80 characters
 - Be specific, not generic (avoid "Research", "Plan" unless truly needed)"""
+
+    @staticmethod
+    def analyze_attendance_report_prompt(
+        user_message: str,
+        team_info: Dict[str, str],
+    ) -> str:
+        """Generate prompt to analyze attendance report from boss."""
+
+        team_str = "\n".join([f"- {name}: {role}" for name, role in team_info.items()]) if team_info else "None defined"
+
+        return f"""Analyze this attendance report from the boss and extract the details.
+
+BOSS'S MESSAGE:
+"{user_message}"
+
+📅 CURRENT DATE/TIME CONTEXT:
+- Current Date: {datetime.now().strftime('%Y-%m-%d')}
+- Current Time: {datetime.now().strftime('%H:%M')}
+- Day of Week: {datetime.now().strftime('%A')}
+
+TEAM MEMBERS:
+{team_str}
+
+ATTENDANCE STATUS TYPES:
+- absence_reported: Didn't come to work/meeting (e.g., "didn't come", "absent", "no show")
+- late_reported: Arrived late (e.g., "was 30 minutes late", "came late")
+- early_departure_reported: Left before end of day (e.g., "left early", "left at 3pm")
+- sick_leave_reported: Out sick (e.g., "sick leave", "called in sick", "out sick")
+- excused_absence_reported: Approved time off (e.g., "day off", "WFH", "approved leave")
+
+RELATIVE DATE PARSING:
+- "today" = {datetime.now().strftime('%Y-%m-%d')}
+- "yesterday" = previous day
+- "this morning" = today
+- "last Monday" = most recent Monday
+
+Extract the following and respond with JSON:
+{{
+    "affected_person": "Name of the team member (match against team members if possible)",
+    "status_type": "One of: absence_reported, late_reported, early_departure_reported, sick_leave_reported, excused_absence_reported",
+    "affected_date": "YYYY-MM-DD format (use today's date if not specified)",
+    "reason": "Reason or context if mentioned (e.g., 'missed meeting', 'doctor appointment')",
+    "duration_minutes": null or integer (e.g., 30 if 'was 30 minutes late'),
+    "event_time": "HH:MM format if specific time mentioned (e.g., '15:00' for 'left at 3pm'), null otherwise",
+    "confidence": 0.0-1.0,
+    "multiple_people": false or true if reporting for multiple people
+}}
+
+RULES:
+1. Match person name against team members list if possible
+2. Default to today's date if not specified
+3. Extract duration_minutes for late arrivals (e.g., "30 minutes late" → 30)
+4. Extract event_time for early departures (e.g., "left at 3pm" → "15:00")
+5. Be generous with matching - "Mayank" matches "Mayank Gupta", etc.
+6. Set confidence based on how clear the message is"""

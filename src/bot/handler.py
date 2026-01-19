@@ -26,6 +26,7 @@ from ..integrations.tasks import get_tasks_integration
 from ..ai.email_summarizer import get_email_summarizer
 from ..ai.reviewer import get_submission_reviewer, ReviewResult
 from ..database.repositories import get_task_repository
+from ..services.attendance import get_attendance_service
 from ..utils import to_naive_local, get_assignee_info, validate_task_data
 
 logger = logging.getLogger(__name__)
@@ -242,6 +243,7 @@ class UnifiedHandler:
             UserIntent.CLEAR_TASKS: self._handle_clear_tasks,
             UserIntent.ARCHIVE_TASKS: self._handle_archive_tasks,
             UserIntent.GENERATE_SPEC: self._handle_generate_spec,
+            UserIntent.REPORT_ABSENCE: self._handle_report_absence,
             UserIntent.CANCEL: self._handle_cancel,
             UserIntent.SKIP: self._handle_skip,
             UserIntent.UNKNOWN: self._handle_unknown,
@@ -1795,6 +1797,124 @@ Reply **yes** to confirm or **no** to cancel.""", None
             return await self._create_task_directly(conv, prefs.to_dict())
 
         return "Nothing to skip right now.", None
+
+    # ==================== BOSS ATTENDANCE REPORTING ====================
+
+    async def _handle_report_absence(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle boss reporting attendance events (absence, late, sick leave, etc.)."""
+
+        # Check if this is a confirmation response for a pending attendance report
+        pending = self._pending_actions.get(user_id)
+        if pending and pending.get("type") == "attendance_report":
+            msg_lower = message.lower().strip()
+
+            if msg_lower in ["yes", "y", "confirm", "ok", "do it", "correct"]:
+                # Confirm and record the attendance report
+                report_data = pending.get("report_data", {})
+                del self._pending_actions[user_id]
+
+                # Record to database and sheets
+                attendance_service = get_attendance_service()
+                result = await attendance_service.record_boss_reported_attendance(
+                    affected_person=report_data.get("affected_person"),
+                    status_type=report_data.get("status_type"),
+                    affected_date=report_data.get("affected_date"),
+                    reason=report_data.get("reason"),
+                    duration_minutes=report_data.get("duration_minutes"),
+                    reported_by=user_name,
+                    reported_by_id=user_id,
+                )
+
+                if result.get("success"):
+                    # Format success message
+                    status_display = self._get_status_display(report_data.get("status_type"))
+                    response = f"""Attendance recorded.
+
+{result.get('emoji', '📋')} **{report_data.get('affected_person')}**: {status_display}
+📅 Date: {report_data.get('affected_date')}
+{f"📝 Reason: {report_data.get('reason')}" if report_data.get('reason') else ""}
+
+Record ID: {result.get('record_id', 'N/A')}
+{result.get('notification_status', '')}"""
+                    return response.strip(), {"attendance_recorded": True}
+                else:
+                    return f"Failed to record attendance: {result.get('error', 'Unknown error')}", None
+
+            elif msg_lower in ["no", "n", "cancel", "wrong", "nevermind"]:
+                del self._pending_actions[user_id]
+                return "Attendance report cancelled.", None
+
+            else:
+                # They might be providing a correction
+                return "Please confirm with 'yes' or cancel with 'no'.", None
+
+        # New attendance report - analyze with AI
+        prefs = await self.prefs.get_preferences(user_id)
+        team_info = prefs.get_team_info()
+
+        analysis = await self.ai.analyze_attendance_report(
+            user_message=message,
+            team_info=team_info,
+        )
+
+        # Validate we have enough information
+        if not analysis.get("affected_person"):
+            return "I couldn't determine who you're reporting about. Please include the team member's name.", None
+
+        # Build confirmation preview
+        status_type = analysis.get("status_type", "absence_reported")
+        status_display = self._get_status_display(status_type)
+
+        affected_date = analysis.get("affected_date")
+        if not affected_date:
+            from datetime import datetime
+            affected_date = datetime.now().strftime("%Y-%m-%d")
+
+        duration = analysis.get("duration_minutes")
+        event_time = analysis.get("event_time")
+
+        preview = f"""📋 **Attendance Report Preview**
+
+👤 Person: {analysis.get('affected_person')}
+📌 Status: {status_display}
+📅 Date: {affected_date}"""
+
+        if duration:
+            preview += f"\n⏱️ Duration: {duration} minutes"
+        if event_time:
+            preview += f"\n🕐 Time: {event_time}"
+        if analysis.get("reason"):
+            preview += f"\n📝 Reason: {analysis.get('reason')}"
+
+        preview += "\n\nConfirm this report? (yes/no)"
+
+        # Store pending action for confirmation
+        self._pending_actions[user_id] = {
+            "type": "attendance_report",
+            "report_data": {
+                "affected_person": analysis.get("affected_person"),
+                "status_type": status_type,
+                "affected_date": affected_date,
+                "reason": analysis.get("reason"),
+                "duration_minutes": duration,
+                "event_time": event_time,
+            },
+        }
+
+        return preview, None
+
+    def _get_status_display(self, status_type: str) -> str:
+        """Convert status type to display text."""
+        status_map = {
+            "absence_reported": "Absent",
+            "late_reported": "Late",
+            "early_departure_reported": "Left Early",
+            "sick_leave_reported": "Sick Leave",
+            "excused_absence_reported": "Excused Absence",
+        }
+        return status_map.get(status_type, status_type.replace("_", " ").title())
 
     async def _handle_unknown(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str

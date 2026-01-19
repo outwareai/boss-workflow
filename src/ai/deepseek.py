@@ -364,6 +364,62 @@ Your breakdowns are practical, realistic, and help teams work more efficiently."
                 "reason": "AI response parsing failed"
             }
 
+    async def analyze_attendance_report(
+        self,
+        user_message: str,
+        team_info: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Analyze boss's attendance report message to extract details.
+
+        Args:
+            user_message: The boss's message about attendance
+            team_info: Dict of team member names to roles
+
+        Returns:
+            Dictionary with extracted attendance details:
+            - affected_person: Name of the team member
+            - status_type: absence_reported, late_reported, etc.
+            - affected_date: Date in YYYY-MM-DD format
+            - reason: Reason if mentioned
+            - duration_minutes: For late arrivals
+            - event_time: For early departures
+            - confidence: 0.0-1.0
+            - multiple_people: Whether multiple people mentioned
+        """
+        prompt = self.prompts.analyze_attendance_report_prompt(
+            user_message=user_message,
+            team_info=team_info,
+        )
+
+        messages = [
+            {"role": "system", "content": "You analyze attendance reports from bosses and extract structured information. Respond only with JSON."},
+            {"role": "user", "content": prompt}
+        ]
+
+        response = await self._call_api(
+            messages=messages,
+            temperature=0.2,  # Lower temp for accurate extraction
+            response_format={"type": "json_object"}
+        )
+
+        try:
+            result = json.loads(response)
+            logger.info(f"Analyzed attendance report: {result.get('affected_person')} - {result.get('status_type')}")
+            return result
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse attendance report response: {response}")
+            return {
+                "affected_person": None,
+                "status_type": "absence_reported",
+                "affected_date": None,
+                "reason": user_message,
+                "duration_minutes": None,
+                "event_time": None,
+                "confidence": 0.5,
+                "multiple_people": False
+            }
+
 
 # Singleton instance
 deepseek_client = DeepSeekClient()

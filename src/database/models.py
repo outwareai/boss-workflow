@@ -13,7 +13,7 @@ Schema includes:
 - Webhook events
 """
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 from sqlalchemy import (
     Column,
@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     Boolean,
     DateTime,
+    Date,
     ForeignKey,
     Enum as SQLEnum,
     JSON,
@@ -107,6 +108,12 @@ class AttendanceEventTypeEnum(str, enum.Enum):
     CLOCK_OUT = "clock_out"
     BREAK_START = "break_start"
     BREAK_END = "break_end"
+    # Boss-reported attendance events
+    ABSENCE_REPORTED = "absence_reported"
+    LATE_REPORTED = "late_reported"
+    EARLY_DEPARTURE_REPORTED = "early_departure_reported"
+    SICK_LEAVE_REPORTED = "sick_leave_reported"
+    EXCUSED_ABSENCE_REPORTED = "excused_absence_reported"
 
 
 # ==================== PROJECTS ====================
@@ -614,6 +621,15 @@ class AttendanceRecordDB(Base):
     # Sync tracking
     synced_to_sheets: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Boss-reported attendance fields
+    is_boss_reported: Mapped[bool] = mapped_column(Boolean, default=False)
+    reported_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reported_by_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    affected_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    notification_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+
     # Metadata
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -624,6 +640,7 @@ class AttendanceRecordDB(Base):
         Index("idx_attendance_channel", "channel_id"),
         Index("idx_attendance_synced", "synced_to_sheets"),
         Index("idx_attendance_date", "event_time"),  # For daily queries
+        Index("idx_attendance_boss_reported", "is_boss_reported"),
     )
 
 
