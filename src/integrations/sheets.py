@@ -1201,10 +1201,11 @@ class GoogleSheetsIntegration:
                 - date: YYYY-MM-DD
                 - time: HH:MM
                 - name: Staff name
-                - event: in/out/break in/break out
+                - event: in/out/break in/break out (or [BR] prefixed for boss-reported)
                 - late: Yes/No/-
                 - late_min: Minutes late (0 if not late)
-                - channel: dev/admin
+                - channel: dev/admin/boss
+                - notes: Optional notes (for boss-reported entries)
         """
         if not await self.initialize():
             return False
@@ -1221,6 +1222,7 @@ class GoogleSheetsIntegration:
                 record.get('late', '-'),
                 str(record.get('late_min', 0)),
                 record.get('channel', ''),
+                record.get('notes', ''),  # Notes column for boss-reported context
             ]
 
             worksheet.append_row(row_data, value_input_option='USER_ENTERED')

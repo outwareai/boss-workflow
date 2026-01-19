@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-19
-> **Version:** 1.5.6
+> **Version:** 1.5.8
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -93,7 +93,7 @@ Trigger detailed specification generation with keywords:
 You: "SPECSHEETS detailed for: Build authentication system for John"
 ```
 
-**Trigger keywords:** `specsheet`, `spec sheet`, `detailed spec`, `detailed for:`, `full spec`, `comprehensive`
+**Trigger keywords:** `specsheet`, `spec sheet`, `detailed spec`, `detailed for:`, `full spec`, `comprehensive`, `more developed`, `more detailed`, `with details`
 
 **Generates:**
 - Multi-paragraph description (3-5 paragraphs)
@@ -1436,6 +1436,111 @@ ATTENDANCE_SYNC_INTERVAL_MINUTES=15
 3. **Update Team sheet** with Timezone and Work Start columns for each staff member
 4. **Staff sends messages** in their attendance channel
 
+### Boss Attendance Reporting (NEW in v1.5.7)
+
+Allows the boss to report attendance events for team members via natural language in Telegram.
+
+**Example Inputs:**
+- "Mayank didn't come to the meeting today, count as absence"
+- "Sarah was 30 minutes late this morning"
+- "John left early yesterday at 3pm"
+- "Mike is on sick leave today"
+
+**Supported Attendance Types:**
+
+| Status Type | Display | Example Input |
+|-------------|---------|---------------|
+| `absence_reported` | Absent | "didn't come today", "absent", "no show" |
+| `late_reported` | Late (X min) | "was 30 minutes late", "came late" |
+| `early_departure_reported` | Left Early | "left at 3pm", "left early" |
+| `sick_leave_reported` | Sick Leave | "on sick leave", "called in sick" |
+| `excused_absence_reported` | Excused | "day off", "WFH", "approved leave" |
+
+**Flow:**
+1. Boss sends natural language message about attendance
+2. AI extracts: person, status type, date, reason, duration
+3. Bot shows confirmation preview:
+   ```
+   📋 Attendance Report Preview
+
+   👤 Person: Mayank
+   📌 Status: Absent
+   📅 Date: 2026-01-19
+   📝 Reason: missed meeting
+
+   Confirm this report? (yes/no)
+   ```
+4. On "yes" → Records to DB + syncs to Sheets + sends Discord notification
+5. Confirmation sent to boss
+
+**Database Fields Added to `AttendanceRecordDB`:**
+```python
+is_boss_reported: bool = False
+reported_by: Optional[str] = None       # Boss name
+reported_by_id: Optional[str] = None    # Boss ID
+reason: Optional[str] = None            # Reason for absence
+affected_date: Optional[date] = None    # Date being reported
+duration_minutes: Optional[int] = None  # For late arrivals
+notification_sent: bool = False         # Discord notification status
+```
+
+**New Event Types:**
+```python
+class AttendanceEventTypeEnum:
+    # ... existing types ...
+    ABSENCE_REPORTED = "absence_reported"
+    LATE_REPORTED = "late_reported"
+    EARLY_DEPARTURE_REPORTED = "early_departure_reported"
+    SICK_LEAVE_REPORTED = "sick_leave_reported"
+    EXCUSED_ABSENCE_REPORTED = "excused_absence_reported"
+```
+
+**Google Sheets Format:**
+Boss-reported entries appear in ⏰ Time Logs with `[BR]` prefix:
+```
+[BR] Absent | Reported by Boss: missed meeting
+[BR] Late (30min) | Reported by Boss: traffic
+```
+
+**Discord Notification:**
+When boss reports attendance, the team member is always notified in their department's general channel:
+```
+📋 Attendance Report
+
+The boss has recorded the following for @Mayank:
+
+Status: Absent
+Date: 2026-01-19
+Reason: missed meeting
+```
+
+**Service Layer Functions:**
+| Function | Description |
+|----------|-------------|
+| `record_boss_reported_attendance()` | Main entry point for recording boss-reported events |
+| `_find_team_member_by_name()` | Lookup team member by name (partial match) |
+| `_sync_boss_reported_to_sheets()` | Sync to Time Logs with [BR] prefix |
+| `_send_attendance_notification()` | Send Discord notification to team member |
+
+**Repository Function:**
+| Function | Description |
+|----------|-------------|
+| `record_boss_reported_event()` | Create attendance record with boss-reported fields |
+
+**Intent Detection:**
+The `REPORT_ABSENCE` intent is triggered by keywords:
+- absence, absent, didn't come, not coming, missed, no show
+- late, came late, was late, arrived late, minutes late
+- left early, leaving early, early departure, left at
+- sick leave, sick day, on leave, day off, called in sick
+- not present, count as absence, mark as absent
+
+**Edge Cases Handled:**
+1. **Team member not found** → Uses raw name, warns boss
+2. **Relative dates** → Parses "yesterday", "this morning", "last Monday"
+3. **Duplicate reports** → Future: Check for existing report same person/date/type
+4. **Conflicting data** → Future: Warn if already clocked in
+
 ---
 
 ## Configuration
@@ -1854,6 +1959,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.8 | 2026-01-19 | **SPECSHEETS Handler Fix:** Handler now properly checks `detailed_mode` flag from intent detection. When SPECSHEETS/detailed mode detected: skips multi-task splitting, skips clarifier questions, goes directly to comprehensive spec generation. **Extended Trigger Keywords:** Added `more developed`, `more detailed`, `with details`, and `spec sheet` (without "for") as triggers. Previously the message was incorrectly split into multiple tasks. |
 | 1.5.6 | 2026-01-19 | **SPECSHEETS Intent Detection Fix:** Messages with "SPECSHEETS", "spec sheet for", "detailed spec for" now properly trigger task creation with detailed_mode. **Direct Assignee Detection:** Messages starting with team member names (mayank, sarah, john, etc.) now trigger task creation. Previously these fell through to incorrect intents. |
 | 1.5.5 | 2026-01-19 | **Attendance Sheets Sync Fix:** Clock in/out/break events now properly sync to Google Sheets ⏰ Time Logs sheet. Previously events were only saved to PostgreSQL database. |
 | 1.5.4 | 2026-01-18 | **Time Clock / Attendance System:** Staff check-in/check-out via Discord messages ("in", "out", "break"). **Discord Channels:** Dev attendance (1462451610184843449), Admin attendance (1462451782470078628). **Late Detection:** Automatic late detection with ⏰ reaction, timezone-aware calculations, configurable grace period. **Break Toggle:** Single "break" message toggles break on/off (☕/💪 reactions). **New Sheets:** ⏰ Time Logs for attendance records, 📊 Time Reports for weekly summaries. **Team Sheet Update:** Added Timezone and Work Start columns. **Database Model:** AttendanceRecordDB with full event tracking. **Service Layer:** AttendanceService for business logic with timezone handling. **Repository:** AttendanceRepository with daily/weekly summary methods. **Scheduler Jobs:** sync_attendance (every 15 min), weekly_time_report (Monday 10 AM). **Settings:** New attendance config options (channel IDs, work hours, grace period). |

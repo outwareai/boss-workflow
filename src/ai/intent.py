@@ -236,7 +236,12 @@ class IntentDetector:
 
             # SPECSHEETS mode - detailed spec creation for NEW tasks
             # "SPECSHEETS for Mayank:", "spec sheet for john:", "detailed spec for:", "specsheets detailed for:"
-            specsheet_patterns = ["specsheets", "specsheet", "spec sheet for", "detailed spec for", "full spec for", "comprehensive spec"]
+            # Also: "switch spec sheet", "with spec sheet", "spec sheet" (just two words)
+            specsheet_patterns = [
+                "specsheets", "specsheet", "spec sheet", "spec-sheet",
+                "detailed spec", "full spec", "comprehensive spec",
+                "more developed", "more detailed", "with details"
+            ]
             if any(pattern in message for pattern in specsheet_patterns):
                 return UserIntent.CREATE_TASK, {"message": message, "detailed_mode": True}
 

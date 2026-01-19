@@ -884,6 +884,52 @@ _Reactions sync task status automatically!_""",
 
         return results
 
+    # ==================== ATTENDANCE NOTIFICATION ====================
+
+    async def send_attendance_notification(
+        self,
+        embed: Dict,
+        channel_type: str = "dev",
+        mention_user_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Send an attendance notification to the appropriate general channel.
+
+        Args:
+            embed: The Discord embed to send
+            channel_type: "dev" or "admin" to determine which channel
+            mention_user_id: Optional Discord user ID to @mention
+
+        Returns:
+            True if sent successfully
+        """
+        # Determine role category
+        role_category = RoleCategory.ADMIN if channel_type == "admin" else RoleCategory.DEV
+
+        # Get the general channel for this category
+        general_channel_id = self._get_channel_id(ChannelType.GENERAL, role_category)
+        if not general_channel_id:
+            logger.warning(f"No general channel configured for {channel_type}")
+            return False
+
+        # Build content with mention if provided
+        content = None
+        if mention_user_id:
+            content = f"<@{mention_user_id}>"
+
+        message_id = await self.send_message(
+            channel_id=general_channel_id,
+            content=content,
+            embed=embed
+        )
+
+        if message_id:
+            logger.info(f"Sent attendance notification to {channel_type} channel")
+            return True
+
+        logger.warning(f"Failed to send attendance notification to {channel_type} channel")
+        return False
+
 
 # Singleton instance
 discord_integration = DiscordIntegration()

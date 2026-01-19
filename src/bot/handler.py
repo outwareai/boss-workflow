@@ -456,7 +456,24 @@ What would you like to do?""", None
         # Get preferences
         prefs = await self.prefs.get_preferences(user_id)
 
-        # Detect multiple tasks in message
+        # Check for SPECSHEETS/detailed mode from intent detection
+        # When detailed mode, skip multi-task splitting and questions - create directly
+        detailed_mode = data.get("detailed_mode", False)
+
+        if detailed_mode:
+            logger.info(f"SPECSHEETS/detailed mode detected for user {user_id}")
+            # Create single comprehensive task from detailed spec
+            conversation = await self.context.create_conversation(
+                user_id=user_id,
+                chat_id=user_id,
+                original_message=message
+            )
+            # Mark as detailed mode in extracted_info
+            conversation.extracted_info["_detailed_mode"] = True
+            # Go directly to spec generation without questions
+            return await self._create_task_directly(conversation, prefs.to_dict())
+
+        # Detect multiple tasks in message (only for non-detailed mode)
         task_messages = self._split_multiple_tasks(message)
 
         if len(task_messages) > 1:

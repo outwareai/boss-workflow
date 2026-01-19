@@ -73,6 +73,62 @@ class AttendanceRepository:
                 logger.error(f"Error recording attendance: {e}")
                 return None
 
+    async def record_boss_reported_event(
+        self,
+        user_id: str,
+        user_name: str,
+        event_type: str,
+        event_time: datetime,
+        event_time_utc: datetime,
+        is_boss_reported: bool = True,
+        reported_by: Optional[str] = None,
+        reported_by_id: Optional[str] = None,
+        reason: Optional[str] = None,
+        affected_date: Optional[date] = None,
+        duration_minutes: Optional[int] = None,
+    ) -> Optional[AttendanceRecordDB]:
+        """
+        Record a boss-reported attendance event.
+
+        Unlike regular events, these:
+        - Don't have a channel_id/channel_name (reported via Telegram)
+        - Have is_boss_reported=True
+        - Have reported_by and reported_by_id set
+        - May have a reason and affected_date different from event_time
+        """
+        async with self.db.session() as session:
+            try:
+                record = AttendanceRecordDB(
+                    record_id=self._generate_record_id(),
+                    user_id=user_id or "unknown",
+                    user_name=user_name,
+                    event_type=event_type,
+                    event_time=event_time,
+                    event_time_utc=event_time_utc,
+                    channel_id="telegram-boss",
+                    channel_name="boss-report",
+                    is_late=event_type == "late_reported",
+                    late_minutes=duration_minutes or 0,
+                    expected_time=None,
+                    synced_to_sheets=False,
+                    is_boss_reported=is_boss_reported,
+                    reported_by=reported_by,
+                    reported_by_id=reported_by_id,
+                    reason=reason,
+                    affected_date=affected_date,
+                    duration_minutes=duration_minutes,
+                    notification_sent=False,
+                )
+                session.add(record)
+                await session.flush()
+
+                logger.info(f"Recorded boss-reported attendance: {user_name} {event_type} for {affected_date}")
+                return record
+
+            except Exception as e:
+                logger.error(f"Error recording boss-reported attendance: {e}")
+                return None
+
     async def get_user_events_for_date(
         self,
         user_id: str,
