@@ -176,10 +176,14 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         self,
         conversation: ConversationState,
         preferences: Dict[str, Any],
-        team_info: Dict[str, str]
+        team_info: Dict[str, str],
+        detailed_mode: bool = False
     ) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
         Analyze the task request and decide whether to ask questions.
+
+        Args:
+            detailed_mode: If True (SPECSHEETS), always ask PRD-focused questions
 
         Returns:
             Tuple of (should_ask_questions, analysis_result)
@@ -205,6 +209,9 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         if "understood" in analysis:
             conversation.extracted_info.update(analysis["understood"])
 
+        # Mark detailed mode in analysis
+        analysis["detailed_mode"] = detailed_mode
+
         # Check if we have enough information
         can_proceed = analysis.get("can_proceed_without_questions", False)
 
@@ -219,17 +226,24 @@ Only include tasks that are clearly related. Return empty array if no dependenci
                 normalized_questions.append(q)
         analysis["suggested_questions"] = normalized_questions
 
-        # Apply preference overrides
-        can_proceed = self._apply_preference_logic(analysis, preferences, can_proceed)
+        # For SPECSHEETS/detailed mode - always ask questions for comprehensive PRD
+        if detailed_mode:
+            # Don't skip questions for spec sheets - we need thorough conversation
+            can_proceed = False
+            logger.info("Detailed mode: forcing questions for comprehensive PRD")
 
-        # Check urgency - if very urgent, minimize questions
-        if conversation.is_urgent or self._detect_high_urgency(analysis):
-            # For urgent tasks, only ask critical questions
-            analysis["suggested_questions"] = self._filter_critical_questions(
-                analysis.get("suggested_questions", [])
-            )
-            if not analysis["suggested_questions"]:
-                can_proceed = True
+        # Apply preference overrides (only for non-detailed mode)
+        if not detailed_mode:
+            can_proceed = self._apply_preference_logic(analysis, preferences, can_proceed)
+
+            # Check urgency - if very urgent, minimize questions
+            if conversation.is_urgent or self._detect_high_urgency(analysis):
+                # For urgent tasks, only ask critical questions
+                analysis["suggested_questions"] = self._filter_critical_questions(
+                    analysis.get("suggested_questions", [])
+                )
+                if not analysis["suggested_questions"]:
+                    can_proceed = True
 
         return not can_proceed, analysis
 
@@ -305,24 +319,34 @@ Only include tasks that are clearly related. Return empty array if no dependenci
     async def generate_question_message(
         self,
         analysis: Dict[str, Any],
-        preferences: Dict[str, Any]
+        preferences: Dict[str, Any],
+        detailed_mode: bool = False
     ) -> Tuple[str, List[ClarifyingQuestion]]:
         """
         Generate a natural question message for the user.
 
+        Args:
+            detailed_mode: If True, generate PRD-focused questions for spec sheets
+
         Returns:
             Tuple of (message_text, list_of_questions)
         """
-        questions_data = await self.ai.generate_clarifying_questions(
-            analysis=analysis,
-            preferences=preferences,
-            max_questions=self.max_questions_per_round
-        )
+        # For detailed mode, generate PRD-specific questions
+        if detailed_mode or analysis.get("detailed_mode") or analysis.get("force_prd_questions"):
+            questions_data = await self._generate_prd_questions(analysis, preferences)
+        else:
+            questions_data = await self.ai.generate_clarifying_questions(
+                analysis=analysis,
+                preferences=preferences,
+                max_questions=self.max_questions_per_round
+            )
 
         intro = questions_data.get("intro_message", "A few quick questions:")
         questions = questions_data.get("questions", [])
 
         if not questions:
+            if detailed_mode:
+                return "I have enough context. Let me generate a comprehensive spec sheet.", []
             return "I think I have everything I need. Let me generate the task spec.", []
 
         # Build the message
@@ -349,9 +373,97 @@ Only include tasks that are clearly related. Return empty array if no dependenci
                 options=options
             ))
 
-        message_parts.append("Reply with your answers, or /skip to use defaults, or /done to finish.")
+        if detailed_mode:
+            message_parts.append("Answer these questions, or /skip to let me make assumptions, or /done to generate the PRD now.")
+        else:
+            message_parts.append("Reply with your answers, or /skip to use defaults, or /done to finish.")
 
         return "\n".join(message_parts), clarifying_questions
+
+    async def _generate_prd_questions(
+        self,
+        analysis: Dict[str, Any],
+        preferences: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Generate PRD-focused questions for comprehensive spec sheets.
+
+        These questions focus on:
+        - Technical architecture and approach
+        - User flows and interactions
+        - Data models and APIs
+        - Integration points
+        - Success criteria
+        """
+        understood = analysis.get("understood", {})
+
+        # Use AI to generate smart PRD questions
+        prompt = f"""You are helping create a comprehensive PRD (Product Requirements Document).
+
+TASK REQUEST: {understood.get('task_description', 'Unknown task')}
+ASSIGNEE: {understood.get('assignee', 'Not specified')}
+CONTEXT: {analysis}
+
+Generate 3-5 intelligent questions to gather requirements for a detailed spec sheet.
+Focus on:
+1. **Technical Approach**: How should this be built? What's the architecture?
+2. **User Experience**: What's the user flow? What should users see/do?
+3. **Data & Integration**: What data is needed? What systems does this connect to?
+4. **Scope & Priorities**: What's must-have vs nice-to-have? Any constraints?
+5. **Success Criteria**: How do we know it's done right? What metrics matter?
+
+DON'T ask about basic things like priority or deadline - focus on REQUIREMENTS.
+
+Return JSON:
+{{
+    "intro_message": "Let me understand the requirements better for this spec sheet:",
+    "questions": [
+        {{
+            "text": "Smart, specific question about requirements",
+            "options": ["Option A", "Option B", "Option C"],
+            "allow_custom": true
+        }}
+    ]
+}}
+
+Make questions conversational and intelligent, like a senior developer or product manager would ask."""
+
+        try:
+            response = await self.ai._call_api(
+                messages=[
+                    {"role": "system", "content": "You generate intelligent PRD questions. Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1000,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            return json.loads(response)
+        except Exception as e:
+            logger.error(f"Error generating PRD questions: {e}")
+            # Fallback questions
+            return {
+                "intro_message": "Let me understand the requirements better:",
+                "questions": [
+                    {
+                        "text": "What's the main user flow or workflow you envision?",
+                        "options": [],
+                        "allow_custom": True
+                    },
+                    {
+                        "text": "Are there specific technical requirements or constraints?",
+                        "options": ["Use existing stack", "New technology needed", "No constraints"],
+                        "allow_custom": True
+                    },
+                    {
+                        "text": "What systems or services does this need to integrate with?",
+                        "options": [],
+                        "allow_custom": True
+                    }
+                ]
+            }
 
     async def process_user_answers(
         self,

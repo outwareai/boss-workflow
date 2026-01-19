@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-19
-> **Version:** 1.6.0
+> **Version:** 1.6.1
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1959,6 +1959,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6.1 | 2026-01-19 | **Smart AI Conversation for Spec Sheets:** SPECSHEETS mode now asks PRD-focused questions BEFORE generating the document. AI generates 3-5 intelligent questions about: technical approach/architecture, user flows/UX, data models/integrations, scope/priorities, success criteria. Questions are conversational like a senior PM would ask. Bot shows "📋 Spec Sheet Mode" header. Users can /skip to let AI assume, or /done to generate PRD with current info. |
 | 1.6.0 | 2026-01-19 | **Comprehensive PRD Documents:** SPECSHEETS mode now generates FULL specification documents with: (1) 5-paragraph main description (executive summary, business value, technical approach, integrations, success metrics), (2) Each subtask has 1-2 paragraph detailed description with technical approach, components, edge cases, (3) 6-8 detailed acceptance criteria, (4) Technical details section with DB schema, API structure, patterns, performance, security. AI prompt completely rewritten for PRD-level output. |
 | 1.5.9 | 2026-01-19 | **PRD-Style Forum Spec Sheets:** SPECSHEETS tasks now post as proper PRD documents to Discord Forum. Format includes: task metadata, multi-paragraph description, numbered implementation tasks, acceptance criteria checklist, technical considerations, and action buttons. **AI Assistant Conversation:** Preview messages for SPECSHEETS are now more conversational ("I've prepared a comprehensive specification...") rather than robotic. **Forum Thread Title:** Uses 📋 emoji prefix for spec sheets. |
 | 1.5.8 | 2026-01-19 | **SPECSHEETS Handler Fix:** Handler now properly checks `detailed_mode` flag from intent detection. When SPECSHEETS/detailed mode detected: skips multi-task splitting, skips clarifier questions, goes directly to comprehensive spec generation. **Extended Trigger Keywords:** Added `more developed`, `more detailed`, `with details`, and `spec sheet` (without "for") as triggers. Previously the message was incorrectly split into multiple tasks. |

@@ -457,48 +457,50 @@ What would you like to do?""", None
         prefs = await self.prefs.get_preferences(user_id)
 
         # Check for SPECSHEETS/detailed mode from intent detection
-        # When detailed mode, skip multi-task splitting and questions - create directly
         detailed_mode = data.get("detailed_mode", False)
 
-        if detailed_mode:
-            logger.info(f"SPECSHEETS/detailed mode detected for user {user_id}")
-            # Create single comprehensive task from detailed spec
-            conversation = await self.context.create_conversation(
-                user_id=user_id,
-                chat_id=user_id,
-                original_message=message
-            )
-            # Mark as detailed mode in extracted_info
-            conversation.extracted_info["_detailed_mode"] = True
-            # Go directly to spec generation without questions
-            return await self._create_task_directly(conversation, prefs.to_dict())
+        # For detailed mode (SPECSHEETS), skip multi-task splitting but DO ask questions
+        if not detailed_mode:
+            # Detect multiple tasks in message (only for non-detailed mode)
+            task_messages = self._split_multiple_tasks(message)
 
-        # Detect multiple tasks in message (only for non-detailed mode)
-        task_messages = self._split_multiple_tasks(message)
+            if len(task_messages) > 1:
+                # Multiple tasks - handle as batch
+                return await self._handle_batch_tasks(user_id, task_messages, prefs, user_name)
 
-        if len(task_messages) > 1:
-            # Multiple tasks - handle as batch
-            return await self._handle_batch_tasks(user_id, task_messages, prefs, user_name)
-
-        # Single task - normal flow
+        # Create conversation
         conversation = await self.context.create_conversation(
             user_id=user_id,
             chat_id=user_id,
             original_message=message
         )
 
-        # Analyze with AI
+        # Mark detailed mode in conversation for later use
+        if detailed_mode:
+            logger.info(f"SPECSHEETS/detailed mode detected for user {user_id}")
+            conversation.extracted_info["_detailed_mode"] = True
+
+        # Analyze with AI - for detailed mode, always ask PRD-focused questions
         should_ask, analysis = await self.clarifier.analyze_and_decide(
             conversation=conversation,
             preferences=prefs.to_dict(),
-            team_info=prefs.get_team_info()
+            team_info=prefs.get_team_info(),
+            detailed_mode=detailed_mode  # Pass flag for PRD-specific analysis
         )
 
+        # For SPECSHEETS, we want to have a conversation even if message seems complete
+        if detailed_mode and not should_ask:
+            # Force asking PRD-specific questions for spec sheets
+            should_ask = True
+            analysis = analysis or {}
+            analysis["force_prd_questions"] = True
+
         if should_ask:
-            # Generate questions
+            # Generate questions (PRD-focused if detailed_mode)
             question_msg, questions = await self.clarifier.generate_question_message(
                 analysis=analysis,
-                preferences=prefs.to_dict()
+                preferences=prefs.to_dict(),
+                detailed_mode=detailed_mode
             )
             for q in questions:
                 conversation.add_question(q.question, q.options)
@@ -506,7 +508,13 @@ What would you like to do?""", None
             conversation.stage = ConversationStage.AWAITING_ANSWER
             await self.context.save_conversation(conversation)
 
-            return f"Got it! Quick questions:\n\n{question_msg}", None
+            # Different intro for spec sheets
+            if detailed_mode:
+                intro = "📋 **Spec Sheet Mode**\n\nI'll help you create a comprehensive PRD. Let me ask a few questions:\n\n"
+            else:
+                intro = "Got it! Quick questions:\n\n"
+
+            return f"{intro}{question_msg}", None
         else:
             # Can create directly
             return await self._create_task_directly(conversation, prefs.to_dict())
