@@ -276,17 +276,11 @@ Only include tasks that are clearly related. Return empty array if no dependenci
                 normalized_questions.append(q)
         analysis["suggested_questions"] = normalized_questions
 
-        # If no questions remain after self-answering, proceed
-        if not normalized_questions:
-            can_proceed = True
-            logger.info("All questions self-answered by AI - proceeding without user input")
-
-        # OVERRIDE: If user explicitly said "no questions", skip ALL questions
-        if user_said_no_questions:
-            can_proceed = True
-            analysis["suggested_questions"] = []
-            normalized_questions = []
-            logger.info("User explicitly requested no questions - proceeding directly")
+        # MANDATORY: AI should ALWAYS self-answer and proceed without bothering user
+        # Only ask user in TRULY exceptional cases (which should be almost never)
+        can_proceed = True
+        analysis["suggested_questions"] = []
+        logger.info("Self-answering is MANDATORY - proceeding without user questions")
 
         # Apply preference overrides (only for non-detailed mode)
         if not detailed_mode:
@@ -434,8 +428,9 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         if not questions and not missing_info:
             return {}, []
 
-        # Build prompt for AI to self-answer
-        prompt = f"""You are an intelligent assistant that makes smart decisions.
+        # Build prompt for AI to self-answer EVERYTHING - NEVER ask user
+        prompt = f"""You are a DECISIVE AI assistant. Your job is to ANSWER ALL QUESTIONS YOURSELF.
+NEVER return questions for the user. Fill in ALL missing information using best practices.
 
 ORIGINAL TASK REQUEST:
 "{original_message}"
@@ -443,47 +438,42 @@ ORIGINAL TASK REQUEST:
 CURRENT ANALYSIS:
 {analysis.get("understood", {})}
 
-QUESTIONS THAT WERE GOING TO BE ASKED TO USER:
+QUESTIONS THAT NEED TO BE SELF-ANSWERED (DO NOT ASK USER):
 {questions}
 
-MISSING INFORMATION:
+MISSING INFORMATION TO FILL IN:
 {missing_info}
 
-YOUR JOB: Answer these questions YOURSELF using:
-1. Context clues from the original message
-2. Best practices for this type of task
-3. Industry standards and common patterns
-4. Logical inference
+MANDATORY SELF-ANSWERING RULES:
+- Priority: Default "medium". Use "high" if urgent/ASAP/critical mentioned. Use "low" if "when you can"
+- Deadline: Extract from message. If none, leave null (don't guess)
+- Effort: Simple task=2-4 hours, Medium feature=1-2 days, Complex system=1-2 weeks
+- Architecture: ALWAYS pick industry-standard, flexible approach
+- Scope: Include core features for v1. Edge cases are "nice to have"
+- Technical: Pick proven, maintainable solutions
+- UI/UX: Modern, clean, user-friendly defaults
+- Integration: Standard REST APIs, webhooks where needed
+- Testing: Include basic happy path tests
 
-RULES FOR SELF-ANSWERING:
-- Priority: If not specified, default to "medium" for normal tasks, "high" if urgent words present
-- Deadline: If "tomorrow" mentioned, that's the deadline. If not mentioned, can leave null
-- Effort: Estimate based on task complexity (simple=hours, medium=1-2 days, complex=1-2 weeks)
-- Architecture: Choose the most flexible/standard approach for the tech stack
-- Scope: Include obvious features, exclude edge cases for v1
-- Technical choices: Pick industry-standard solutions
-
-ONLY ASK USER if:
-- It's a true business decision (e.g., "should we notify users via email or SMS?")
-- Multiple valid approaches with no clear winner
-- User-specific preference that can't be inferred
+YOU MUST ANSWER EVERYTHING. The boss is busy and WILL NOT answer questions.
+Use your best judgment based on context + best practices.
 
 Respond with JSON:
 {{
     "self_answered": {{
-        "field_name": "your answer/decision",
-        "priority": "medium or high based on context",
-        "estimated_effort": "X hours/days based on complexity",
-        "technical_approach": "your recommended approach if relevant",
-        "scope_decisions": "what to include/exclude if relevant"
+        "priority": "medium/high/low based on context",
+        "estimated_effort": "realistic time estimate",
+        "technical_approach": "your recommended approach",
+        "architecture": "system design decisions",
+        "scope": "what's included in v1",
+        "acceptance_criteria_additions": ["any criteria you'd add"],
+        "implementation_notes": "helpful notes for developer"
     }},
-    "remaining_questions": [
-        {{"question": "Only truly ambiguous questions", "field": "field_name", "why_asking": "why AI couldn't decide"}}
-    ],
-    "reasoning": "Brief explanation of decisions made"
+    "remaining_questions": [],
+    "reasoning": "Brief explanation of your decisions"
 }}
 
-Be decisive! A good AI assistant makes smart defaults, not endless questions."""
+CRITICAL: remaining_questions MUST be empty array []. Answer EVERYTHING yourself."""
 
         try:
             response = await self.ai._call_api(
