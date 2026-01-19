@@ -182,26 +182,25 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         """
         Analyze the task request and decide whether to ask questions.
 
+        INTELLIGENT LOOP: AI tries to answer its own questions first using
+        context and best practices. Only asks user for truly ambiguous things.
+
         Args:
-            detailed_mode: If True (SPECSHEETS), always ask PRD-focused questions
+            detailed_mode: If True (SPECSHEETS), generate comprehensive PRD
 
         Returns:
             Tuple of (should_ask_questions, analysis_result)
         """
-        # Check if message is already comprehensive (detailed description provided)
         message = conversation.original_message
-        is_comprehensive = self._is_comprehensive_message(message)
-        if is_comprehensive and not detailed_mode:
-            logger.info("Message is comprehensive - skipping questions")
 
         # First, detect and apply templates
         template_info = self.detect_and_apply_template(conversation, preferences)
         if template_info:
             logger.info(f"Template detected: {template_info['template_name']}")
 
-        # Get analysis from AI
+        # Get initial analysis from AI
         analysis = await self.ai.analyze_task_request(
-            user_message=conversation.original_message,
+            user_message=message,
             preferences=preferences,
             team_info=team_info,
             conversation_history=conversation.get_conversation_context()
@@ -218,11 +217,43 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         # Mark detailed mode in analysis
         analysis["detailed_mode"] = detailed_mode
 
-        # Check if we have enough information
+        # ==================== INTELLIGENT SELF-ANSWERING LOOP ====================
+        # Instead of asking user, try to answer questions ourselves first
+        # using context, best practices, and intelligent inference
+
+        suggested_questions = analysis.get("suggested_questions", [])
+        missing_info = analysis.get("missing_info", [])
+
+        if suggested_questions or missing_info:
+            logger.info(f"AI identified {len(suggested_questions)} questions, {len(missing_info)} missing fields")
+
+            # Try to self-answer using AI intelligence
+            self_answered, remaining_questions = await self._intelligent_self_answer(
+                original_message=message,
+                analysis=analysis,
+                preferences=preferences,
+                team_info=team_info,
+                detailed_mode=detailed_mode
+            )
+
+            if self_answered:
+                # Merge self-answered info into analysis
+                if "understood" not in analysis:
+                    analysis["understood"] = {}
+                analysis["understood"].update(self_answered)
+                conversation.extracted_info.update(self_answered)
+                logger.info(f"AI self-answered {len(self_answered)} fields: {list(self_answered.keys())}")
+
+            # Update questions to only what AI couldn't answer
+            analysis["suggested_questions"] = remaining_questions
+            analysis["missing_info"] = [m for m in missing_info if m not in self_answered]
+
+        # ==================== END INTELLIGENT LOOP ====================
+
+        # Check if we can proceed now
         can_proceed = analysis.get("can_proceed_without_questions", False)
 
-        # Normalize suggested_questions to dict format early
-        # AI may return strings or dicts, we need dicts for filtering
+        # Normalize remaining questions
         raw_questions = analysis.get("suggested_questions", [])
         normalized_questions = []
         for q in raw_questions:
@@ -232,17 +263,10 @@ Only include tasks that are clearly related. Return empty array if no dependenci
                 normalized_questions.append(q)
         analysis["suggested_questions"] = normalized_questions
 
-        # If message is comprehensive (detailed description), skip questions
-        # This applies to BOTH regular and spec sheet mode - if user gave detail, don't ask!
-        if is_comprehensive:
+        # If no questions remain after self-answering, proceed
+        if not normalized_questions:
             can_proceed = True
-            analysis["suggested_questions"] = []  # Clear questions
-            logger.info("Comprehensive message detected - proceeding without questions (even for spec sheets)")
-        elif detailed_mode:
-            # Only ask questions for spec sheets if the message was SHORT/VAGUE
-            # User didn't provide much detail, so we need to gather requirements
-            can_proceed = False
-            logger.info("Detailed mode with vague message: asking questions for PRD")
+            logger.info("All questions self-answered by AI - proceeding without user input")
 
         # Apply preference overrides (only for non-detailed mode)
         if not detailed_mode:
@@ -363,6 +387,110 @@ Only include tasks that are clearly related. Return empty array if no dependenci
             return True
 
         return False
+
+    async def _intelligent_self_answer(
+        self,
+        original_message: str,
+        analysis: Dict[str, Any],
+        preferences: Dict[str, Any],
+        team_info: Dict[str, str],
+        detailed_mode: bool = False
+    ) -> Tuple[Dict[str, Any], List[Dict]]:
+        """
+        INTELLIGENT SELF-ANSWERING LOOP
+
+        AI tries to answer its own questions using:
+        1. Context from the original message
+        2. Best practices for the task type
+        3. Industry standards
+        4. Logical inference
+
+        Returns:
+            Tuple of (self_answered_fields, remaining_questions_for_user)
+        """
+        questions = analysis.get("suggested_questions", [])
+        missing_info = analysis.get("missing_info", [])
+
+        if not questions and not missing_info:
+            return {}, []
+
+        # Build prompt for AI to self-answer
+        prompt = f"""You are an intelligent assistant that makes smart decisions.
+
+ORIGINAL TASK REQUEST:
+"{original_message}"
+
+CURRENT ANALYSIS:
+{analysis.get("understood", {})}
+
+QUESTIONS THAT WERE GOING TO BE ASKED TO USER:
+{questions}
+
+MISSING INFORMATION:
+{missing_info}
+
+YOUR JOB: Answer these questions YOURSELF using:
+1. Context clues from the original message
+2. Best practices for this type of task
+3. Industry standards and common patterns
+4. Logical inference
+
+RULES FOR SELF-ANSWERING:
+- Priority: If not specified, default to "medium" for normal tasks, "high" if urgent words present
+- Deadline: If "tomorrow" mentioned, that's the deadline. If not mentioned, can leave null
+- Effort: Estimate based on task complexity (simple=hours, medium=1-2 days, complex=1-2 weeks)
+- Architecture: Choose the most flexible/standard approach for the tech stack
+- Scope: Include obvious features, exclude edge cases for v1
+- Technical choices: Pick industry-standard solutions
+
+ONLY ASK USER if:
+- It's a true business decision (e.g., "should we notify users via email or SMS?")
+- Multiple valid approaches with no clear winner
+- User-specific preference that can't be inferred
+
+Respond with JSON:
+{{
+    "self_answered": {{
+        "field_name": "your answer/decision",
+        "priority": "medium or high based on context",
+        "estimated_effort": "X hours/days based on complexity",
+        "technical_approach": "your recommended approach if relevant",
+        "scope_decisions": "what to include/exclude if relevant"
+    }},
+    "remaining_questions": [
+        {{"question": "Only truly ambiguous questions", "field": "field_name", "why_asking": "why AI couldn't decide"}}
+    ],
+    "reasoning": "Brief explanation of decisions made"
+}}
+
+Be decisive! A good AI assistant makes smart defaults, not endless questions."""
+
+        try:
+            response = await self.ai._call_api(
+                messages=[
+                    {"role": "system", "content": "You are a decisive AI that makes smart decisions based on context and best practices."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            result = json.loads(response)
+
+            self_answered = result.get("self_answered", {})
+            remaining = result.get("remaining_questions", [])
+            reasoning = result.get("reasoning", "")
+
+            if reasoning:
+                logger.info(f"AI self-answer reasoning: {reasoning[:200]}...")
+
+            return self_answered, remaining
+
+        except Exception as e:
+            logger.error(f"Error in intelligent self-answer: {e}")
+            # On error, don't ask questions - just proceed with what we have
+            return {}, []
 
     async def generate_question_message(
         self,
