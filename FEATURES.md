@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-20
-> **Version:** 1.7.2
+> **Version:** 1.7.5
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -63,7 +63,7 @@ Scheduler ──► Reminders/Reports ──────────────
 | `/done` | Finalize task with current info | `/done` |
 | `/cancel` | Abort current task creation | `/cancel` |
 
-### Multi-Task Handling (NEW in v1.4)
+### Multi-Task Handling (NEW in v1.4, Enhanced in v1.7.5)
 
 When you send multiple tasks in one message, the bot handles them **sequentially**:
 
@@ -84,6 +84,26 @@ Bot: "✅ Task 1 created!
 ```
 
 **Separators detected:** "then", "and also", "another task", "next task", numbered lists
+
+**Single-Assignee Multi-Task (NEW in v1.7.5):**
+
+You can now send multiple tasks for the **same person** using ordinal phrases:
+
+```
+You: "Tasks for Mayank no questions:
+      First one will be to add the referral code
+      Second one correct the error sequence
+      Third one run Stripe payment testing
+      Fourth one fix the email and deploy"
+
+Bot: "📋 Task 1 of 4
+      Title: Add referral code functionality
+      Assignee: Mayank
+      ..."
+```
+
+**Ordinal patterns detected:** "First one", "Second task", "Third item", "1st one", "2nd task", etc.
+**Preamble detection:** "Tasks for [name]" or "For [name]" at the start auto-assigns all tasks to that person
 
 ### SPECSHEETS Mode (NEW in v1.4)
 
@@ -1959,6 +1979,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7.5 | 2026-01-20 | **Single-Assignee Multi-Task Support:** Fixed multi-task detection to properly split tasks when sending multiple tasks for the SAME person. **Ordinal Pattern Enhancement:** Now detects "First one", "Second one", "Third one" etc. (not just "First task"). Also handles misspellings like "Forth" for "Fourth". **Preamble Assignee Detection:** Messages starting with "Tasks for Mayank" or "For Sarah" now automatically assign all split tasks to that person. Example: "Tasks for Mayank no questions: First one add referral code, Second one fix errors" → Creates 2 separate tasks both assigned to Mayank. Previously this incorrectly created 1 task with 6 subtasks. |
 | 1.7.2 | 2026-01-20 | **🚀 MANDATORY SELF-ANSWERING:** AI now ALWAYS answers its own questions - NEVER bothers you. The self-answering loop is now mandatory, not optional. AI fills in ALL missing info using best practices: priority (medium default), effort (based on complexity), architecture (industry-standard), scope (core v1 features), technical approach (proven solutions). The `remaining_questions` is ALWAYS empty - AI decides everything itself. |
 | 1.7.1 | 2026-01-20 | **"No Questions" Override:** When you explicitly say "no need to ask questions", "just use what I'm giving you", "don't ask questions", etc., the bot now SKIPS ALL QUESTIONS regardless of what the AI thinks. This is a hard override. **Discord Error Feedback:** If Discord posting fails, you now see "⚠️ Discord posting failed - check bot config" in the response instead of silent failure. |
 | 1.7.0 | 2026-01-20 | **🧠 INTELLIGENT SELF-ANSWERING AI LOOP:** Major upgrade - AI now tries to answer its own questions before bothering you. (1) AI analyzes what info is missing (2) Uses context + best practices to fill gaps itself (3) Only asks user for truly ambiguous decisions. Example: Instead of asking "What priority?", AI infers from message context. Instead of asking "What architecture?", AI picks industry-standard approach. The result: Fewer questions, smarter defaults, faster task creation. |

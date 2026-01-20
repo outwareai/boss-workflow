@@ -2356,20 +2356,55 @@ When done, tell me "I finished {task.id}" and show me proof!"""
         - "Mayank fix login, Sarah update docs, John test API"
         - "1. Task one 2. Task two 3. Task three"
         - "Task one, also task two, and task three"
+        - "Tasks for Mayank: First one ..., Second one ..., Third one ..."
         """
         import re
 
         message = message.strip()
+        original_message = message  # Keep original in case we don't split
 
-        # Pattern 0: Explicit "First task", "Second task" phrases
+        # Extract preamble assignee context (e.g., "Tasks for Mayank no questions pleased")
+        # This allows the boss to specify one assignee for all tasks
+        # Pattern: "Tasks for [name] [anything until] First/Second/etc. one/task"
+        team_names_lower = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+        preamble_assignee = None
+        preamble_end = 0
+        preamble_match = re.match(
+            r'^(?:tasks?\s+)?for\s+(\w+)\b.*?(?=(?:first|second|third|forth|fourth|fifth|sixth|1st|2nd|3rd|4th|5th|6th)\s+(?:one|task|item|thing))',
+            message, re.IGNORECASE
+        )
+        if preamble_match:
+            potential_name = preamble_match.group(1).lower()
+            if potential_name in team_names_lower:
+                preamble_assignee = preamble_match.group(1).capitalize()
+                preamble_end = preamble_match.end()
+                logger.info(f"Detected preamble assignee: {preamble_assignee}")
+
+        # Pattern 0: Explicit ordinal phrases like "First task", "Second one", "1st task"
         # This is a CLEAR signal from the user that they want multiple tasks
-        ordinal_pattern = r'(?:first|second|third|fourth|fifth)\s+task\s+(?:will\s+be|is|:)'
-        if re.search(ordinal_pattern, message, re.IGNORECASE):
+        # Matches: "First one will be", "Second one", "Third one:", "1st task:", "Forth one" (misspelling)
+        # Also handles cases without explicit "is/will be" like "Second one correct the..."
+        ordinal_words = r'(?:first|second|third|fourth|forth|fifth|sixth|seventh|eighth|ninth|tenth|1st|2nd|3rd|4th|5th|6th)'
+        ordinal_nouns = r'(?:task|one|item|thing)'
+        # Optional verb connector - many messages skip "is" and go directly to action
+        ordinal_verbs = r'(?:\s*(?:will\s+be(?:\s+to)?|is(?:\s+to)?|:))?\s*'
+        ordinal_pattern = ordinal_words + r'\s+' + ordinal_nouns + ordinal_verbs
+
+        # Check if at least 2 ordinal markers are present
+        # Use message after preamble for splitting but before preamble for context
+        split_message = message[preamble_end:].strip() if preamble_end > 0 else message
+        ordinal_count = len(re.findall(ordinal_words + r'\s+' + ordinal_nouns, split_message, re.IGNORECASE))
+        if ordinal_count >= 2:
             # Split on ordinal task markers
-            parts = re.split(r'(?:first|second|third|fourth|fifth)\s+task\s+(?:will\s+be|is|:)\s*', message, flags=re.IGNORECASE)
+            split_pattern = ordinal_words + r'\s+' + ordinal_nouns + ordinal_verbs
+            parts = re.split(split_pattern, split_message, flags=re.IGNORECASE)
             tasks = [p.strip() for p in parts if p.strip() and len(p.strip()) > 10]
             if len(tasks) >= 2:
-                logger.info(f"Detected {len(tasks)} tasks via ordinal pattern (First task, Second task...)")
+                # If we have a preamble assignee, prepend it to each task
+                if preamble_assignee:
+                    tasks = [f"[For {preamble_assignee}] {t}" for t in tasks]
+                    logger.info(f"Prepended assignee '{preamble_assignee}' to {len(tasks)} tasks")
+                logger.info(f"Detected {len(tasks)} tasks via ordinal pattern (First one, Second one...)")
                 return tasks
 
         # Pattern 1: Numbered list (1. 2. 3. or 1) 2) 3))
