@@ -2007,39 +2007,79 @@ Record ID: {result.get('record_id', 'N/A')}
         if not target_name:
             return "I couldn't determine who you want me to contact. Please specify the team member's name.", None
 
-        # Extract the actual question/message to send
-        # Remove common prefixes like "can you ask mayank" to get the actual content
-        question_content = original_request
-        prefixes_to_remove = [
-            rf"(?:can\s+you\s+)?ask\s+{target_name}\s+",
-            rf"(?:can\s+you\s+)?tell\s+{target_name}\s+(?:to\s+)?",
-            rf"(?:can\s+you\s+)?message\s+{target_name}\s+",
-            rf"directly\s+(?:ask|tell|message)\s+{target_name}\s+",
-            rf"send\s+{target_name}\s+(?:a\s+)?message\s*",
-            rf"check\s+with\s+{target_name}\s+(?:about\s+)?",
-            rf"ping\s+{target_name}\s+(?:about\s+)?",
-        ]
+        logger.info(f"Direct communication to {target_name}, original: {original_request[:100]}...")
 
-        import re
-        for prefix in prefixes_to_remove:
-            question_content = re.sub(prefix, "", question_content, flags=re.IGNORECASE).strip()
+        # Use AI to reformulate the message to be directed AT the team member
+        # Transform "ask Mayank what tasks are left" → "Hey Mayank, what tasks do you have left?"
+        reformulated_message = await self._reformulate_for_team_member(
+            target_name=target_name,
+            boss_request=original_request
+        )
 
-        # If nothing left after removing prefix, use the original
-        if not question_content or len(question_content) < 5:
-            question_content = original_request
-
-        logger.info(f"Direct communication to {target_name}: {question_content[:100]}...")
+        logger.info(f"Reformulated message for {target_name}: {reformulated_message[:100]}...")
 
         # Send via Discord
-        success, response_msg = await self.discord.ask_team_member_status(
+        success, response_msg = await self.discord.send_direct_message_to_team(
             target_name=target_name,
-            question=question_content
+            message_content=reformulated_message,
+            from_boss=True
         )
 
         if success:
-            return f"📨 Message sent to **{target_name}** via Discord.\n\n_{question_content[:200]}{'...' if len(question_content) > 200 else ''}_\n\nThey'll see it in their team channel.", {"message_sent": True, "target": target_name}
+            return f"📨 Message sent to **{target_name}** via Discord.\n\n_{reformulated_message[:300]}{'...' if len(reformulated_message) > 300 else ''}_", {"message_sent": True, "target": target_name}
         else:
             return f"Failed to send message to {target_name}: {response_msg}", None
+
+    async def _reformulate_for_team_member(self, target_name: str, boss_request: str) -> str:
+        """
+        Use AI to reformulate the boss's request into a proper message for the team member.
+
+        Transform: "ask Mayank what tasks are left and to submit proof"
+        Into: "Hey Mayank, what tasks do you have left? Please also submit proof for the ones you've completed."
+        """
+        prompt = f"""Transform this boss request into a direct, friendly message for the team member.
+
+BOSS SAID: "{boss_request}"
+TARGET: {target_name}
+
+RULES:
+1. Address {target_name} directly (use "you", "your", not "he/him/his")
+2. Be professional but friendly
+3. Make it a clear request/question
+4. Keep all the original requirements
+5. Don't mention "the boss" - just state the request naturally
+
+EXAMPLES:
+- "ask Mayank what tasks are left" → "Hey Mayank, what tasks do you have left to complete?"
+- "tell Sarah to submit proof for completed work" → "Hi Sarah, please submit proof for the tasks you've completed."
+- "ask John about the API status and to update me" → "Hey John, what's the status on the API? Please send me an update when you can."
+- "can you ask Mayank what tasks are left directly and to submit proof of his work for the tasks he completed" → "Hey Mayank, what tasks do you have remaining? Also, please submit proof of your work for the tasks you've already completed."
+
+Return ONLY the reformulated message, nothing else."""
+
+        try:
+            response = await self.ai.client.chat.completions.create(
+                model=self.ai.model,
+                messages=[
+                    {"role": "system", "content": "You reformulate messages to be direct and friendly. Return only the reformulated message."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=300
+            )
+
+            reformulated = response.choices[0].message.content.strip()
+
+            # Remove quotes if AI wrapped it
+            if reformulated.startswith('"') and reformulated.endswith('"'):
+                reformulated = reformulated[1:-1]
+
+            return reformulated
+
+        except Exception as e:
+            logger.error(f"Failed to reformulate message: {e}")
+            # Fallback: basic reformulation
+            return f"Hey {target_name}, {boss_request}"
 
     async def _handle_unknown(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str

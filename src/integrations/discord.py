@@ -1121,35 +1121,50 @@ _Reactions sync task status automatically!_""",
 
         # Try to get Discord user ID for mention
         discord_user_id = None
-        try:
-            from ..database.repositories import get_team_repository
-            team_repo = get_team_repository()
-            member = await team_repo.find_member(target_name)
-            if member and member.discord_id:
-                discord_user_id = member.discord_id
-        except Exception as e:
-            logger.debug(f"Could not get Discord ID for {target_name}: {e}")
 
-        # Also try Google Sheets
+        # First try Google Sheets (more reliable, always up-to-date)
+        try:
+            from .sheets import sheets_integration
+            team_members = await sheets_integration.get_all_team_members()
+            logger.info(f"Looking for {target_name} in {len(team_members)} team members")
+
+            for member in team_members:
+                member_name = member.get("Name", "").strip().lower()
+                # Try multiple possible column names for Discord ID
+                discord_id = (
+                    member.get("Discord ID") or
+                    member.get("Discord Id") or
+                    member.get("DiscordID") or
+                    member.get("discord_id") or
+                    member.get("Discord") or
+                    ""
+                )
+
+                if member_name == target_name.lower() or target_name.lower() in member_name:
+                    logger.info(f"Found team member: {member_name}, Discord ID: '{discord_id}'")
+                    if discord_id and str(discord_id).strip():
+                        discord_user_id = str(discord_id).strip()
+                    break
+        except Exception as e:
+            logger.warning(f"Could not get Discord ID from Sheets for {target_name}: {e}")
+
+        # Fallback to database
         if not discord_user_id:
             try:
-                from .sheets import sheets_integration
-                team_members = await sheets_integration.get_all_team_members()
-                for member in team_members:
-                    member_name = member.get("Name", "").strip().lower()
-                    if member_name == target_name.lower() or target_name.lower() in member_name:
-                        discord_user_id = member.get("Discord ID", "")
-                        break
+                from ..database.repositories import get_team_repository
+                team_repo = get_team_repository()
+                member = await team_repo.find_member(target_name)
+                if member and member.discord_id:
+                    discord_user_id = str(member.discord_id).strip()
+                    logger.info(f"Found Discord ID from database: {discord_user_id}")
             except Exception as e:
-                logger.debug(f"Could not get Discord ID from Sheets for {target_name}: {e}")
+                logger.debug(f"Could not get Discord ID from database for {target_name}: {e}")
 
-        # Build the embed
+        # Build the embed - clean and direct
         embed = {
-            "title": f"📨 Message from Boss" if from_boss else "📨 Direct Message",
             "description": message_content,
             "color": 0x3498DB,
             "timestamp": datetime.now().isoformat(),
-            "footer": {"text": f"To: {target_name} | Reply in this channel"}
         }
 
         # Build mention content
