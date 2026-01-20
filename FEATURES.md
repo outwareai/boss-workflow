@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-20
-> **Version:** 1.8.3
+> **Version:** 2.0.0
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -272,12 +272,25 @@ The bot understands natural language without requiring slash commands:
 | `generate_daily_standup()` | Create standup summaries |
 | `generate_weekly_summary()` | Generate weekly reports |
 
-### Intent Detection (`src/ai/intent.py`)
+### Intent Detection (`src/ai/intent.py`) - AI-FIRST (v2.0)
 
-- Fast pattern matching for common intents
-- Context-aware matching based on conversation stage
-- AI-powered fallback for complex messages
-- Confidence scoring
+**Architecture (NEW in v2.0):**
+```
+Message → Slash Command? → Direct mapping
+              ↓ No
+        Context State? → Direct mapping (awaiting confirmation, etc.)
+              ↓ No
+        AI Classification → Structured JSON → Validate → Execute
+```
+
+**Features:**
+- AI is the brain - classifies ALL natural language messages
+- Returns structured JSON: `{intent, confidence, reasoning, extracted_data}`
+- No more brittle regex patterns to maintain
+- Handles ANY phrasing naturally
+- Self-healing through examples in prompt
+- Confidence scoring with low-confidence fallback
+- Clear distinctions in prompt (communication vs task creation)
 
 ### Task Clarifier (`src/ai/clarifier.py`)
 
@@ -1982,6 +1995,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0.0 | 2026-01-20 | **🧠 AI-FIRST INTENT DETECTION (MAJOR REWRITE):** Complete architectural overhaul - the AI is now the brain for ALL intent classification. No more brittle regex patterns that miss edge cases. **New Flow:** (1) Slash commands → direct mapping, (2) Context states (awaiting confirmation) → direct mapping, (3) Everything else → AI classifies with full context and examples. **Benefits:** Handles ANY phrasing naturally, understands context and nuance, no more regex maintenance, self-healing through examples in the prompt. **The AI prompt** includes detailed distinctions (e.g., "ask Mayank what..." = communication vs "Mayank fix the bug" = task creation) and returns structured JSON with intent, confidence, reasoning, and extracted data. This eliminates the constant "pattern didn't match" bugs. |
 | 1.8.3 | 2026-01-20 | **🗣️ Direct Team Communication:** New feature - boss can now directly communicate with team members via Discord WITHOUT creating a task. Say "ask Mayank what tasks are left" or "tell Sarah to update me" and the bot sends a message to their team Discord channel (with @mention if Discord ID is configured). **New Intent:** `ASK_TEAM_MEMBER` detects patterns like "ask [name]", "tell [name] to", "message [name]", "check with [name]", "ping [name]". **Discord Integration:** New `send_direct_message_to_team()` and `ask_team_member_status()` methods route messages to the correct department channel based on team member's role. Previously "ask Mayank what tasks are left" would incorrectly create a TASK instead of actually asking Mayank. |
 | 1.8.2 | 2026-01-20 | **Preserve Task Details:** Fixed AI extraction to preserve ALL details from user's message instead of oversimplifying. If you say "test payment recurring, retrial, what data is passed" - ALL THREE now appear in acceptance criteria. Titles now up to 120 chars to fit more detail. **Better Deadline Parsing:** Fixed "tonight at 10PM" and similar time expressions. Added patterns for "by 5pm", "before 6PM", etc. "After tomorrow" now correctly means day-after-tomorrow. |
 | 1.8.0 | 2026-01-20 | **🏗️ MAJOR ARCHITECTURE REWRITE:** New clean `TaskProcessor` with 4-step flow: (1) **PARSE** - Deterministic splitting, no AI; (2) **EXTRACT** - AI with strict rules to only extract, not generate; (3) **VALIDATE** - Ensure extracted fields match input; (4) **CONFIRM** - Show each task for confirmation. Completely eliminates AI hallucination by separating parsing from AI extraction. The AI can no longer invent "task management system" when you say "add referral code". |

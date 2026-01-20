@@ -1,10 +1,18 @@
 """
-Intent detection for natural language processing.
+AI-First Intent Detection System (v2.0)
 
-Interprets what the user wants from their message without commands.
+The AI is the brain - it handles ALL intent detection.
+No more brittle regex patterns that miss edge cases.
+
+Architecture:
+1. Slash commands → Direct mapping (unambiguous)
+2. Context states → Direct mapping (awaiting confirmation, etc.)
+3. Everything else → AI classifies with full context
 """
 
 import logging
+import json
+import re
 from typing import Dict, Any, Optional, List, Tuple
 from enum import Enum
 from openai import AsyncOpenAI
@@ -77,13 +85,22 @@ class UserIntent(str, Enum):
     UNKNOWN = "unknown"
 
 
+# Team names for extraction (can be extended)
+TEAM_NAMES = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+
+
 class IntentDetector:
     """
-    Detects user intent from natural language messages.
+    AI-First Intent Detection System.
 
-    Uses a combination of:
-    1. Quick pattern matching for obvious intents
-    2. AI inference for ambiguous messages
+    The AI is the brain - it classifies ALL messages (except slash commands
+    and context-aware states which are unambiguous).
+
+    Benefits:
+    - Handles ANY phrasing naturally
+    - Understands context and nuance
+    - No more regex maintenance
+    - Self-healing through examples in prompt
     """
 
     def __init__(self):
@@ -101,9 +118,14 @@ class IntentDetector:
         """
         Detect the user's intent from their message.
 
+        Flow:
+        1. Slash commands → Direct mapping (unambiguous)
+        2. Context states → Direct mapping (awaiting confirmation, etc.)
+        3. Everything else → AI classifies
+
         Args:
             message: The user's message
-            context: Current conversation context (stage, pending items, etc.)
+            context: Current conversation context
 
         Returns:
             Tuple of (intent, extracted_data)
@@ -111,418 +133,332 @@ class IntentDetector:
         message_lower = message.lower().strip()
         context = context or {}
 
-        # Quick pattern matching first (fast path)
-        intent, data = self._quick_match(message_lower, context)
+        # === STEP 1: SLASH COMMANDS (unambiguous, no AI needed) ===
+        if message_lower.startswith("/"):
+            intent, data = self._handle_slash_command(message_lower)
+            if intent != UserIntent.UNKNOWN:
+                logger.info(f"Slash command detected: {intent.value}")
+                return intent, data
+
+        # === STEP 2: CONTEXT-AWARE STATES (unambiguous responses) ===
+        intent, data = self._handle_context_state(message_lower, context)
         if intent != UserIntent.UNKNOWN:
+            logger.info(f"Context state handled: {intent.value}")
             return intent, data
 
-        # Use AI for complex intent detection
-        return await self._ai_detect(message, context)
+        # === STEP 3: AI CLASSIFICATION (the brain) ===
+        logger.info(f"Sending to AI for classification: {message[:100]}...")
+        return await self._ai_classify(message, context)
 
-    def _quick_match(
+    def _handle_slash_command(self, message: str) -> Tuple[UserIntent, Dict[str, Any]]:
+        """Handle explicit slash commands - these are unambiguous."""
+
+        if not message.startswith("/"):
+            return UserIntent.UNKNOWN, {}
+
+        cmd_parts = message[1:].split(None, 1)
+        cmd = cmd_parts[0].lower() if cmd_parts else ""
+        args = cmd_parts[1] if len(cmd_parts) > 1 else ""
+
+        # Direct command mappings
+        slash_commands = {
+            "help": (UserIntent.HELP, {}),
+            "start": (UserIntent.GREETING, {}),
+            "status": (UserIntent.CHECK_STATUS, {}),
+            "daily": (UserIntent.CHECK_STATUS, {"filter": "today"}),
+            "weekly": (UserIntent.CHECK_STATUS, {"filter": "week"}),
+            "overdue": (UserIntent.CHECK_OVERDUE, {}),
+            "pending": (UserIntent.CHECK_STATUS, {"filter": "pending"}),
+            "cancel": (UserIntent.CANCEL, {}),
+            "skip": (UserIntent.SKIP, {}),
+            "done": (UserIntent.SKIP, {}),
+            "templates": (UserIntent.LIST_TEMPLATES, {}),
+            "team": (UserIntent.CHECK_STATUS, {"filter": "team"}),
+            "archive": (UserIntent.ARCHIVE_TASKS, {}),
+        }
+
+        if cmd in slash_commands:
+            return slash_commands[cmd]
+
+        # Commands with arguments
+        if cmd == "task" and args:
+            return UserIntent.CREATE_TASK, {"message": args}
+        if cmd == "urgent" and args:
+            return UserIntent.CREATE_TASK, {"message": args, "priority": "urgent"}
+        if cmd == "search" and args:
+            return UserIntent.SEARCH_TASKS, {"query": args}
+        if cmd in ["complete", "finish"] and args:
+            task_ids = [t.strip() for t in args.replace(",", " ").split()]
+            return UserIntent.BULK_COMPLETE, {"task_ids": task_ids}
+        if cmd == "clear" and args:
+            task_ids = [t.strip() for t in args.replace(",", " ").split()]
+            return UserIntent.CLEAR_TASKS, {"task_ids": task_ids}
+        if cmd == "spec" and args:
+            task_id = args.strip().upper()
+            return UserIntent.GENERATE_SPEC, {"task_id": task_id}
+
+        return UserIntent.UNKNOWN, {}
+
+    def _handle_context_state(
         self,
         message: str,
         context: Dict[str, Any]
     ) -> Tuple[UserIntent, Dict[str, Any]]:
-        """Fast pattern matching for obvious intents."""
+        """
+        Handle context-aware states where the expected response is clear.
+        These don't need AI because the conversation flow is predefined.
+        """
 
-        current_stage = context.get("stage", "")
         is_boss = context.get("is_boss", False)
         awaiting_validation = context.get("awaiting_validation", False)
         collecting_proof = context.get("collecting_proof", False)
         awaiting_notes = context.get("awaiting_notes", False)
         awaiting_confirm = context.get("awaiting_confirm", False)
 
-        # === SLASH COMMAND HANDLING ===
-        if message.startswith("/"):
-            cmd_parts = message[1:].split(None, 1)  # Remove / and split
-            cmd = cmd_parts[0].lower() if cmd_parts else ""
-            args = cmd_parts[1] if len(cmd_parts) > 1 else ""
-
-            # Map slash commands to intents
-            slash_commands = {
-                "help": (UserIntent.HELP, {}),
-                "start": (UserIntent.GREETING, {}),
-                "status": (UserIntent.CHECK_STATUS, {}),
-                "daily": (UserIntent.CHECK_STATUS, {"filter": "today"}),
-                "weekly": (UserIntent.CHECK_STATUS, {"filter": "week"}),
-                "overdue": (UserIntent.CHECK_OVERDUE, {}),
-                "pending": (UserIntent.CHECK_STATUS, {"filter": "pending"}),
-                "cancel": (UserIntent.CANCEL, {}),
-                "skip": (UserIntent.SKIP, {}),
-                "done": (UserIntent.SKIP, {}),  # Finalize with current info
-                "templates": (UserIntent.LIST_TEMPLATES, {}),
-                "team": (UserIntent.CHECK_STATUS, {"filter": "team"}),
-            }
-
-            if cmd in slash_commands:
-                return slash_commands[cmd]
-
-            # Commands with arguments
-            if cmd == "task" and args:
-                return UserIntent.CREATE_TASK, {"message": args}
-            if cmd == "urgent" and args:
-                return UserIntent.CREATE_TASK, {"message": args, "priority": "urgent"}
-            if cmd == "search" and args:
-                return UserIntent.SEARCH_TASKS, {"query": args}
-            if cmd in ["complete", "finish"] and args:
-                task_ids = [t.strip() for t in args.replace(",", " ").split()]
-                return UserIntent.BULK_COMPLETE, {"task_ids": task_ids}
-            if cmd == "clear" and args:
-                task_ids = [t.strip() for t in args.replace(",", " ").split()]
-                return UserIntent.CLEAR_TASKS, {"task_ids": task_ids}
-            if cmd == "archive":
-                return UserIntent.ARCHIVE_TASKS, {}
-            if cmd == "spec" and args:
-                # Extract task ID from args
-                task_id = args.strip().upper()
-                return UserIntent.GENERATE_SPEC, {"task_id": task_id}
-
-            # If command not recognized, let it fall through to AI detection
-
-        # === CONTEXT-AWARE MATCHING ===
-
-        # Boss responding to validation
+        # Boss responding to task validation
         if is_boss and awaiting_validation:
-            if any(w in message for w in ["yes", "approved", "looks good", "lgtm", "great", "perfect", "nice", "good job", "well done", "ship it", "✅", "👍"]):
+            positive = ["yes", "approved", "looks good", "lgtm", "great", "perfect",
+                       "nice", "good job", "well done", "ship it", "✅", "👍", "ok", "okay"]
+            negative = ["no", "reject", "needs", "fix", "change", "wrong",
+                       "issue", "problem", "❌", "👎", "redo"]
+
+            if any(w in message for w in positive):
                 return UserIntent.APPROVE_TASK, {"approval_message": message}
-            if any(w in message for w in ["no", "reject", "needs", "fix", "change", "wrong", "issue", "problem", "❌", "👎"]):
+            if any(w in message for w in negative):
                 return UserIntent.REJECT_TASK, {"feedback": message}
 
-        # Collecting proof stage
+        # Staff collecting proof
         if collecting_proof:
-            if any(w in message for w in ["done", "that's all", "thats all", "that is all", "finish", "send it", "submit", "no more"]):
+            done_words = ["done", "that's all", "thats all", "that is all",
+                         "finish", "send it", "submit", "no more"]
+            if any(w in message for w in done_words):
                 return UserIntent.DONE_ADDING_PROOF, {}
             if message.startswith("http"):
                 return UserIntent.SUBMIT_PROOF, {"proof_type": "link", "content": message}
-            # Assume any text during proof collection is a note/proof
+            # Any text during proof collection is proof/notes
             return UserIntent.SUBMIT_PROOF, {"proof_type": "note", "content": message}
 
         # Awaiting notes
         if awaiting_notes:
-            if any(w in message for w in ["skip", "no", "none", "nope", "nothing"]):
+            skip_words = ["skip", "no", "none", "nope", "nothing"]
+            if any(w in message for w in skip_words):
                 return UserIntent.ADD_NOTES, {"notes": None}
             return UserIntent.ADD_NOTES, {"notes": message}
 
         # Awaiting confirmation
         if awaiting_confirm:
-            if any(w in message for w in ["yes", "y", "confirm", "ok", "send", "submit", "do it", "go", "yep", "yeah"]):
+            yes_words = ["yes", "y", "confirm", "ok", "send", "submit", "do it", "go", "yep", "yeah"]
+            no_words = ["no", "cancel", "stop", "wait", "hold"]
+            if any(w in message for w in yes_words):
                 return UserIntent.CONFIRM_SUBMISSION, {}
-            if any(w in message for w in ["no", "cancel", "stop", "wait", "hold"]):
+            if any(w in message for w in no_words):
                 return UserIntent.CANCEL, {}
-
-        # === BOSS ON TELEGRAM = TASK CREATION ===
-        # Boss on Telegram is ALWAYS creating/managing tasks, never submitting proof
-
-        if is_boss:
-            # Detect formatted task specs (from copy-pasted previews or manual entry)
-            if "title:" in message and any(field in message for field in ["assignee:", "priority:", "deadline:", "description:"]):
-                return UserIntent.CREATE_TASK, {"message": message, "is_formatted_spec": True}
-
-            # "Submit new task", "create new task", "add a task", "task for X:" = task creation for boss
-            task_creation_phrases = [
-                "submit new task", "create new task", "new task:", "add new task", "submit task",
-                "add a task", "add task", "create a task", "create task", "make a task", "make task"
-            ]
-            if any(phrase in message for phrase in task_creation_phrases):
-                return UserIntent.CREATE_TASK, {"message": message}
-
-            # "task for john:" or "task for sarah to" patterns
-            import re
-            task_for_pattern = re.match(r'task for\s+(\w+)\s*[:\-]?\s*(.+)?', message, re.IGNORECASE)
-            if task_for_pattern:
-                return UserIntent.CREATE_TASK, {"message": message}
-
-            # Boss saying "submit" with task details = creating a task, NOT proof
-            if "submit" in message and any(w in message for w in ["task", "title", "assignee", "mayank", "sarah", "john"]):
-                return UserIntent.CREATE_TASK, {"message": message}
-
-            # SPECSHEETS mode - detailed spec creation for NEW tasks
-            # "SPECSHEETS for Mayank:", "spec sheet for john:", "detailed spec for:", "specsheets detailed for:"
-            # Also: "switch spec sheet", "with spec sheet", "spec sheet" (just two words)
-            specsheet_patterns = [
-                "specsheets", "specsheet", "spec sheet", "spec-sheet",
-                "detailed spec", "full spec", "comprehensive spec",
-                "more developed", "more detailed", "with details"
-            ]
-            if any(pattern in message for pattern in specsheet_patterns):
-                return UserIntent.CREATE_TASK, {"message": message, "detailed_mode": True}
-
-            # Direct assignee mention with task description = task creation
-            # "Mayank: build the API", "john fix the bug", "sarah create homepage"
-            team_names = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
-            for name in team_names:
-                if message.startswith(name) or f"{name}:" in message or f"{name} " in message[:50]:
-                    # Likely a task assignment
-                    return UserIntent.CREATE_TASK, {"message": message}
-
-        # Greetings
-        if message in ["hi", "hello", "hey", "yo", "sup", "morning", "evening"]:
-            return UserIntent.GREETING, {}
-
-        # Help
-        if message in ["help", "?", "what can you do", "commands", "how does this work"]:
-            return UserIntent.HELP, {}
-
-        # Cancel/skip
-        if message in ["cancel", "nevermind", "never mind", "stop", "abort", "forget it"]:
-            return UserIntent.CANCEL, {}
-        if message in ["skip", "whatever", "default", "idk", "don't care", "dont care"]:
-            return UserIntent.SKIP, {}
-
-        # Task completion signals
-        done_phrases = ["i finished", "i'm done", "im done", "completed", "done with",
-                       "finished the", "i did", "task done", "all done", "wrapped up"]
-        if any(phrase in message for phrase in done_phrases):
-            return UserIntent.TASK_DONE, {"message": message}
-
-        # Status checks
-        if any(w in message for w in ["status", "what's pending", "whats pending", "pending tasks", "overview"]):
-            return UserIntent.CHECK_STATUS, {}
-        if any(w in message for w in ["overdue", "late", "past due", "missed deadline"]):
-            return UserIntent.CHECK_OVERDUE, {}
-
-        # Search - natural language patterns
-        search_patterns = [
-            "what's", "whats", "what is", "show me", "find", "search",
-            "working on", "assigned to", "tasks for", "list tasks"
-        ]
-        if any(pattern in message for pattern in search_patterns):
-            # Check if asking about a person
-            if "@" in message or any(w in message for w in ["working on", "assigned to", "tasks for"]):
-                return UserIntent.SEARCH_TASKS, {"query": message}
-
-        # Templates
-        if any(w in message for w in ["templates", "what templates", "show templates", "list templates"]):
-            return UserIntent.LIST_TEMPLATES, {}
-
-        # Spec generation - natural language
-        spec_phrases = ["generate spec", "create spec", "spec sheet", "make spec", "spec for"]
-        if any(phrase in message for phrase in spec_phrases):
-            # Try to extract task ID
-            import re
-            task_id_match = re.search(r'TASK-[\w\-]+', message, re.IGNORECASE)
-            task_id = task_id_match.group(0).upper() if task_id_match else None
-            return UserIntent.GENERATE_SPEC, {"task_id": task_id, "message": message}
-
-        # Bulk operations - natural language
-        bulk_complete_phrases = [
-            "mark these", "mark all", "complete these", "finish these",
-            "mark as done", "these are done", "all done", "mark done"
-        ]
-        if any(phrase in message for phrase in bulk_complete_phrases):
-            # Extract task IDs if present
-            import re
-            task_ids = re.findall(r'TASK-[\w\-]+', message, re.IGNORECASE)
-            return UserIntent.BULK_COMPLETE, {"task_ids": task_ids, "message": message}
-
-        # Email recap - prioritize this for email-related personal requests
-        if any(w in message for w in ["email", "emails", "inbox", "mail", "gmail"]):
-            # Any request to see/get/check emails is a recap, not a task
-            if any(w in message for w in ["recap", "summary", "summarize", "check", "show", "what",
-                                           "any", "unread", "fetch", "get", "read", "see", "my",
-                                           "last", "recent", "latest", "new", "today"]):
-                return UserIntent.EMAIL_RECAP, {}
-
-        # Delay
-        if any(w in message for w in ["delay", "postpone", "push back", "move to", "reschedule"]):
-            return UserIntent.DELAY_TASK, {"message": message}
-
-        # Team
-        if " is our " in message or " is the " in message or " handles " in message:
-            return UserIntent.ADD_TEAM_MEMBER, {"message": message}
-
-        # Teaching/preferences - be more specific to avoid false positives
-        teach_patterns = [
-            "when i say", "when i mention", "always ask about",
-            "my default is", "set default to", "default priority is",
-            "remember that", "learn that", "teach you"
-        ]
-        if any(phrase in message for phrase in teach_patterns):
-            return UserIntent.TEACH_PREFERENCE, {"message": message}
-
-        # Clear/delete/archive tasks - BEFORE general task creation matching
-        # Check for specific task IDs first
-        import re
-        task_ids = re.findall(r'TASK-[\w\-]+', message, re.IGNORECASE)
-
-        clear_keywords = ["clear", "delete", "remove", "wipe", "reset"]
-
-        # Check if message starts with or prominently features clear intent
-        clear_first = message.split()[0] if message.split() else ""
-        is_clear_intent = clear_first in clear_keywords
-
-        if task_ids and any(kw in message for kw in clear_keywords):
-            # Clearing specific tasks
-            return UserIntent.CLEAR_TASKS, {"task_ids": task_ids, "message": message}
-
-        # Clear all tasks - more comprehensive detection
-        clear_patterns = [
-            # Exact phrases
-            "clear all", "clear the", "clear tasks", "clear existing", "clear every",
-            "delete all", "delete the tasks", "delete tasks", "delete existing", "delete every",
-            "remove all tasks", "remove all the tasks", "remove existing", "remove every",
-            "wipe all", "wipe tasks", "wipe everything",
-            "reset tasks", "reset all",
-            # Natural patterns
-            "get rid of all", "get rid of the tasks", "clean up tasks", "clean tasks",
-            "start fresh", "fresh start", "empty the tasks", "empty tasks"
-        ]
-        if any(phrase in message for phrase in clear_patterns):
-            return UserIntent.CLEAR_TASKS, {"task_ids": [], "message": message}
-
-        # Also catch "clear" at start of message followed by task-related words
-        if is_clear_intent and any(w in message for w in ["task", "all", "everything", "existing"]):
-            return UserIntent.CLEAR_TASKS, {"task_ids": [], "message": message}
-
-        archive_phrases = ["archive completed", "archive done", "archive old", "archive tasks"]
-        if any(phrase in message for phrase in archive_phrases):
-            return UserIntent.ARCHIVE_TASKS, {"message": message}
-
-        # Direct team communication - BEFORE task creation to avoid false positives
-        # "ask Mayank about X", "tell Sarah to Y", "message John about Z"
-        if is_boss:
-            team_names = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
-
-            # Patterns for direct communication (not task creation)
-            direct_comm_patterns = [
-                # "ask [name] [what/about/if/to]"
-                r'^(?:can\s+you\s+)?ask\s+(' + '|'.join(team_names) + r')\s+(?:what|about|if|to|directly|for)',
-                # "tell [name] to [action]" or "tell [name] about"
-                r'^(?:can\s+you\s+)?tell\s+(' + '|'.join(team_names) + r')\s+(?:to|about|that)',
-                # "message [name] [about]"
-                r'^(?:can\s+you\s+)?message\s+(' + '|'.join(team_names) + r')\s+',
-                # "directly [ask/tell/message] [name]"
-                r'^directly\s+(?:ask|tell|message)\s+(' + '|'.join(team_names) + r')\s+',
-                # "send [name] a message"
-                r'^send\s+(' + '|'.join(team_names) + r')\s+(?:a\s+)?message',
-                # "check with [name] about/if"
-                r'^check\s+with\s+(' + '|'.join(team_names) + r')\s+(?:about|if)',
-                # "ping [name] about"
-                r'^ping\s+(' + '|'.join(team_names) + r')\s+(?:about|to|and)',
-            ]
-
-            for pattern in direct_comm_patterns:
-                match = re.search(pattern, message, re.IGNORECASE)
-                if match:
-                    target_name = match.group(1)
-                    logger.info(f"Detected direct communication intent: ask/tell {target_name}")
-                    return UserIntent.ASK_TEAM_MEMBER, {
-                        "target_name": target_name.capitalize(),
-                        "message": message,
-                        "original_request": message
-                    }
-
-        # Boss attendance reporting - BEFORE task creation to avoid false positives
-        if is_boss:
-            absence_keywords = [
-                "absent", "absence", "didn't come", "didnt come", "not coming",
-                "missed", "missed work", "no show", "no-show",
-                "late", "came late", "was late", "arrived late", "minutes late",
-                "left early", "leaving early", "early departure", "left at",
-                "sick leave", "sick day", "on leave", "day off", "called in sick",
-                "not present", "count as absence", "mark as absent",
-                "didn't show", "not in office", "not in today", "wasn't here",
-                "took off", "taking off", "on sick", "out sick"
-            ]
-            if any(kw in message for kw in absence_keywords):
-                return UserIntent.REPORT_ABSENCE, {"message": message}
-
-        # If message mentions a person and an action, likely a task
-        action_words = ["needs to", "should", "must", "has to", "can you",
-                       "fix", "build", "create", "make", "update", "add", "check",
-                       "assign", "review", "test", "deploy", "finish", "complete",
-                       "write", "send", "prepare", "setup", "configure"]
-        if any(word in message for word in action_words):
-            # But not if it's about clearing/deleting
-            if not any(w in message for w in ["clear", "delete", "remove", "wipe", "reset"]):
-                return UserIntent.CREATE_TASK, {"message": message}
-
-        # Status checks - more patterns
-        status_patterns = ["show me", "list tasks", "show tasks", "my tasks", "all tasks", "the tasks"]
-        if any(p in message for p in status_patterns):
-            return UserIntent.CHECK_STATUS, {}
 
         return UserIntent.UNKNOWN, {}
 
-    async def _ai_detect(
+    async def _ai_classify(
         self,
         message: str,
         context: Dict[str, Any]
     ) -> Tuple[UserIntent, Dict[str, Any]]:
-        """Use AI for complex intent detection."""
+        """
+        AI-powered intent classification - the brain of the system.
 
-        prompt = f"""Analyze this message and determine the user's intent.
+        The AI analyzes the message and returns:
+        - intent: The classified intent
+        - confidence: How sure the AI is (0-1)
+        - extracted_data: Relevant data extracted from the message
+        """
+
+        is_boss = context.get("is_boss", False)
+        team_names_str = ", ".join(TEAM_NAMES)
+
+        prompt = f"""You are an intent classification system for a task management bot.
+Analyze the message and determine what the user wants.
 
 MESSAGE: "{message}"
 
 CONTEXT:
-- Current stage: {context.get('stage', 'none')}
-- Is boss: {context.get('is_boss', False)}
-- Awaiting validation response: {context.get('awaiting_validation', False)}
-- Collecting proof: {context.get('collecting_proof', False)}
+- Is boss (can create tasks, approve work): {is_boss}
+- Known team members: {team_names_str}
 
-POSSIBLE INTENTS:
-- create_task: User wants to create/assign a task TO SOMEONE ELSE
-- task_done: User is saying they finished a task
-- submit_proof: User is providing proof of work
-- approve_task: Boss is approving submitted work
-- reject_task: Boss is rejecting with feedback
-- check_status: User wants status overview
-- email_recap: User wants to see/read/check their OWN emails (not delegate)
-- report_absence: Boss reporting attendance event (absence, late, early departure, sick leave)
-- ask_team_member: Boss wants to DIRECTLY communicate with team member (ask question, send message) - NOT create a task
-- delay_task: User wants to delay/postpone a task
-- add_team: User is telling about a team member
-- teach: User wants bot to learn something
-- greeting: Just saying hello
-- help: Asking for help
-- cancel: Wants to cancel current action
-- unknown: Can't determine intent
+AVAILABLE INTENTS (pick exactly one):
 
-IMPORTANT: If user asks about their OWN emails (fetch, recap, check, see emails), use email_recap NOT create_task.
-Only use create_task when user wants to DELEGATE something to another person.
-If boss says someone "didn't come", "was late", "left early", "sick leave", use report_absence.
-If boss says "ask Mayank what...", "tell Sarah to...", "message John about...", use ask_team_member NOT create_task.
-The key difference: ask_team_member = communicate/question, create_task = assign work.
+**TASK MANAGEMENT:**
+- create_task: Boss wants to ASSIGN WORK to someone. Keywords: "needs to", "should", "fix", "build", "create", "implement", "add feature", "deploy", task descriptions with assignee names.
+- clear_tasks: Delete/remove tasks. Keywords: "clear", "delete", "remove", "wipe" + tasks.
+- archive_tasks: Archive completed tasks.
+- delay_task: Postpone a task. Keywords: "delay", "postpone", "push back", "reschedule".
+- bulk_complete: Mark multiple tasks done. Keywords: "mark done", "complete these".
 
-Respond with JSON:
+**DIRECT COMMUNICATION (NOT task creation):**
+- ask_team_member: Boss wants to COMMUNICATE with team member (ask question, send message, request update). This is NOT assigning work - it's asking/telling/messaging. Keywords: "ask [name]", "tell [name]", "message [name]", "check with [name]", "ping [name]".
+
+**STATUS & INFO:**
+- check_status: Want overview of tasks. Keywords: "status", "pending", "what's happening", "overview".
+- check_overdue: Check overdue tasks. Keywords: "overdue", "late", "past due".
+- search_tasks: Find specific tasks. Keywords: "what's [name] working on", "find", "search".
+- list_templates: Show available templates.
+- email_recap: Check own emails (not delegate). Keywords: "my emails", "inbox", "check mail".
+
+**TEAM & ATTENDANCE:**
+- add_team: Registering team member info. Pattern: "[name] is our [role]".
+- report_absence: Boss reporting attendance (absence, late, sick). Keywords: "didn't come", "was late", "sick leave", "absent".
+
+**TASK COMPLETION (usually staff, not boss):**
+- task_done: Saying they finished a task. Keywords: "I finished", "done with", "completed".
+- submit_proof: Providing proof of work (screenshots, links).
+- approve_task: Boss approving submitted work.
+- reject_task: Boss rejecting with feedback.
+
+**CONVERSATION:**
+- greeting: Just saying hello ("hi", "hello", "hey").
+- help: Asking for help ("help", "what can you do").
+- cancel: Cancel current action ("cancel", "nevermind").
+- skip: Skip/use defaults ("skip", "whatever").
+- teach: Teaching bot preferences ("when I say X, do Y").
+- generate_spec: Generate spec for existing task.
+
+**CRITICAL DISTINCTIONS:**
+
+1. **ask_team_member vs create_task:**
+   - "ask Mayank what tasks are left" → ask_team_member (QUESTION/COMMUNICATION)
+   - "Mayank needs to finish the tasks" → create_task (ASSIGNING WORK)
+   - "tell Sarah to update me on progress" → ask_team_member (REQUEST FOR INFO)
+   - "Sarah update the homepage" → create_task (ASSIGNING WORK)
+   - "message John about the API status" → ask_team_member (COMMUNICATION)
+   - "John fix the API bug" → create_task (ASSIGNING WORK)
+
+2. **The key difference:**
+   - ask_team_member = COMMUNICATE (ask, tell, message, ping, check with)
+   - create_task = ASSIGN WORK (needs to, should, fix, build, create)
+
+3. **Spec sheets / detailed tasks:**
+   - If message contains "specsheets", "spec sheet", "detailed spec", "PRD" → create_task with detailed_mode: true
+
+RESPOND WITH ONLY THIS JSON (no other text):
 {{
-    "intent": "the_intent",
-    "confidence": 0.9,
+    "intent": "intent_name",
+    "confidence": 0.95,
+    "reasoning": "Brief explanation of why this intent",
     "extracted_data": {{
-        "task_description": "if creating task",
-        "person_mentioned": "name if any",
-        "feedback": "if rejecting",
-        "other_relevant_data": "..."
+        "message": "original message for task creation",
+        "target_name": "person name if ask_team_member",
+        "original_request": "what to send if ask_team_member",
+        "task_ids": ["TASK-001"] if specific tasks mentioned,
+        "query": "search query if searching",
+        "detailed_mode": true/false for spec sheets,
+        "priority": "urgent/high/medium/low if mentioned",
+        "filter": "today/week/pending if status filter"
     }}
-}}"""
+}}
+
+Only include relevant fields in extracted_data. Remove null/empty fields."""
 
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You detect user intent from messages. Respond only with JSON."},
+                    {
+                        "role": "system",
+                        "content": "You are a precise intent classifier. Return ONLY valid JSON, no markdown, no explanation outside JSON."
+                    },
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
                 max_tokens=500
             )
 
-            import json
-            result = json.loads(response.choices[0].message.content)
+            # Parse the response
+            response_text = response.choices[0].message.content.strip()
+
+            # Clean up response if it has markdown code blocks
+            if response_text.startswith("```"):
+                response_text = response_text.split("```")[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
+                response_text = response_text.strip()
+
+            result = json.loads(response_text)
 
             intent_str = result.get("intent", "unknown")
+            confidence = result.get("confidence", 0.5)
+            reasoning = result.get("reasoning", "")
+            extracted_data = result.get("extracted_data", {})
+
+            # Clean up extracted_data - remove None/empty values
+            extracted_data = {k: v for k, v in extracted_data.items() if v is not None and v != "" and v != []}
+
+            # Log the AI's decision
+            logger.info(f"AI classified: {intent_str} (confidence: {confidence})")
+            logger.debug(f"AI reasoning: {reasoning}")
+
+            # Validate intent
             try:
                 intent = UserIntent(intent_str)
             except ValueError:
+                logger.warning(f"AI returned invalid intent: {intent_str}")
                 intent = UserIntent.UNKNOWN
 
-            return intent, result.get("extracted_data", {})
+            # Low confidence fallback
+            if confidence < 0.5:
+                logger.warning(f"Low confidence ({confidence}) - treating as unknown")
+                return UserIntent.UNKNOWN, {"message": message, "ai_suggested": intent_str}
 
+            # Post-processing for specific intents
+            extracted_data = self._post_process_data(intent, message, extracted_data)
+
+            return intent, extracted_data
+
+        except json.JSONDecodeError as e:
+            logger.error(f"AI returned invalid JSON: {e}")
+            logger.error(f"Response was: {response_text[:500] if 'response_text' in locals() else 'N/A'}")
+            return UserIntent.UNKNOWN, {"message": message}
         except Exception as e:
             logger.error(f"AI intent detection failed: {e}")
-            return UserIntent.UNKNOWN, {}
+            return UserIntent.UNKNOWN, {"message": message}
+
+    def _post_process_data(
+        self,
+        intent: UserIntent,
+        message: str,
+        data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Post-process extracted data for specific intents."""
+
+        # Ensure message is always included for task creation
+        if intent == UserIntent.CREATE_TASK:
+            data["message"] = message
+
+        # Extract task IDs if present
+        task_ids = re.findall(r'TASK-[\w\-]+', message, re.IGNORECASE)
+        if task_ids and "task_ids" not in data:
+            data["task_ids"] = [t.upper() for t in task_ids]
+
+        # For ask_team_member, ensure we have the target and request
+        if intent == UserIntent.ASK_TEAM_MEMBER:
+            if "target_name" not in data:
+                # Try to extract from message
+                for name in TEAM_NAMES:
+                    if name.lower() in message.lower():
+                        data["target_name"] = name.capitalize()
+                        break
+            if "original_request" not in data:
+                data["original_request"] = message
+            data["message"] = message
+
+        # For clear_tasks, ensure task_ids is a list
+        if intent == UserIntent.CLEAR_TASKS:
+            if "task_ids" not in data:
+                data["task_ids"] = task_ids if task_ids else []
+            data["message"] = message
+
+        # For search, ensure query exists
+        if intent == UserIntent.SEARCH_TASKS:
+            if "query" not in data:
+                data["query"] = message
+
+        return data
 
     def is_photo_proof(self, has_photo: bool, context: Dict[str, Any]) -> bool:
         """Check if a photo should be treated as proof."""
