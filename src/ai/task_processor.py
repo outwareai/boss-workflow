@@ -99,18 +99,28 @@ class TaskParser:
                 break
 
         # Extract "Tasks for [Name]" or "For [Name]" preamble
+        # Pattern: Match "for [name]" followed by ANY text until we hit an ordinal pattern
+        # Use .*? (non-greedy any char) with lookahead to stop at ordinal
         preamble_pattern = (
             r'^(?:tasks?\s+)?for\s+(' + '|'.join(self.TEAM_NAMES) + r')\b'
-            r'[^a-z]*?'  # Allow any non-letter chars (like "no questions pleased")
+            r'.*?'  # Any characters (non-greedy) including "no questions pleased"
             r'(?=' + self.ORDINAL_WORDS + r'\s+' + self.ORDINAL_NOUNS + r')'
         )
 
-        match = re.match(preamble_pattern, message, re.IGNORECASE)
+        match = re.match(preamble_pattern, message, re.IGNORECASE | re.DOTALL)
         if match:
             metadata["preamble_assignee"] = match.group(1).capitalize()
             # Remove preamble from message
             message = message[match.end():].strip()
             logger.info(f"Extracted preamble assignee: {metadata['preamble_assignee']}")
+        else:
+            # Fallback: Try simpler pattern - just "for [name]" at start
+            simple_pattern = r'^(?:tasks?\s+)?for\s+(' + '|'.join(self.TEAM_NAMES) + r')\b\s*'
+            simple_match = re.match(simple_pattern, message, re.IGNORECASE)
+            if simple_match:
+                metadata["preamble_assignee"] = simple_match.group(1).capitalize()
+                logger.info(f"Extracted preamble assignee (simple): {metadata['preamble_assignee']}")
+                # Don't remove from message in simple case - let ordinal split handle it
 
         return message, metadata
 
