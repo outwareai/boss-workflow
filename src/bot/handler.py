@@ -491,12 +491,16 @@ What would you like to do?""", None
 
         # For detailed mode (SPECSHEETS), skip multi-task splitting but DO ask questions
         if not detailed_mode:
-            # Detect multiple tasks in message (only for non-detailed mode)
-            task_messages = self._split_multiple_tasks(message)
+            # Use the new clean TaskProcessor for multi-task detection and parsing
+            from ..ai.task_processor import TaskProcessor
+            processor = TaskProcessor(self.clarifier.ai)
 
-            if len(task_messages) > 1:
-                # Multiple tasks - handle as batch
-                return await self._handle_batch_tasks(user_id, task_messages, prefs, user_name)
+            task_specs, metadata = await processor.process_message(message)
+
+            if len(task_specs) > 1:
+                # Multiple tasks - handle as batch with pre-processed specs
+                logger.info(f"TaskProcessor found {len(task_specs)} tasks")
+                return await self._handle_batch_tasks_v2(user_id, task_specs, metadata, prefs, user_name)
 
         # Create conversation
         conversation = await self.context.create_conversation(
@@ -2558,6 +2562,61 @@ When done, tell me "I finished {task.id}" and show me proof!"""
 
         batch["awaiting_confirm"] = True
         self._batch_tasks[user_id] = batch
+
+        # Show FIRST task only
+        return self._format_sequential_task_preview(batch, 0), None
+
+    async def _handle_batch_tasks_v2(
+        self, user_id: str, task_specs: List[Dict], metadata: Dict, prefs, user_name: str
+    ) -> Tuple[str, None]:
+        """
+        Handle multiple tasks with PRE-PROCESSED specs from TaskProcessor.
+
+        This is the cleaner v2 approach where:
+        1. Tasks are already parsed and split (deterministically)
+        2. AI extraction already happened with strict rules
+        3. Validation already ensured specs match input
+        4. We just need to show for confirmation
+        """
+        import random
+
+        batch = {
+            "tasks": [],
+            "current_index": 0,
+            "created": [],
+            "skipped": [],
+            "sequential_mode": True,
+            "created_at": datetime.now().isoformat(),
+            "no_questions": metadata.get("no_questions", False),
+            "v2": True  # Mark as v2 flow
+        }
+
+        # Convert pre-processed specs to batch format
+        for idx, spec in enumerate(task_specs, 1):
+            # Create a minimal conversation for tracking
+            conversation = await self.context.create_conversation(
+                user_id=f"{user_id}_batch_{idx}",
+                chat_id=user_id,
+                original_message=spec.get("_original_text", spec.get("title", ""))
+            )
+
+            # Store the spec directly - no additional AI processing needed!
+            conversation.generated_spec = spec
+            conversation.stage = ConversationStage.PREVIEW
+
+            task_entry = {
+                "index": idx,
+                "message": spec.get("_original_text", ""),
+                "conversation": conversation,
+                "spec": spec,
+                "task_id_preview": f"TASK-{datetime.now().strftime('%Y%m%d')}-{random.randint(100,999)}"
+            }
+            batch["tasks"].append(task_entry)
+
+        batch["awaiting_confirm"] = True
+        self._batch_tasks[user_id] = batch
+
+        logger.info(f"Created batch with {len(batch['tasks'])} pre-processed tasks (v2)")
 
         # Show FIRST task only
         return self._format_sequential_task_preview(batch, 0), None
