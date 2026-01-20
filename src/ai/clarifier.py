@@ -778,6 +778,10 @@ Make questions conversational and intelligent, like a senior developer or produc
             detailed_mode=detailed_mode  # Pass flag for detailed generation
         )
 
+        # VALIDATION: Ensure spec actually uses content from user's message
+        # This catches AI hallucination where it generates completely unrelated content
+        spec = self._validate_and_fix_spec(spec, conversation.original_message)
+
         # Store in conversation
         conversation.generated_spec = spec
 
@@ -785,6 +789,91 @@ Make questions conversational and intelligent, like a senior developer or produc
         preview = await self._format_preview_message(spec, detailed_mode)
 
         return preview, spec
+
+    def _validate_and_fix_spec(self, spec: Dict[str, Any], original_message: str) -> Dict[str, Any]:
+        """
+        Validate that the generated spec actually relates to the user's input.
+        If AI hallucinated completely unrelated content, fix it using deterministic extraction.
+        Also ensures assignee is extracted from [For Name] prefix if present.
+        """
+        import re
+
+        # Extract assignee from [For Name] prefix if present
+        assignee_match = re.match(r'^\[For (\w+)\]', original_message, re.IGNORECASE)
+        if assignee_match:
+            extracted_assignee = assignee_match.group(1).capitalize()
+            if not spec.get('assignee') or spec.get('assignee') == 'Unassigned':
+                spec['assignee'] = extracted_assignee
+                logger.info(f"Extracted assignee from prefix: {extracted_assignee}")
+
+        # Extract significant words from original message (ignore common words)
+        stop_words = {
+            'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+            'should', 'may', 'might', 'must', 'shall', 'can', 'to', 'of', 'in',
+            'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through',
+            'during', 'before', 'after', 'above', 'below', 'between', 'under',
+            'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
+            'why', 'how', 'all', 'each', 'few', 'more', 'most', 'other', 'some',
+            'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
+            'too', 'very', 'just', 'and', 'but', 'or', 'if', 'because', 'until',
+            'while', 'about', 'against', 'this', 'that', 'these', 'those', 'am',
+            'it', 'its', 'he', 'she', 'they', 'them', 'his', 'her', 'their',
+            'what', 'which', 'who', 'whom', 'i', 'me', 'my', 'we', 'our', 'you',
+            'your', 'one', 'two', 'first', 'second', 'third', 'fourth', 'fifth',
+            'sixth', 'task', 'tasks', 'please', 'pleased', 'today', 'tonight',
+            'tomorrow', 'questions', 'question', 'mayank', 'sarah', 'john', 'minty'
+        }
+
+        # Clean the "[For Name]" prefix if present
+        clean_message = re.sub(r'^\[For \w+\]\s*', '', original_message, flags=re.IGNORECASE)
+
+        # Get significant words from original message
+        original_words = set(
+            word.lower() for word in re.findall(r'\b\w+\b', clean_message)
+            if len(word) > 2 and word.lower() not in stop_words
+        )
+
+        # Get words from generated title
+        title = spec.get('title', '')
+        title_words = set(
+            word.lower() for word in re.findall(r'\b\w+\b', title)
+            if len(word) > 2 and word.lower() not in stop_words
+        )
+
+        # Check overlap - at least some significant words should match
+        overlap = original_words & title_words
+        overlap_ratio = len(overlap) / max(len(original_words), 1)
+
+        logger.debug(f"Spec validation: original_words={original_words}, title_words={title_words}, overlap={overlap}, ratio={overlap_ratio:.2f}")
+
+        # If very low overlap, AI probably hallucinated - use deterministic extraction
+        if overlap_ratio < 0.1 and len(original_words) > 3:
+            logger.warning(f"AI hallucination detected! Title '{title}' doesn't match input. Using fallback extraction.")
+
+            # Create a simple, direct title from the original message
+            # Remove common prefixes and clean up
+            fallback_title = clean_message
+
+            # Remove time references at the start
+            fallback_title = re.sub(r'^(for today|today|tonight at \d+\s*(?:am|pm)?|tonight)\s*', '', fallback_title, flags=re.IGNORECASE)
+
+            # Capitalize first letter and limit length
+            fallback_title = fallback_title.strip()
+            if fallback_title:
+                fallback_title = fallback_title[0].upper() + fallback_title[1:]
+
+            # Truncate if too long
+            if len(fallback_title) > 100:
+                fallback_title = fallback_title[:97] + "..."
+
+            spec['title'] = fallback_title
+            spec['description'] = clean_message  # Use original as description too
+            spec['_fallback_extraction'] = True
+
+            logger.info(f"Fallback title: '{fallback_title}'")
+
+        return spec
 
     async def _format_preview_message(self, spec: Dict[str, Any], detailed_mode: bool = False) -> str:
         """Format spec as a readable preview message."""

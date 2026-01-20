@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-20
-> **Version:** 1.7.5
+> **Version:** 1.7.6
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1979,6 +1979,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7.6 | 2026-01-20 | **Anti-Hallucination System:** Fixed critical bug where AI would generate completely unrelated task content instead of using the user's actual words. Added validation that checks if generated spec matches user's input - if not, falls back to deterministic extraction. **Stricter Prompts:** AI prompts now explicitly state "FORMAT don't GENERATE" and "USE THESE EXACT WORDS". **Assignee Extraction:** `[For Name]` prefix in split tasks now reliably sets the assignee. Example: If you say "add referral code", the title will now be "Add referral code..." not "Implement task management system". |
 | 1.7.5 | 2026-01-20 | **Single-Assignee Multi-Task Support:** Fixed multi-task detection to properly split tasks when sending multiple tasks for the SAME person. **Ordinal Pattern Enhancement:** Now detects "First one", "Second one", "Third one" etc. (not just "First task"). Also handles misspellings like "Forth" for "Fourth". **Preamble Assignee Detection:** Messages starting with "Tasks for Mayank" or "For Sarah" now automatically assign all split tasks to that person. Example: "Tasks for Mayank no questions: First one add referral code, Second one fix errors" → Creates 2 separate tasks both assigned to Mayank. Previously this incorrectly created 1 task with 6 subtasks. |
 | 1.7.2 | 2026-01-20 | **🚀 MANDATORY SELF-ANSWERING:** AI now ALWAYS answers its own questions - NEVER bothers you. The self-answering loop is now mandatory, not optional. AI fills in ALL missing info using best practices: priority (medium default), effort (based on complexity), architecture (industry-standard), scope (core v1 features), technical approach (proven solutions). The `remaining_questions` is ALWAYS empty - AI decides everything itself. |
 | 1.7.1 | 2026-01-20 | **"No Questions" Override:** When you explicitly say "no need to ask questions", "just use what I'm giving you", "don't ask questions", etc., the bot now SKIPS ALL QUESTIONS regardless of what the AI thinks. This is a hard override. **Discord Error Feedback:** If Discord posting fails, you now see "⚠️ Discord posting failed - check bot config" in the response instead of silent failure. |

@@ -240,10 +240,23 @@ DO NOT generate minimal output - this needs to be a COMPLETE SPECIFICATION DOCUM
         criteria_instruction = "Generate 6-8 detailed, specific, testable acceptance criteria with clear pass/fail conditions" if detailed_mode else "Clear, testable criterion"
         subtask_desc_instruction = "FULL PARAGRAPH (1-2 paragraphs) explaining what to build, technical approach, components involved, edge cases, and integration points" if detailed_mode else "Additional context if the title can't fit everything"
 
-        return f"""Generate a complete task specification based on all gathered information.
+        return f"""⚠️ CRITICAL: FORMAT the user's request into a task spec. Do NOT invent or generate new content!
 
-ORIGINAL REQUEST:
+YOUR ONLY JOB: Take the user's EXACT words and structure them into the JSON format below.
+DO NOT create fictional tasks. DO NOT add features the user didn't mention.
+If the user says "add referral code", the title MUST be about "referral code" - NOT something else!
+
+ORIGINAL REQUEST (USE THESE EXACT WORDS):
 "{original_message}"
+
+⚠️ THE TITLE AND DESCRIPTION MUST DIRECTLY REFERENCE THE WORDS IN THE ORIGINAL REQUEST ABOVE!
+- If user says "add referral code" → title: "Add referral code..."
+- If user says "fix the email" → title: "Fix the email..."
+- If user says "run Stripe test" → title: "Run Stripe test..."
+
+⚠️ ASSIGNEE EXTRACTION:
+- If message starts with "[For Name]" (e.g., "[For Mayank]"), set assignee to that name
+- Remove the "[For Name]" prefix from the title - it's not part of the task description
 
 CLARIFICATION Q&A:
 {qa_str}
