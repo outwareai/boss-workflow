@@ -182,11 +182,17 @@ class TaskParser:
         text_lower = text.lower()
         now = datetime.now()
 
-        # Time patterns
+        # Specific time patterns (more specific first)
         time_patterns = [
-            (r'tonight\s+at\s+(\d{1,2})\s*(?:pm|PM)', lambda m: now.replace(hour=int(m.group(1)) + 12 if int(m.group(1)) < 12 else int(m.group(1)), minute=0, second=0)),
-            (r'at\s+(\d{1,2})\s*(?:pm|PM)\s+tonight', lambda m: now.replace(hour=int(m.group(1)) + 12 if int(m.group(1)) < 12 else int(m.group(1)), minute=0, second=0)),
-            (r'(\d{1,2})\s*(?:pm|PM)\s+tonight', lambda m: now.replace(hour=int(m.group(1)) + 12 if int(m.group(1)) < 12 else int(m.group(1)), minute=0, second=0)),
+            # "tonight at 10PM", "tonight at 10 PM", "tonight at 10pm"
+            (r'tonight\s+at\s+(\d{1,2})\s*(?:pm|PM|p\.m\.?)', lambda m: now.replace(hour=int(m.group(1)) + (12 if int(m.group(1)) < 12 else 0), minute=0, second=0, microsecond=0)),
+            (r'tonight\s+at\s+(\d{1,2})\s*(?:am|AM|a\.m\.?)', lambda m: now.replace(hour=int(m.group(1)), minute=0, second=0, microsecond=0)),
+            # "at 10PM tonight"
+            (r'at\s+(\d{1,2})\s*(?:pm|PM|p\.m\.?)\s+tonight', lambda m: now.replace(hour=int(m.group(1)) + (12 if int(m.group(1)) < 12 else 0), minute=0, second=0, microsecond=0)),
+            # "10PM tonight"
+            (r'(\d{1,2})\s*(?:pm|PM|p\.m\.?)\s+tonight', lambda m: now.replace(hour=int(m.group(1)) + (12 if int(m.group(1)) < 12 else 0), minute=0, second=0, microsecond=0)),
+            # "by 5pm", "before 6PM"
+            (r'(?:by|before)\s+(\d{1,2})\s*(?:pm|PM|p\.m\.?)', lambda m: now.replace(hour=int(m.group(1)) + (12 if int(m.group(1)) < 12 else 0), minute=0, second=0, microsecond=0)),
         ]
 
         for pattern, converter in time_patterns:
@@ -195,19 +201,31 @@ class TaskParser:
                 try:
                     dt = converter(match)
                     return match.group(0), dt.isoformat()
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to parse time pattern: {e}")
                     pass
 
-        # Date patterns
-        if "today" in text_lower or "for today" in text_lower:
-            return "today", now.replace(hour=23, minute=59, second=0).isoformat()
+        # Date patterns (check these after specific times)
+        if "for today" in text_lower or text_lower.startswith("today"):
+            return "today", now.replace(hour=23, minute=59, second=0, microsecond=0).isoformat()
 
+        # "is tonight" without specific time
         if "tonight" in text_lower:
-            return "tonight", now.replace(hour=23, minute=59, second=0).isoformat()
+            return "tonight", now.replace(hour=23, minute=59, second=0, microsecond=0).isoformat()
 
-        if "tomorrow" in text_lower or "after tomorrow" in text_lower:
+        # "today" anywhere in text
+        if "today" in text_lower:
+            return "today", now.replace(hour=23, minute=59, second=0, microsecond=0).isoformat()
+
+        # "after tomorrow" = day after tomorrow
+        if "after tomorrow" in text_lower:
+            day_after = now + timedelta(days=2)
+            return "after tomorrow", day_after.replace(hour=23, minute=59, second=0, microsecond=0).isoformat()
+
+        # "tomorrow"
+        if "tomorrow" in text_lower:
             tomorrow = now + timedelta(days=1)
-            return "tomorrow", tomorrow.replace(hour=23, minute=59, second=0).isoformat()
+            return "tomorrow", tomorrow.replace(hour=23, minute=59, second=0, microsecond=0).isoformat()
 
         return None, None
 
@@ -263,35 +281,45 @@ class TaskExtractor:
 
         The AI is instructed to ONLY extract what's there, not invent.
         """
-        prompt = f"""EXTRACT task information from this text. DO NOT INVENT OR ADD ANYTHING.
+        prompt = f"""EXTRACT task information from this text. PRESERVE ALL DETAILS - do not oversimplify!
 
 TEXT: "{parsed_task.original_text}"
 
 ALREADY EXTRACTED (use these if correct):
 - Assignee: {parsed_task.assignee or "Not found"}
-- Deadline: {parsed_task.deadline_text or "Not found"}
+- Deadline: {parsed_task.deadline_text or "Not found"} → {parsed_task.deadline_iso or "Not found"}
 - Priority: {parsed_task.priority}
 
 YOUR JOB:
-1. Create a TITLE that summarizes the task (use the user's words, not your own)
+1. Create a TITLE that captures the FULL task (preserve details, up to 120 chars)
 2. Verify the assignee is correct
-3. Verify the deadline is correct
-4. Add 2-3 acceptance criteria based ONLY on what's mentioned
+3. Verify the deadline is correct (use the ISO format provided)
+4. Create acceptance criteria that capture EVERY detail mentioned
 
-⚠️ RULES:
-- The TITLE must use words from the original text
-- DO NOT add features or requirements not in the text
-- DO NOT invent technical details not mentioned
-- If something isn't mentioned, leave it as null
+⚠️ CRITICAL RULES:
+- PRESERVE ALL DETAILS from the original text
+- If user says "test payment recurring, retrial, what data is passed" → ALL THREE should be in criteria
+- If user mentions specific things like "Digital Ocean to Ionos" → keep those exact names
+- DO NOT simplify "extensive REAL LIVE test" to just "test"
+- Keep technical terms: "Stripe", "subscription", "retrial", etc.
+- If deadline was extracted, USE IT (don't return null)
+
+BAD (oversimplified):
+- "run test for stripe" ❌
+- "Email is fixed" ❌
+
+GOOD (preserves detail):
+- "Run extensive real live test for Stripe: payment recurring, retrial on failed subscription, verify data passed" ✓
+- "Fix email functionality and deploy to production" ✓
 
 Return JSON:
 {{
-    "title": "Short title using user's words (max 80 chars)",
+    "title": "Detailed title preserving user's words (up to 120 chars)",
     "assignee": "{parsed_task.assignee or 'null'}",
     "deadline": "{parsed_task.deadline_iso or 'null'}",
     "priority": "{parsed_task.priority}",
     "task_type": "task/bug/feature/research",
-    "acceptance_criteria": ["Only criteria mentioned or clearly implied"],
+    "acceptance_criteria": ["Specific criterion from user's text", "Another specific detail mentioned"],
     "estimated_effort": "Reasonable estimate"
 }}"""
 
