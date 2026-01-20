@@ -55,6 +55,9 @@ class UserIntent(str, Enum):
     # Boss attendance reporting
     REPORT_ABSENCE = "report_absence"        # "Mayank didn't come today", "Sarah was late"
 
+    # Direct team communication (NOT task creation)
+    ASK_TEAM_MEMBER = "ask_team_member"      # "ask Mayank what tasks are left", "tell Sarah to update me"
+
     # Learning/preferences
     TEACH_PREFERENCE = "teach"               # "when I say urgent, deadline is today"
 
@@ -376,6 +379,40 @@ class IntentDetector:
         if any(phrase in message for phrase in archive_phrases):
             return UserIntent.ARCHIVE_TASKS, {"message": message}
 
+        # Direct team communication - BEFORE task creation to avoid false positives
+        # "ask Mayank about X", "tell Sarah to Y", "message John about Z"
+        if is_boss:
+            team_names = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+
+            # Patterns for direct communication (not task creation)
+            direct_comm_patterns = [
+                # "ask [name] [what/about/if/to]"
+                r'^(?:can\s+you\s+)?ask\s+(' + '|'.join(team_names) + r')\s+(?:what|about|if|to|directly|for)',
+                # "tell [name] to [action]" or "tell [name] about"
+                r'^(?:can\s+you\s+)?tell\s+(' + '|'.join(team_names) + r')\s+(?:to|about|that)',
+                # "message [name] [about]"
+                r'^(?:can\s+you\s+)?message\s+(' + '|'.join(team_names) + r')\s+',
+                # "directly [ask/tell/message] [name]"
+                r'^directly\s+(?:ask|tell|message)\s+(' + '|'.join(team_names) + r')\s+',
+                # "send [name] a message"
+                r'^send\s+(' + '|'.join(team_names) + r')\s+(?:a\s+)?message',
+                # "check with [name] about/if"
+                r'^check\s+with\s+(' + '|'.join(team_names) + r')\s+(?:about|if)',
+                # "ping [name] about"
+                r'^ping\s+(' + '|'.join(team_names) + r')\s+(?:about|to|and)',
+            ]
+
+            for pattern in direct_comm_patterns:
+                match = re.search(pattern, message, re.IGNORECASE)
+                if match:
+                    target_name = match.group(1)
+                    logger.info(f"Detected direct communication intent: ask/tell {target_name}")
+                    return UserIntent.ASK_TEAM_MEMBER, {
+                        "target_name": target_name.capitalize(),
+                        "message": message,
+                        "original_request": message
+                    }
+
         # Boss attendance reporting - BEFORE task creation to avoid false positives
         if is_boss:
             absence_keywords = [
@@ -434,6 +471,7 @@ POSSIBLE INTENTS:
 - check_status: User wants status overview
 - email_recap: User wants to see/read/check their OWN emails (not delegate)
 - report_absence: Boss reporting attendance event (absence, late, early departure, sick leave)
+- ask_team_member: Boss wants to DIRECTLY communicate with team member (ask question, send message) - NOT create a task
 - delay_task: User wants to delay/postpone a task
 - add_team: User is telling about a team member
 - teach: User wants bot to learn something
@@ -445,6 +483,8 @@ POSSIBLE INTENTS:
 IMPORTANT: If user asks about their OWN emails (fetch, recap, check, see emails), use email_recap NOT create_task.
 Only use create_task when user wants to DELEGATE something to another person.
 If boss says someone "didn't come", "was late", "left early", "sick leave", use report_absence.
+If boss says "ask Mayank what...", "tell Sarah to...", "message John about...", use ask_team_member NOT create_task.
+The key difference: ask_team_member = communicate/question, create_task = assign work.
 
 Respond with JSON:
 {{

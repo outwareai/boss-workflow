@@ -1086,6 +1086,117 @@ _Reactions sync task status automatically!_""",
 
         return results
 
+    # ==================== DIRECT TEAM COMMUNICATION ====================
+
+    async def send_direct_message_to_team(
+        self,
+        target_name: str,
+        message_content: str,
+        from_boss: bool = True
+    ) -> Tuple[bool, str]:
+        """
+        Send a direct message to a team member via Discord.
+
+        Routes to the appropriate general channel based on team member's role.
+
+        Args:
+            target_name: The team member's name (e.g., "Mayank")
+            message_content: The message to send
+            from_boss: Whether this message is from the boss
+
+        Returns:
+            Tuple of (success, response_message)
+        """
+        if not target_name:
+            return False, "No target name provided"
+
+        # Look up team member's role to determine channel
+        assignee_role = await self.get_assignee_role(target_name)
+        role_category = self._get_role_category(assignee_role) if assignee_role else RoleCategory.DEV
+
+        # Get the general channel for this category
+        channel_id = self._get_channel_id(ChannelType.GENERAL, role_category)
+        if not channel_id:
+            return False, f"No Discord channel configured for {target_name}'s team"
+
+        # Try to get Discord user ID for mention
+        discord_user_id = None
+        try:
+            from ..database.repositories import get_team_repository
+            team_repo = get_team_repository()
+            member = await team_repo.find_member(target_name)
+            if member and member.discord_id:
+                discord_user_id = member.discord_id
+        except Exception as e:
+            logger.debug(f"Could not get Discord ID for {target_name}: {e}")
+
+        # Also try Google Sheets
+        if not discord_user_id:
+            try:
+                from .sheets import sheets_integration
+                team_members = await sheets_integration.get_all_team_members()
+                for member in team_members:
+                    member_name = member.get("Name", "").strip().lower()
+                    if member_name == target_name.lower() or target_name.lower() in member_name:
+                        discord_user_id = member.get("Discord ID", "")
+                        break
+            except Exception as e:
+                logger.debug(f"Could not get Discord ID from Sheets for {target_name}: {e}")
+
+        # Build the embed
+        embed = {
+            "title": f"📨 Message from Boss" if from_boss else "📨 Direct Message",
+            "description": message_content,
+            "color": 0x3498DB,
+            "timestamp": datetime.now().isoformat(),
+            "footer": {"text": f"To: {target_name} | Reply in this channel"}
+        }
+
+        # Build mention content
+        content = None
+        if discord_user_id:
+            content = f"<@{discord_user_id}>"
+        else:
+            content = f"**@{target_name}** (no Discord ID configured)"
+
+        # Send the message
+        message_id = await self.send_message(
+            channel_id=channel_id,
+            content=content,
+            embed=embed
+        )
+
+        if message_id:
+            logger.info(f"Sent direct message to {target_name} (channel: {channel_id})")
+            return True, f"Message sent to {target_name}"
+        else:
+            logger.error(f"Failed to send direct message to {target_name}")
+            return False, f"Failed to send message to {target_name}"
+
+    async def ask_team_member_status(
+        self,
+        target_name: str,
+        question: str
+    ) -> Tuple[bool, str]:
+        """
+        Ask a team member about their task status or other work-related question.
+
+        Args:
+            target_name: The team member's name
+            question: The question or request from boss
+
+        Returns:
+            Tuple of (success, response_message)
+        """
+        # Format the question nicely
+        formatted_message = f"**Question from Boss:**\n{question}\n\n_Please respond in this channel._"
+
+        return await self.send_direct_message_to_team(
+            target_name=target_name,
+            message_content=formatted_message,
+            from_boss=True
+        )
+
     # ==================== ATTENDANCE NOTIFICATION ====================
 
     async def send_attendance_notification(

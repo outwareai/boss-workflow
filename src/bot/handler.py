@@ -274,6 +274,7 @@ class UnifiedHandler:
             UserIntent.ARCHIVE_TASKS: self._handle_archive_tasks,
             UserIntent.GENERATE_SPEC: self._handle_generate_spec,
             UserIntent.REPORT_ABSENCE: self._handle_report_absence,
+            UserIntent.ASK_TEAM_MEMBER: self._handle_ask_team_member,
             UserIntent.CANCEL: self._handle_cancel,
             UserIntent.SKIP: self._handle_skip,
             UserIntent.UNKNOWN: self._handle_unknown,
@@ -1985,6 +1986,60 @@ Record ID: {result.get('record_id', 'N/A')}
             "excused_absence_reported": "Excused Absence",
         }
         return status_map.get(status_type, status_type.replace("_", " ").title())
+
+    async def _handle_ask_team_member(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle direct communication with team members (ask questions, send messages)."""
+
+        target_name = data.get("target_name")
+        original_request = data.get("original_request", message)
+
+        if not target_name:
+            # Try to extract from message
+            import re
+            team_names = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+            for name in team_names:
+                if name in message.lower():
+                    target_name = name.capitalize()
+                    break
+
+        if not target_name:
+            return "I couldn't determine who you want me to contact. Please specify the team member's name.", None
+
+        # Extract the actual question/message to send
+        # Remove common prefixes like "can you ask mayank" to get the actual content
+        question_content = original_request
+        prefixes_to_remove = [
+            rf"(?:can\s+you\s+)?ask\s+{target_name}\s+",
+            rf"(?:can\s+you\s+)?tell\s+{target_name}\s+(?:to\s+)?",
+            rf"(?:can\s+you\s+)?message\s+{target_name}\s+",
+            rf"directly\s+(?:ask|tell|message)\s+{target_name}\s+",
+            rf"send\s+{target_name}\s+(?:a\s+)?message\s*",
+            rf"check\s+with\s+{target_name}\s+(?:about\s+)?",
+            rf"ping\s+{target_name}\s+(?:about\s+)?",
+        ]
+
+        import re
+        for prefix in prefixes_to_remove:
+            question_content = re.sub(prefix, "", question_content, flags=re.IGNORECASE).strip()
+
+        # If nothing left after removing prefix, use the original
+        if not question_content or len(question_content) < 5:
+            question_content = original_request
+
+        logger.info(f"Direct communication to {target_name}: {question_content[:100]}...")
+
+        # Send via Discord
+        success, response_msg = await self.discord.ask_team_member_status(
+            target_name=target_name,
+            question=question_content
+        )
+
+        if success:
+            return f"📨 Message sent to **{target_name}** via Discord.\n\n_{question_content[:200]}{'...' if len(question_content) > 200 else ''}_\n\nThey'll see it in their team channel.", {"message_sent": True, "target": target_name}
+        else:
+            return f"Failed to send message to {target_name}: {response_msg}", None
 
     async def _handle_unknown(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str

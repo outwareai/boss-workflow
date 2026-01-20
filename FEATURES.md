@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-20
-> **Version:** 1.8.2
+> **Version:** 1.8.3
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -249,6 +249,7 @@ The bot understands natural language without requiring slash commands:
 | `LIST_TEMPLATES` | "What templates are available?" | Shows task templates |
 | `DELAY_TASK` | "delay this to tomorrow" | Postpones task |
 | `ADD_TEAM_MEMBER` | "John is our backend dev" | Registers team member |
+| `ASK_TEAM_MEMBER` | "ask Mayank what tasks are left", "tell Sarah to update me" | Sends message to team member via Discord (NEW v1.8.3) |
 | `TEACH_PREFERENCE` | "when I say ASAP, deadline is 4 hours" | Saves preference |
 | `APPROVE_TASK` | "looks good", "approved" | Approves submission |
 | `REJECT_TASK` | "no - fix the footer" | Rejects with feedback |
@@ -471,6 +472,8 @@ Create these subtasks? Reply yes or no.
 | `post_general_message()` | Post to general channel |
 | `post_help()` | Help message with reaction guide |
 | `cleanup_task_channel()` | Clean all task threads |
+| `send_direct_message_to_team()` | Send boss message to team member via channel (NEW v1.8.3) |
+| `ask_team_member_status()` | Ask team member a question via Discord (NEW v1.8.3) |
 
 ### Channel Structure (Per Department)
 
@@ -1979,6 +1982,7 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.8.3 | 2026-01-20 | **🗣️ Direct Team Communication:** New feature - boss can now directly communicate with team members via Discord WITHOUT creating a task. Say "ask Mayank what tasks are left" or "tell Sarah to update me" and the bot sends a message to their team Discord channel (with @mention if Discord ID is configured). **New Intent:** `ASK_TEAM_MEMBER` detects patterns like "ask [name]", "tell [name] to", "message [name]", "check with [name]", "ping [name]". **Discord Integration:** New `send_direct_message_to_team()` and `ask_team_member_status()` methods route messages to the correct department channel based on team member's role. Previously "ask Mayank what tasks are left" would incorrectly create a TASK instead of actually asking Mayank. |
 | 1.8.2 | 2026-01-20 | **Preserve Task Details:** Fixed AI extraction to preserve ALL details from user's message instead of oversimplifying. If you say "test payment recurring, retrial, what data is passed" - ALL THREE now appear in acceptance criteria. Titles now up to 120 chars to fit more detail. **Better Deadline Parsing:** Fixed "tonight at 10PM" and similar time expressions. Added patterns for "by 5pm", "before 6PM", etc. "After tomorrow" now correctly means day-after-tomorrow. |
 | 1.8.0 | 2026-01-20 | **🏗️ MAJOR ARCHITECTURE REWRITE:** New clean `TaskProcessor` with 4-step flow: (1) **PARSE** - Deterministic splitting, no AI; (2) **EXTRACT** - AI with strict rules to only extract, not generate; (3) **VALIDATE** - Ensure extracted fields match input; (4) **CONFIRM** - Show each task for confirmation. Completely eliminates AI hallucination by separating parsing from AI extraction. The AI can no longer invent "task management system" when you say "add referral code". |
 | 1.7.6 | 2026-01-20 | **Anti-Hallucination System:** Fixed critical bug where AI would generate completely unrelated task content instead of using the user's actual words. Added validation that checks if generated spec matches user's input - if not, falls back to deterministic extraction. **Stricter Prompts:** AI prompts now explicitly state "FORMAT don't GENERATE" and "USE THESE EXACT WORDS". **Assignee Extraction:** `[For Name]` prefix in split tasks now reliably sets the assignee. Example: If you say "add referral code", the title will now be "Add referral code..." not "Implement task management system". |
