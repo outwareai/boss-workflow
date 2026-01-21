@@ -69,16 +69,29 @@ async def lookup_team_member(name: str) -> Optional[TeamMemberInfo]:
         team_members = await sheets.get_all_team_members()
 
         for member in team_members:
-            member_name = member.get("Name", "").strip().lower()
-            if member_name == name_lower or name_lower in member_name:
-                logger.debug(f"Found {name} in Sheets")
+            # Handle various column name formats (some sheets have ' Name' with leading space)
+            member_name = None
+            for key in ["Name", " Name", "name", "Nickname", ""]:
+                if key in member and member[key]:
+                    member_name = str(member[key]).strip().lower()
+                    break
+            # Fallback to first column value
+            if not member_name and member:
+                first_key = list(member.keys())[0]
+                if member[first_key]:
+                    member_name = str(member[first_key]).strip().lower()
+
+            if member_name and (member_name == name_lower or name_lower in member_name):
+                logger.info(f"Found {name} in Sheets (matched: {member_name})")
+                # Get values with flexible key matching
+                discord_id = member.get("Discord ID") or member.get("discord_id") or member.get("Discord")
                 return TeamMemberInfo(
-                    name=member.get("Name", name),
-                    discord_id=member.get("Discord ID"),
-                    email=member.get("Email"),
-                    telegram_id=member.get("Telegram ID"),
-                    role=member.get("Role"),
-                    calendar_id=member.get("Calendar ID"),
+                    name=member.get("Name") or member.get(" Name") or name,
+                    discord_id=str(discord_id) if discord_id else None,
+                    email=member.get("Email") or member.get("email"),
+                    telegram_id=member.get("Telegram ID") or member.get("telegram_id"),
+                    role=member.get("Role") or member.get("role"),
+                    calendar_id=member.get("Calendar ID") or member.get("calendar_id"),
                 )
     except Exception as e:
         logger.debug(f"Sheets lookup failed for {name}: {e}")
