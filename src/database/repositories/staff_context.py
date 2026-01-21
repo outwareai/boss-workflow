@@ -209,7 +209,7 @@ class StaffContextRepository:
                     context_id=context.id,
                     role=role,
                     content=content,
-                    metadata=metadata,
+                    message_metadata=metadata,
                 )
                 session.add(message)
 
@@ -258,7 +258,7 @@ class StaffContextRepository:
                     "role": msg.role,
                     "content": msg.content,
                     "timestamp": msg.timestamp.isoformat(),
-                    "metadata": msg.metadata or {}
+                    "metadata": msg.message_metadata or {}
                 }
                 for msg in messages
             ]

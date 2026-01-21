@@ -101,7 +101,7 @@ class TaskContextManager:
                                 "role": msg.role,
                                 "content": msg.content,
                                 "timestamp": msg.timestamp.isoformat(),
-                                "metadata": msg.metadata or {}
+                                "metadata": msg.message_metadata or {}
                             }
                             for msg in db_context.messages
                         ]

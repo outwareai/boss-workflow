@@ -784,8 +784,8 @@ class StaffContextMessageDB(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # staff, assistant, boss
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # Metadata
-    metadata: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)  # attachments, message_url, action
+    # Message metadata (attachments, message_url, action)
+    message_metadata: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
 
     timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
