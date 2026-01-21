@@ -127,14 +127,18 @@ class DiscordIntegration:
         """
         Get the channel ID for a given type and role category.
 
-        Falls back to DEV category if the specific category's channel is not configured.
+        Falls back to DEV category if the specific category's channel is not configured,
+        EXCEPT for TASKS channels - don't fall back, so forum is used instead.
         """
         # Try the specific category first
         channel_id = self.channels.get(role_category, {}).get(channel_type, "")
 
         # Fall back to DEV category if not configured
+        # BUT NOT for TASKS type - we want to use FORUM instead when tasks channel isn't set
         if not channel_id and role_category != RoleCategory.DEV:
-            channel_id = self.channels.get(RoleCategory.DEV, {}).get(channel_type, "")
+            if channel_type != ChannelType.TASKS:
+                channel_id = self.channels.get(RoleCategory.DEV, {}).get(channel_type, "")
+            # For TASKS: return None so post_task uses forum channel instead
 
         return channel_id if channel_id else None
 
