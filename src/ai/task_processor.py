@@ -98,29 +98,26 @@ class TaskParser:
                 metadata["no_questions"] = True
                 break
 
-        # Extract "Tasks for [Name]" or "For [Name]" preamble
-        # Pattern: Match "for [name]" followed by ANY text until we hit an ordinal pattern
-        # Use .*? (non-greedy any char) with lookahead to stop at ordinal
-        preamble_pattern = (
-            r'^(?:tasks?\s+)?for\s+(' + '|'.join(self.TEAM_NAMES) + r')\b'
-            r'.*?'  # Any characters (non-greedy) including "no questions pleased"
-            r'(?=' + self.ORDINAL_WORDS + r'\s+' + self.ORDINAL_NOUNS + r')'
-        )
+        team_names_pattern = '|'.join(self.TEAM_NAMES)
 
-        match = re.match(preamble_pattern, message, re.IGNORECASE | re.DOTALL)
-        if match:
-            metadata["preamble_assignee"] = match.group(1).capitalize()
-            # Remove preamble from message
-            message = message[match.end():].strip()
-            logger.info(f"Extracted preamble assignee: {metadata['preamble_assignee']}")
-        else:
-            # Fallback: Try simpler pattern - just "for [name]" at start
-            simple_pattern = r'^(?:tasks?\s+)?for\s+(' + '|'.join(self.TEAM_NAMES) + r')\b\s*'
-            simple_match = re.match(simple_pattern, message, re.IGNORECASE)
-            if simple_match:
-                metadata["preamble_assignee"] = simple_match.group(1).capitalize()
-                logger.info(f"Extracted preamble assignee (simple): {metadata['preamble_assignee']}")
-                # Don't remove from message in simple case - let ordinal split handle it
+        # Try multiple patterns to extract assignee
+        # Pattern 1: "task(s) for [name]" or "for [name]"
+        # Pattern 2: "task to [name]" or "give/assign to [name]"
+        assignee_patterns = [
+            # "tasks for Zea", "for Zea"
+            rf'^(?:hey\s+)?(?:give\s+)?(?:a\s+)?(?:tasks?\s+)?for\s+({team_names_pattern})\b',
+            # "give a task to Zea", "task to Zea", "assign to Zea"
+            rf'^(?:hey\s+)?(?:give|assign|send)?\s*(?:a\s+)?(?:tasks?\s+)?to\s+({team_names_pattern})\b',
+            # Just "[name] needs to" at start
+            rf'^({team_names_pattern})\s+(?:needs?\s+to|should|must)\b',
+        ]
+
+        for pattern in assignee_patterns:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if match:
+                metadata["preamble_assignee"] = match.group(1).capitalize()
+                logger.info(f"Extracted preamble assignee: {metadata['preamble_assignee']} from pattern")
+                break
 
         return message, metadata
 

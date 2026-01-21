@@ -173,20 +173,31 @@ class DiscordIntegration:
             logger.debug(f"Checking {len(team_members)} team members in Sheets")
 
             for member in team_members:
-                member_name = member.get("Name", "").strip().lower()
+                # Check multiple possible name columns (Name, empty string for headerless col A, Nickname)
+                member_name = (
+                    member.get("Name") or
+                    member.get("") or  # Headerless column A
+                    member.get("Nickname") or
+                    ""
+                ).strip().lower()
+
+                # Skip empty names
+                if not member_name:
+                    continue
+
                 # Check multiple matching strategies
                 if (member_name == assignee_lower or
                     assignee_lower in member_name or
                     member_name in assignee_lower):
                     role = member.get("Role", "")
                     if role:
-                        logger.info(f"Found role for '{assignee}' in Sheets: '{role}' (matched '{member.get('Name')}')")
+                        logger.info(f"Found role for '{assignee}' in Sheets: '{role}' (matched name: '{member_name}')")
                         return role
                     else:
                         logger.warning(f"Found '{assignee}' in Sheets but no Role set")
 
             # Log all names for debugging
-            all_names = [m.get("Name", "") for m in team_members]
+            all_names = [m.get("Name") or m.get("") or m.get("Nickname") or "?" for m in team_members]
             logger.warning(f"No match for '{assignee}' in team members: {all_names}")
         except Exception as e:
             logger.error(f"Sheets lookup failed for {assignee}: {e}")
