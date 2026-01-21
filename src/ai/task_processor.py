@@ -146,6 +146,43 @@ class TaskParser:
                 logger.info(f"Split into {len(tasks)} tasks using numbered list")
                 return tasks
 
+        # Pattern 3: Action verb comma separation with "and"
+        # Detects: "Finish X, engage Y, and enroll Z" - multiple distinct actions
+        # Look for pattern: "verb1 stuff, verb2 stuff, and verb3 stuff"
+        action_verbs = r'(?:finish|complete|add|create|fix|update|build|implement|design|review|check|test|deploy|enroll|engage|send|write|prepare|setup|configure|install|remove|delete|change|modify|upload|download|contact|call|email|message|schedule|plan|organize|clean|improve|optimize|analyze|research|find|get|make|do|start|begin|launch|publish|submit|approve|reject|assign|notify|remind|follow|track|monitor|verify|validate|confirm|cancel|close|open|enable|disable|run|stop|pause|resume|restart)'
+
+        # Check if message has comma-separated action items ending with "and"
+        # Pattern: action, action, and action OR action, action, action
+        comma_and_pattern = re.compile(
+            rf'({action_verbs}\s+[^,]+),\s*({action_verbs}\s+[^,]+),?\s*(?:and\s+)?({action_verbs}\s+[^,]+)',
+            re.IGNORECASE
+        )
+
+        match = comma_and_pattern.search(message)
+        if match:
+            # Extract the three action items
+            tasks = [match.group(1).strip(), match.group(2).strip(), match.group(3).strip()]
+            tasks = [t for t in tasks if t and len(t) > 5]
+            if len(tasks) >= 2:
+                logger.info(f"Split into {len(tasks)} tasks using action verb comma pattern")
+                return tasks
+
+        # Pattern 3b: Two action items with "and"
+        # "Finish X and engage Y"
+        two_action_pattern = re.compile(
+            rf'({action_verbs}\s+[^,]+?)\s+and\s+({action_verbs}\s+.+)',
+            re.IGNORECASE
+        )
+
+        match = two_action_pattern.search(message)
+        if match:
+            task1 = match.group(1).strip()
+            task2 = match.group(2).strip()
+            # Only split if both parts are substantial (not just "and do it")
+            if len(task1) > 10 and len(task2) > 10:
+                logger.info(f"Split into 2 tasks using action verb 'and' pattern")
+                return [task1, task2]
+
         # No splitting needed - single task
         return [message] if message.strip() else []
 
