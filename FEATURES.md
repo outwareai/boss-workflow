@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
-> **Last Updated:** 2026-01-20
-> **Version:** 2.0.0
+> **Last Updated:** 2026-01-21
+> **Version:** 2.0.2
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -1995,6 +1995,8 @@ Dynamically adjust priority based on deadline proximity and dependencies.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0.2 | 2026-01-21 | **🔔 Fixed Deadline Reminder Spam:** Completely rewrote the reminder system to prevent duplicate notifications. **New System:** Reminders sent at specific intervals only (2h, 1h, 30m before deadline) - ONE reminder per task per interval. **Deduplication:** Tracks which tasks have been reminded at each interval, preventing the same reminder being sent multiple times. **No Past-Deadline Reminders:** Skips tasks that are already overdue (overdue alerts handle those separately). **Better Task ID Handling:** Tries multiple column name variations to find the Task ID. **Discord Spam Reduction:** Only posts to Discord at the 1-hour mark, not every reminder. |
+| 2.0.1 | 2026-01-21 | **AI Reformulation for Team Messages:** Messages to team members are now AI-reformulated to be directed AT them (e.g., "ask Mayank what tasks are left" → "Hey Mayank, what tasks do you have left?"). **Better Discord ID Lookup:** Added detailed logging and tries multiple column name variations. |
 | 2.0.0 | 2026-01-20 | **🧠 AI-FIRST INTENT DETECTION (MAJOR REWRITE):** Complete architectural overhaul - the AI is now the brain for ALL intent classification. No more brittle regex patterns that miss edge cases. **New Flow:** (1) Slash commands → direct mapping, (2) Context states (awaiting confirmation) → direct mapping, (3) Everything else → AI classifies with full context and examples. **Benefits:** Handles ANY phrasing naturally, understands context and nuance, no more regex maintenance, self-healing through examples in the prompt. **The AI prompt** includes detailed distinctions (e.g., "ask Mayank what..." = communication vs "Mayank fix the bug" = task creation) and returns structured JSON with intent, confidence, reasoning, and extracted data. This eliminates the constant "pattern didn't match" bugs. |
 | 1.8.3 | 2026-01-20 | **🗣️ Direct Team Communication:** New feature - boss can now directly communicate with team members via Discord WITHOUT creating a task. Say "ask Mayank what tasks are left" or "tell Sarah to update me" and the bot sends a message to their team Discord channel (with @mention if Discord ID is configured). **New Intent:** `ASK_TEAM_MEMBER` detects patterns like "ask [name]", "tell [name] to", "message [name]", "check with [name]", "ping [name]". **Discord Integration:** New `send_direct_message_to_team()` and `ask_team_member_status()` methods route messages to the correct department channel based on team member's role. Previously "ask Mayank what tasks are left" would incorrectly create a TASK instead of actually asking Mayank. |
 | 1.8.2 | 2026-01-20 | **Preserve Task Details:** Fixed AI extraction to preserve ALL details from user's message instead of oversimplifying. If you say "test payment recurring, retrial, what data is passed" - ALL THREE now appear in acceptance criteria. Titles now up to 120 chars to fit more detail. **Better Deadline Parsing:** Fixed "tonight at 10PM" and similar time expressions. Added patterns for "by 5pm", "before 6PM", etc. "After tomorrow" now correctly means day-after-tomorrow. |
