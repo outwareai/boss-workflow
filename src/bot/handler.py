@@ -91,6 +91,21 @@ class UnifiedHandler:
         if source == "telegram":
             is_boss = True
 
+        # Rate limiting (skip for boss)
+        if not is_boss:
+            try:
+                from ..services.rate_limiter import get_rate_limiter
+                limiter = get_rate_limiter()
+                allowed, info = await limiter.check_user_limit(user_id)
+                if not allowed:
+                    retry_after = info.get("reset_seconds", 60)
+                    return (
+                        f"⏳ Slow down! Too many requests. Please wait {retry_after} seconds before trying again.",
+                        None
+                    )
+            except Exception as e:
+                logger.debug(f"Rate limiter check failed: {e}")
+
         # Clear any stuck sessions for boss
         if is_boss and user_id in self._validation_sessions:
             del self._validation_sessions[user_id]

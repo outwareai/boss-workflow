@@ -478,3 +478,222 @@ async def team_list():
     except Exception as e:
         logger.error(f"Error loading team: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Audit Dashboard (v2.0.5)
+# ============================================================================
+
+@router.get("/audit", response_class=HTMLResponse)
+async def audit_dashboard():
+    """
+    Audit dashboard showing system activity and metrics.
+
+    Includes:
+    - Message queue status
+    - Rate limiting stats
+    - Recent task activity
+    - Error logs
+    """
+    try:
+        # Get message queue stats
+        queue_stats = {}
+        dead_letters = []
+        try:
+            from ..services.message_queue import get_message_queue
+            queue = get_message_queue()
+            queue_stats = queue.get_queue_stats()
+            dead_letters = queue.get_dead_letter_messages()
+        except Exception as e:
+            queue_stats = {"error": str(e)}
+
+        # Get rate limiter stats
+        rate_stats = {}
+        try:
+            from ..services.rate_limiter import get_rate_limiter
+            limiter = get_rate_limiter()
+            rate_stats = limiter.get_stats()
+        except Exception as e:
+            rate_stats = {"error": str(e)}
+
+        # Get recent tasks from database
+        recent_tasks = []
+        try:
+            from ..database.repositories import get_task_repository
+            repo = get_task_repository()
+            # Get latest 10 tasks
+            tasks = await repo.get_recent(limit=10)
+            recent_tasks = [
+                {
+                    "task_id": t.task_id,
+                    "title": t.title[:40] if t.title else "",
+                    "status": t.status,
+                    "assignee": t.assignee or "-",
+                    "created": t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
+                }
+                for t in tasks
+            ]
+        except Exception as e:
+            logger.debug(f"Could not get recent tasks: {e}")
+
+        # Build task rows
+        task_rows = ""
+        for t in recent_tasks:
+            status_color = {
+                "completed": "#4ade80",
+                "in_progress": "#60a5fa",
+                "pending": "#fbbf24",
+                "blocked": "#f87171",
+            }.get(t.get("status", ""), "#888")
+            task_rows += f"""
+                <tr>
+                    <td><code>{t.get('task_id', '')}</code></td>
+                    <td>{t.get('title', '')}</td>
+                    <td style="color:{status_color}">{t.get('status', '')}</td>
+                    <td>{t.get('assignee', '')}</td>
+                    <td>{t.get('created', '')}</td>
+                </tr>
+            """
+
+        # Build dead letter rows
+        dead_rows = ""
+        for dl in dead_letters[:10]:
+            dead_rows += f"""
+                <tr>
+                    <td><code>{dl.get('id', '')}</code></td>
+                    <td>{dl.get('type', '')}</td>
+                    <td>{dl.get('retry_count', 0)}</td>
+                    <td style="color:#f87171">{dl.get('last_error', '')[:50]}</td>
+                    <td>{dl.get('created_at', '')}</td>
+                </tr>
+            """
+
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Audit Dashboard - Boss Workflow</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #fff; padding: 24px; }}
+                h1 {{ margin-bottom: 24px; color: #4ade80; }}
+                h2 {{ margin: 32px 0 16px; color: #60a5fa; font-size: 18px; }}
+                .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }}
+                .card {{ background: #1a1a1a; border-radius: 12px; padding: 20px; }}
+                .card-title {{ font-size: 12px; text-transform: uppercase; color: #888; margin-bottom: 8px; }}
+                .card-value {{ font-size: 28px; font-weight: 600; color: #4ade80; }}
+                .card-value.warning {{ color: #fbbf24; }}
+                .card-value.error {{ color: #f87171; }}
+                table {{ width: 100%; border-collapse: collapse; background: #1a1a1a; border-radius: 12px; overflow: hidden; margin-bottom: 24px; }}
+                th {{ background: #252525; padding: 12px 16px; text-align: left; font-size: 12px; text-transform: uppercase; color: #888; }}
+                td {{ padding: 12px 16px; border-top: 1px solid #333; font-size: 14px; }}
+                tr:hover td {{ background: #252525; }}
+                code {{ background: #333; padding: 2px 6px; border-radius: 4px; font-size: 12px; }}
+                .timestamp {{ font-size: 12px; color: #666; margin-top: 24px; }}
+                .nav {{ margin-bottom: 24px; }}
+                .nav a {{ color: #60a5fa; text-decoration: none; margin-right: 16px; }}
+                .nav a:hover {{ text-decoration: underline; }}
+            </style>
+        </head>
+        <body>
+            <div class="nav">
+                <a href="/">Home</a>
+                <a href="/team">Team</a>
+                <a href="/health">Health</a>
+                <a href="/audit">Audit</a>
+            </div>
+
+            <h1>📊 Audit Dashboard</h1>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Queued Messages</div>
+                    <div class="card-value">{queue_stats.get('total_queued', 0)}</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Dead Letters</div>
+                    <div class="card-value {'error' if queue_stats.get('dead_letter', 0) > 0 else ''}">{queue_stats.get('dead_letter', 0)}</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Worker Status</div>
+                    <div class="card-value">{'Running' if queue_stats.get('worker_running') else 'Stopped'}</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Rate Limited Keys</div>
+                    <div class="card-value">{rate_stats.get('active_keys', 0)}</div>
+                </div>
+            </div>
+
+            <h2>📋 Recent Tasks</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Task ID</th>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Assignee</th>
+                        <th>Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {task_rows if task_rows else '<tr><td colspan="5" style="text-align:center;color:#666;">No recent tasks</td></tr>'}
+                </tbody>
+            </table>
+
+            <h2>⚠️ Dead Letter Queue</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Message ID</th>
+                        <th>Type</th>
+                        <th>Retries</th>
+                        <th>Last Error</th>
+                        <th>Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {dead_rows if dead_rows else '<tr><td colspan="5" style="text-align:center;color:#666;">No dead letters 🎉</td></tr>'}
+                </tbody>
+            </table>
+
+            <p class="timestamp">Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html)
+
+    except Exception as e:
+        logger.error(f"Error loading audit dashboard: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/audit/stats", response_class=JSONResponse)
+async def audit_stats_api():
+    """API endpoint for audit statistics."""
+    try:
+        stats = {
+            "timestamp": datetime.now().isoformat(),
+            "message_queue": {},
+            "rate_limiter": {},
+        }
+
+        try:
+            from ..services.message_queue import get_message_queue
+            queue = get_message_queue()
+            stats["message_queue"] = queue.get_queue_stats()
+        except Exception as e:
+            stats["message_queue"] = {"error": str(e)}
+
+        try:
+            from ..services.rate_limiter import get_rate_limiter
+            limiter = get_rate_limiter()
+            stats["rate_limiter"] = limiter.get_stats()
+        except Exception as e:
+            stats["rate_limiter"] = {"error": str(e)}
+
+        return stats
+
+    except Exception as e:
+        logger.error(f"Error getting audit stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

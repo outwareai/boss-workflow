@@ -333,7 +333,7 @@ class AttendanceService:
         Process a clock-out event.
 
         Returns:
-            Dict with: success, emoji, message, work_hours
+            Dict with: success, emoji, message, work_hours, pending_tasks_reminder
         """
         now_utc = datetime.now(pytz.UTC)
         now_local = now_utc.astimezone(pytz.timezone(settings.timezone))
@@ -381,6 +381,9 @@ class AttendanceService:
             work_duration = now_utc - clock_in_utc
             work_hours = round(work_duration.total_seconds() / 3600, 2)
 
+        # Get pending tasks for this user (clock-out reminder)
+        pending_tasks_reminder = await self._get_pending_tasks_reminder(user_name)
+
         if record:
             # Sync to Google Sheets
             await self._sync_to_sheets(
@@ -391,12 +394,15 @@ class AttendanceService:
                 channel_name=channel_name,
             )
 
+            base_message = f"Clocked out at {now_local.strftime('%H:%M')}. Total: {work_hours}h"
+
             return {
                 "success": True,
                 "emoji": "👋",
-                "message": f"Clocked out at {now_local.strftime('%H:%M')}. Total: {work_hours}h",
+                "message": base_message,
                 "work_hours": work_hours,
                 "record_id": record.record_id,
+                "pending_tasks_reminder": pending_tasks_reminder,
             }
         else:
             return {
@@ -405,6 +411,60 @@ class AttendanceService:
                 "message": "Failed to record clock-out",
                 "work_hours": 0,
             }
+
+    async def _get_pending_tasks_reminder(self, user_name: str) -> Optional[str]:
+        """
+        Get a reminder of pending/in-progress tasks for the user.
+
+        Called at clock-out time to remind staff what's still on their plate.
+        """
+        try:
+            # Get tasks assigned to this user that are still active
+            pending_tasks = []
+            in_progress_tasks = []
+
+            all_tasks = await self.sheets.get_daily_tasks()
+
+            for task in all_tasks:
+                assignee = task.get("Assignee", "").lower()
+                status = task.get("Status", "").lower()
+                task_id = task.get("Task ID", "")
+                title = task.get("Title", "")[:40]  # Truncate for readability
+
+                if user_name.lower() in assignee:
+                    if status in ["pending", "needs_info"]:
+                        pending_tasks.append((task_id, title))
+                    elif status in ["in_progress", "in_review"]:
+                        in_progress_tasks.append((task_id, title))
+
+            # Build reminder if there are tasks
+            if not pending_tasks and not in_progress_tasks:
+                return None  # No reminder needed
+
+            reminder_lines = ["📋 **Tasks Reminder Before You Go:**"]
+
+            if in_progress_tasks:
+                reminder_lines.append(f"\n🚧 **In Progress ({len(in_progress_tasks)}):**")
+                for task_id, title in in_progress_tasks[:5]:  # Limit to 5
+                    reminder_lines.append(f"  • {task_id}: {title}")
+                if len(in_progress_tasks) > 5:
+                    reminder_lines.append(f"  _...and {len(in_progress_tasks) - 5} more_")
+
+            if pending_tasks:
+                reminder_lines.append(f"\n⏳ **Pending ({len(pending_tasks)}):**")
+                for task_id, title in pending_tasks[:5]:  # Limit to 5
+                    reminder_lines.append(f"  • {task_id}: {title}")
+                if len(pending_tasks) > 5:
+                    reminder_lines.append(f"  _...and {len(pending_tasks) - 5} more_")
+
+            if in_progress_tasks:
+                reminder_lines.append("\n_Don't forget to update your task status before tomorrow!_")
+
+            return "\n".join(reminder_lines)
+
+        except Exception as e:
+            logger.error(f"Error getting pending tasks reminder: {e}")
+            return None
 
     async def process_break_toggle(
         self,

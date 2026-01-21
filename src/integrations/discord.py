@@ -180,10 +180,17 @@ class DiscordIntegration:
         self,
         method: str,
         endpoint: str,
-        json_data: Optional[Dict] = None
+        json_data: Optional[Dict] = None,
+        queue_on_failure: bool = True
     ) -> Tuple[int, Optional[Dict]]:
         """
         Make a Discord API request.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint
+            json_data: Request body
+            queue_on_failure: If True, queue failed POST requests for retry
 
         Returns:
             Tuple of (status_code, response_data)
@@ -209,10 +216,44 @@ class DiscordIntegration:
                     else:
                         error = await response.text()
                         logger.error(f"Discord API error: {response.status} - {error}")
+
+                        # Queue for retry on server errors (5xx) or rate limits (429)
+                        if queue_on_failure and method == "POST" and response.status in [429, 500, 502, 503, 504]:
+                            await self._queue_failed_request(endpoint, json_data, f"HTTP {response.status}: {error[:200]}")
+
                         return (response.status, None)
         except Exception as e:
             logger.error(f"Discord API request failed: {e}")
+
+            # Queue for retry on network errors
+            if queue_on_failure and method == "POST":
+                await self._queue_failed_request(endpoint, json_data, str(e))
+
             return (0, None)
+
+    async def _queue_failed_request(
+        self,
+        endpoint: str,
+        json_data: Optional[Dict],
+        error: str
+    ) -> None:
+        """Queue a failed Discord API request for retry."""
+        try:
+            from ..services.message_queue import get_message_queue, MessageType
+
+            queue = get_message_queue()
+            msg_id = await queue.enqueue_failed(
+                message_type=MessageType.DISCORD_BOT,
+                payload={
+                    "endpoint": endpoint,
+                    "json_data": json_data,
+                },
+                error=error,
+                metadata={"api": "discord_bot"}
+            )
+            logger.info(f"Queued failed Discord request for retry: {msg_id}")
+        except Exception as e:
+            logger.warning(f"Could not queue failed request: {e}")
 
     async def send_message(
         self,

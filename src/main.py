@@ -319,6 +319,40 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
     except Exception as e:
         logger.warning(f"Discord bot failed to start: {e}")
 
+    # Start message queue worker for retry handling
+    message_queue_worker = None
+    try:
+        from .services.message_queue import get_message_queue, MessageType
+
+        queue = get_message_queue()
+
+        # Register Discord handler for retrying failed requests
+        async def handle_discord_retry(payload: dict) -> bool:
+            """Handler for retrying Discord Bot API requests."""
+            try:
+                discord = get_discord_integration()
+                endpoint = payload.get("endpoint", "")
+                json_data = payload.get("json_data", {})
+
+                if not endpoint:
+                    return False
+
+                # Make the request without re-queueing on failure
+                status, data = await discord._api_request("POST", endpoint, json_data, queue_on_failure=False)
+                return status in [200, 201, 204]
+            except Exception as e:
+                logger.error(f"Discord retry failed: {e}")
+                return False
+
+        queue.register_handler(MessageType.DISCORD_BOT, handle_discord_retry)
+
+        # Start the worker
+        await queue.start_worker()
+        logger.info("Message queue worker started")
+
+    except Exception as e:
+        logger.warning(f"Message queue worker failed to start: {e}")
+
     logger.info("Boss Workflow Automation started successfully!")
 
     yield
@@ -342,6 +376,15 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
     try:
         scheduler = get_scheduler_manager()
         scheduler.stop()
+    except:
+        pass
+
+    # Stop message queue worker
+    try:
+        from .services.message_queue import get_message_queue
+        queue = get_message_queue()
+        await queue.stop_worker()
+        logger.info("Message queue worker stopped")
     except:
         pass
 

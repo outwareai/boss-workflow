@@ -358,6 +358,15 @@ Contact boss directly on Telegram.""",
                     if result.get("is_late"):
                         await message.add_reaction(ATTENDANCE_REACTIONS["late"])
 
+                    # Send pending tasks reminder if clocking out with tasks
+                    pending_reminder = result.get("pending_tasks_reminder")
+                    if pending_reminder and cmd == "out":
+                        try:
+                            await message.reply(pending_reminder, mention_author=True)
+                            logger.info(f"Sent pending tasks reminder to {message.author.display_name}")
+                        except Exception as e:
+                            logger.warning(f"Could not send pending tasks reminder: {e}")
+
                     logger.info(f"Attendance recorded: {result.get('message', 'Success')}")
                 else:
                     # Error - add warning reaction
@@ -819,6 +828,48 @@ Contact boss directly on Telegram.""",
             return None
         except Exception as e:
             logger.error(f"Error creating forum post for task {task_id}: {type(e).__name__}: {e}")
+            return None
+
+    async def send_message_to_thread(
+        self,
+        thread_id: int,
+        content: str,
+        embed: dict = None
+    ) -> Optional[int]:
+        """
+        Send a message to a Discord thread.
+
+        Args:
+            thread_id: Discord thread ID
+            content: Message content
+            embed: Optional embed dict
+
+        Returns:
+            Message ID if sent successfully, None otherwise
+        """
+        try:
+            thread = self.get_channel(thread_id)
+            if not thread:
+                # Try to fetch if not in cache
+                thread = await self.fetch_channel(thread_id)
+
+            if not thread:
+                logger.warning(f"Could not find thread {thread_id}")
+                return None
+
+            # Build message kwargs
+            kwargs = {"content": content}
+            if embed:
+                kwargs["embed"] = discord.Embed.from_dict(embed)
+
+            message = await thread.send(**kwargs)
+            return message.id
+
+        except discord.Forbidden as e:
+            logger.error(f"Bot lacks permission to post in thread {thread_id}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error sending message to thread {thread_id}: {e}")
             return None
 
 

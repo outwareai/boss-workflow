@@ -269,6 +269,24 @@ class TaskContextManager:
             context["task_details"].update(updates)
             context["last_activity"] = datetime.now().isoformat()
 
+    async def update_context_async(self, task_id: str, context_updates: Dict[str, Any]) -> bool:
+        """Update context with arbitrary updates."""
+        context = self._contexts.get(task_id)
+        if context:
+            context.update(context_updates)
+            context["last_activity"] = datetime.now().isoformat()
+
+            # Save to database
+            repo = self._get_repo()
+            if repo and self._db_available:
+                try:
+                    await repo.update_context(task_id, context_updates)
+                except Exception as e:
+                    logger.error(f"Error updating context in database: {e}")
+
+            return True
+        return False
+
     def record_submission(self, task_id: str, validation_result: Dict[str, Any]) -> None:
         """Record a submission attempt."""
         context = self._contexts.get(task_id)

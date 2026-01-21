@@ -28,6 +28,7 @@ class StaffAssistant:
     - Validate submissions against acceptance criteria
     - Guide staff on what's missing
     - Escalate to boss when AI can't answer
+    - Learn from patterns to provide better responses
     """
 
     def __init__(self):
@@ -36,13 +37,25 @@ class StaffAssistant:
             base_url=settings.deepseek_base_url
         )
         self.model = settings.deepseek_model
+        self._pattern_learner = None
+
+    def _get_pattern_learner(self):
+        """Lazy load the pattern learner."""
+        if self._pattern_learner is None:
+            try:
+                from ..memory.pattern_learning import get_pattern_learner
+                self._pattern_learner = get_pattern_learner()
+            except Exception as e:
+                logger.warning(f"Pattern learner not available: {e}")
+        return self._pattern_learner
 
     async def process_staff_message(
         self,
         staff_name: str,
         message: str,
         task_context: Dict[str, Any],
-        conversation_history: List[Dict[str, str]] = None
+        conversation_history: List[Dict[str, str]] = None,
+        staff_id: str = None
     ) -> Dict[str, Any]:
         """
         Process a message from a staff member and generate a response.
@@ -52,6 +65,7 @@ class StaffAssistant:
             message: The staff's message
             task_context: The task details (title, description, criteria, etc.)
             conversation_history: Previous messages in this conversation
+            staff_id: Optional staff Discord ID for pattern learning
 
         Returns:
             Dict with:
@@ -62,21 +76,64 @@ class StaffAssistant:
         """
         conversation_history = conversation_history or []
 
+        # Get enriched context from pattern learning
+        enriched_context = {}
+        learner = self._get_pattern_learner()
+        if learner and staff_id:
+            try:
+                enriched_context = await learner.get_enriched_context(
+                    staff_id=staff_id,
+                    task_type=task_context.get("task_type"),
+                    current_issue=message if "issue" in message.lower() or "problem" in message.lower() else None
+                )
+            except Exception as e:
+                logger.debug(f"Could not get enriched context: {e}")
+
+        # Add enriched context to task context
+        if enriched_context:
+            task_context["learned_patterns"] = enriched_context
+
         # Detect intent of staff message
         intent = await self._detect_staff_intent(message, task_context)
 
+        # Process based on intent
         if intent == "question":
-            return await self._handle_question(staff_name, message, task_context, conversation_history)
+            result = await self._handle_question(staff_name, message, task_context, conversation_history)
         elif intent == "submission":
-            return await self._handle_submission(staff_name, message, task_context, conversation_history)
+            result = await self._handle_submission(staff_name, message, task_context, conversation_history)
         elif intent == "update":
-            return await self._handle_status_update(staff_name, message, task_context)
+            result = await self._handle_status_update(staff_name, message, task_context)
         elif intent == "help":
-            return await self._handle_help_request(staff_name, task_context)
+            result = await self._handle_help_request(staff_name, task_context)
         elif intent == "escalate":
-            return await self._handle_escalation(staff_name, message, task_context)
+            result = await self._handle_escalation(staff_name, message, task_context)
         else:
-            return await self._handle_general(staff_name, message, task_context, conversation_history)
+            result = await self._handle_general(staff_name, message, task_context, conversation_history)
+
+        # Learn from this interaction
+        if learner and staff_id:
+            try:
+                action = result.get("action", "respond")
+                if action == "submit_for_review":
+                    # Learn successful submission pattern
+                    await learner.learn_staff_pattern(
+                        staff_id=staff_id,
+                        staff_name=staff_name,
+                        pattern_type="working_style",
+                        pattern_data={"summary": f"Submitted work for {task_context.get('task_id', 'unknown')}"}
+                    )
+                elif action == "escalate":
+                    # Learn escalation pattern
+                    await learner.learn_staff_pattern(
+                        staff_id=staff_id,
+                        staff_name=staff_name,
+                        pattern_type="issue_type",
+                        pattern_data={"summary": result.get("escalation_reason", message[:100])}
+                    )
+            except Exception as e:
+                logger.debug(f"Could not learn from interaction: {e}")
+
+        return result
 
     async def _detect_staff_intent(self, message: str, task_context: Dict) -> str:
         """Detect what the staff member wants to do."""
@@ -209,7 +266,7 @@ Respond naturally as if chatting with a colleague."""
         task_context: Dict,
         history: List[Dict]
     ) -> Dict[str, Any]:
-        """Handle a work submission from staff - validate against criteria."""
+        """Handle a work submission from staff - validate against criteria with strict checking."""
 
         task_id = task_context.get("task_id", "Unknown")
         title = task_context.get("title", "Untitled Task")
@@ -226,11 +283,11 @@ Respond naturally as if chatting with a colleague."""
         # Format criteria for validation
         criteria_text = "\n".join([f"{i+1}. {c}" for i, c in enumerate(criteria)])
 
-        prompt = f"""You are validating a work submission against acceptance criteria.
+        prompt = f"""You are a STRICT validator checking a work submission against acceptance criteria.
 
 TASK: {title} ({task_id})
 
-ACCEPTANCE CRITERIA:
+ACCEPTANCE CRITERIA (staff must address EACH one explicitly):
 {criteria_text}
 
 STAFF'S SUBMISSION MESSAGE:
@@ -239,32 +296,48 @@ STAFF'S SUBMISSION MESSAGE:
 PREVIOUS CONTEXT (if any):
 {json.dumps(history[-3:]) if history else "None"}
 
-Analyze the submission and check each criterion. For each criterion, determine:
-- ✅ PASS: Evidence shows this is completed
-- ❌ FAIL: This is clearly not done or missing
-- ⚠️ UNCLEAR: Can't verify from the submission, needs manual review
+STRICT VALIDATION RULES:
+1. Staff MUST explicitly address each criterion in their submission
+2. Vague statements like "done" or "finished" are NOT sufficient - require specific details
+3. Each criterion needs proof/explanation (screenshots, links, specific description of what was done)
+4. If a criterion is not explicitly mentioned or addressed, mark it as NOT_ADDRESSED
+5. Only mark as PASS if there is clear evidence the criterion was met
+
+For each criterion, determine:
+- ✅ PASS: Staff explicitly addressed this with evidence/details
+- ❌ NOT_ADDRESSED: Staff did not mention or address this criterion at all
+- ⚠️ INCOMPLETE: Staff mentioned it but didn't provide enough detail/proof
+- ❌ FAIL: Staff addressed it but clearly didn't meet the requirement
 
 Respond with this JSON format:
 {{
-    "overall_status": "pass" | "fail" | "needs_review",
+    "overall_status": "pass" | "incomplete" | "not_addressed",
     "criteria_results": [
-        {{"criterion": "the criterion text", "status": "pass|fail|unclear", "reason": "brief explanation"}}
+        {{
+            "criterion": "the criterion text",
+            "status": "pass|not_addressed|incomplete|fail",
+            "addressed": true/false,
+            "reason": "specific explanation",
+            "what_to_include": "if not addressed/incomplete, what they should include"
+        }}
     ],
-    "missing_items": ["list of things clearly missing"],
-    "feedback": "friendly summary for the staff member"
+    "addressed_count": number_of_criteria_explicitly_addressed,
+    "total_criteria": total_number_of_criteria,
+    "missing_explanations": ["list of criteria not addressed with specific instructions for each"],
+    "feedback": "friendly but firm summary"
 }}
 
-Be fair but thorough. If they mention completing something, give benefit of doubt unless clearly wrong."""
+Be STRICT - staff should explain what they did for EACH criterion, not just say "done"."""
 
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You validate work submissions. Return only valid JSON."},
+                    {"role": "system", "content": "You are a strict work submission validator. Require explicit addressing of each criterion. Return only valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.2,
-                max_tokens=800
+                temperature=0.1,  # Lower temperature for stricter validation
+                max_tokens=1000
             )
 
             response_text = response.choices[0].message.content.strip()
@@ -278,33 +351,71 @@ Be fair but thorough. If they mention completing something, give benefit of doub
 
             validation = json.loads(response_text)
 
-            overall_status = validation.get("overall_status", "needs_review")
+            overall_status = validation.get("overall_status", "not_addressed")
             criteria_results = validation.get("criteria_results", [])
-            missing_items = validation.get("missing_items", [])
+            addressed_count = validation.get("addressed_count", 0)
+            total_criteria = validation.get("total_criteria", len(criteria))
+            missing_explanations = validation.get("missing_explanations", [])
             feedback = validation.get("feedback", "")
+
+            # Count statuses
+            not_addressed = [r for r in criteria_results if r.get("status") in ["not_addressed", "incomplete"]]
+            passed = [r for r in criteria_results if r.get("status") == "pass"]
+            failed = [r for r in criteria_results if r.get("status") == "fail"]
 
             # Build response message for staff
             response_lines = [f"**Submission Review for {task_id}**\n"]
 
+            # Show criteria status
             for result in criteria_results:
-                status_emoji = {"pass": "✅", "fail": "❌", "unclear": "⚠️"}.get(result.get("status"), "⚠️")
-                response_lines.append(f"{status_emoji} {result.get('criterion', 'Unknown')}")
+                status = result.get("status", "not_addressed")
+                status_emoji = {
+                    "pass": "✅",
+                    "fail": "❌",
+                    "not_addressed": "📝",
+                    "incomplete": "⚠️"
+                }.get(status, "❓")
+
+                criterion_text = result.get('criterion', 'Unknown')[:60]
+                response_lines.append(f"{status_emoji} {criterion_text}")
+
                 if result.get("reason"):
                     response_lines.append(f"   _{result.get('reason')}_")
 
             response_lines.append("")
+            response_lines.append(f"**Progress: {len(passed)}/{total_criteria} criteria met**")
+            response_lines.append("")
 
-            if overall_status == "pass":
-                response_lines.append(f"🎉 **Great job, {staff_name}!** All criteria met. Submitting for boss approval...")
+            # Determine action based on strict validation
+            if len(passed) == total_criteria:
+                # All criteria explicitly addressed and passed
+                response_lines.append(f"🎉 **Excellent work, {staff_name}!** All {total_criteria} criteria are met with proper explanations. Submitting for boss approval...")
                 action = "submit_for_review"
-            elif overall_status == "fail":
-                response_lines.append(f"**Missing items:**")
-                for item in missing_items:
-                    response_lines.append(f"• {item}")
-                response_lines.append(f"\nPlease address these items and resubmit, {staff_name}.")
+            elif not_addressed:
+                # Some criteria not addressed - require resubmission
+                response_lines.append(f"⚠️ **{len(not_addressed)} criteria need your attention:**\n")
+
+                for i, result in enumerate(not_addressed, 1):
+                    criterion = result.get('criterion', 'Unknown')
+                    what_to_include = result.get('what_to_include', 'Please explain how you addressed this')
+                    response_lines.append(f"**{i}. {criterion}**")
+                    response_lines.append(f"   → {what_to_include}")
+                    response_lines.append("")
+
+                response_lines.append(f"📋 **Please resubmit** with specific details for each criterion listed above.")
+                response_lines.append(f"_Example: \"For [criterion], I [specific action] - here's the [proof/screenshot/link]\"_")
+                action = "respond"  # Don't submit - require resubmission
+            elif failed:
+                # Some criteria failed
+                response_lines.append(f"❌ **Some criteria were not met:**\n")
+                for result in failed:
+                    response_lines.append(f"• {result.get('criterion', 'Unknown')}")
+                    response_lines.append(f"  _{result.get('reason', '')}_")
+                response_lines.append(f"\nPlease fix these and resubmit, {staff_name}.")
                 action = "respond"
             else:
-                response_lines.append(f"Some items need manual verification. Sending to boss for review...")
+                # Edge case - send for review
+                response_lines.append(f"Sending to boss for manual review...")
                 action = "submit_for_review"
 
             return {

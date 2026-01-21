@@ -210,6 +210,16 @@ class SchedulerManager:
         )
         logger.info("Attendance jobs scheduled: sync every 15 min, weekly report Mon 10 AM")
 
+        # Proactive check-ins - every hour, check for tasks with no updates in 4+ hours
+        self.scheduler.add_job(
+            self._proactive_checkin_job,
+            IntervalTrigger(hours=1),
+            id="proactive_checkins",
+            name="Proactive Task Check-ins",
+            replace_existing=True
+        )
+        logger.info("Proactive check-ins scheduled: every 1 hour")
+
         self.scheduler.start()
         logger.info("Scheduler started with all jobs")
 
@@ -791,6 +801,158 @@ Keep up the great work!"""
 
         except Exception as e:
             logger.error(f"Error in weekly time report job: {e}", exc_info=True)
+
+    async def _proactive_checkin_job(self) -> None:
+        """
+        Check for active tasks with no updates in 4+ hours and send friendly check-ins.
+
+        This helps keep tasks moving and catches stalled work early.
+        """
+        logger.debug("Running proactive check-in job")
+
+        try:
+            from ..database.repositories import get_task_repository
+            from ..memory.task_context import get_task_context_manager
+
+            task_repo = get_task_repository()
+            context_manager = get_task_context_manager()
+
+            # Get all active tasks (in_progress, pending with assignee)
+            active_statuses = [TaskStatus.IN_PROGRESS, TaskStatus.PENDING]
+
+            # Calculate cutoff time - 4 hours ago
+            cutoff_time = datetime.now(self.timezone) - timedelta(hours=4)
+
+            tasks_needing_checkin = []
+
+            for status in active_statuses:
+                try:
+                    tasks = await self.sheets.get_tasks_by_status(status)
+
+                    for task in tasks:
+                        # Skip unassigned tasks
+                        if not task.get("assignee"):
+                            continue
+
+                        # Check last update time
+                        last_updated_str = task.get("updated_at") or task.get("created_at")
+                        if not last_updated_str:
+                            continue
+
+                        try:
+                            # Parse the timestamp
+                            if isinstance(last_updated_str, str):
+                                # Try common formats
+                                for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"]:
+                                    try:
+                                        last_updated = datetime.strptime(last_updated_str, fmt)
+                                        last_updated = self.timezone.localize(last_updated)
+                                        break
+                                    except ValueError:
+                                        continue
+                                else:
+                                    continue
+                            else:
+                                last_updated = last_updated_str
+                                if last_updated.tzinfo is None:
+                                    last_updated = self.timezone.localize(last_updated)
+
+                            # Check if stale (no update in 4+ hours)
+                            if last_updated < cutoff_time:
+                                tasks_needing_checkin.append(task)
+
+                        except Exception as e:
+                            logger.debug(f"Could not parse timestamp for {task.get('task_id')}: {e}")
+
+                except Exception as e:
+                    logger.warning(f"Error fetching {status} tasks: {e}")
+
+            if not tasks_needing_checkin:
+                logger.debug("No tasks need check-ins")
+                return
+
+            logger.info(f"Found {len(tasks_needing_checkin)} tasks needing check-ins")
+
+            # Check each task and send check-in if not recently checked
+            for task in tasks_needing_checkin[:5]:  # Limit to 5 per run to avoid spam
+                task_id = task.get("task_id")
+                assignee = task.get("assignee", "Team")
+                title = task.get("title", "")[:50]
+
+                try:
+                    # Check if we have a context with recent check-in
+                    context = await context_manager.get_context_async(task_id)
+
+                    # Skip if checked in last 4 hours
+                    if context:
+                        last_checkin = context.get("last_checkin")
+                        if last_checkin:
+                            try:
+                                checkin_time = datetime.fromisoformat(last_checkin)
+                                if checkin_time.tzinfo is None:
+                                    checkin_time = self.timezone.localize(checkin_time)
+                                if checkin_time > cutoff_time:
+                                    logger.debug(f"Skipping {task_id} - recently checked")
+                                    continue
+                            except:
+                                pass
+
+                    # Send friendly check-in via Discord
+                    checkin_message = f"""👋 **Friendly Check-in: {task_id}**
+
+Hey {assignee}! Just checking in on **{title}**
+
+No updates in the last 4+ hours. How's it going?
+
+• Making progress? Great - drop a quick update!
+• Stuck on something? Let me know and I can escalate.
+• Need more time? No worries, just update the status.
+
+_Reply in this thread with your update!_"""
+
+                    # Try to post to task's Discord thread
+                    thread_id = None
+                    if context:
+                        thread_id = context.get("thread_id")
+
+                    if thread_id:
+                        # Post to existing thread
+                        try:
+                            from ..integrations.discord_bot import get_discord_bot
+                            discord_bot = get_discord_bot()
+                            await discord_bot.send_message_to_thread(
+                                thread_id=int(thread_id),
+                                content=checkin_message
+                            )
+                            logger.info(f"Sent check-in for {task_id} to thread {thread_id}")
+                        except Exception as e:
+                            logger.warning(f"Could not send to thread for {task_id}: {e}")
+                            # Fall back to main channel
+                            await self.discord.post_alert(
+                                title=f"Check-in: {task_id}",
+                                message=f"@{assignee} - How's **{title}** going? No updates in 4+ hours.",
+                                alert_type="info"
+                            )
+                    else:
+                        # No thread, post to main channel
+                        await self.discord.post_alert(
+                            title=f"Check-in: {task_id}",
+                            message=f"@{assignee} - How's **{title}** going? No updates in 4+ hours.",
+                            alert_type="info"
+                        )
+
+                    # Record the check-in time
+                    if context:
+                        context["last_checkin"] = datetime.now(self.timezone).isoformat()
+                        await context_manager.update_context_async(task_id, context)
+
+                except Exception as e:
+                    logger.error(f"Error sending check-in for {task_id}: {e}")
+
+            logger.info(f"Completed proactive check-ins for {min(len(tasks_needing_checkin), 5)} tasks")
+
+        except Exception as e:
+            logger.error(f"Error in proactive check-in job: {e}", exc_info=True)
 
     def trigger_job(self, job_id: str) -> bool:
         """Manually trigger a job."""

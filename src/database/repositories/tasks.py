@@ -168,6 +168,10 @@ class TaskRepository:
             )
             return list(result.scalars().all())
 
+    async def get_recent(self, limit: int = 10) -> List[TaskDB]:
+        """Get most recent tasks (alias for get_all with smaller default)."""
+        return await self.get_all(limit=limit)
+
     async def get_by_status(self, status: str) -> List[TaskDB]:
         """Get tasks by status."""
         async with self.db.session() as session:

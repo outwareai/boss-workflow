@@ -122,7 +122,8 @@ class StaffMessageHandler:
                 staff_name=user_name,
                 message=message,
                 task_context=task_context,
-                conversation_history=conversation_history
+                conversation_history=conversation_history,
+                staff_id=user_id  # For pattern learning
             )
 
             # Step 5: Add AI response to history
