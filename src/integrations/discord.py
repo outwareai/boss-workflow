@@ -432,9 +432,12 @@ class DiscordIntegration:
         if not applied_tag_ids:
             available_tags = await self.get_forum_tags(forum_channel_id)
             if available_tags:
-                # Use first available tag as default
-                applied_tag_ids = [available_tags[0].get("id")]
-                logger.info(f"Using default tag: {available_tags[0].get('name')} ({applied_tag_ids[0]})")
+                # Default to "Pending" tag for new tasks, fall back to first tag
+                tag_names = {t.get("name", "").lower(): t.get("id") for t in available_tags}
+                default_tag_id = tag_names.get("pending") or available_tags[0].get("id")
+                default_tag_name = "Pending" if "pending" in tag_names else available_tags[0].get("name")
+                applied_tag_ids = [default_tag_id]
+                logger.info(f"Using default tag: {default_tag_name} ({default_tag_id})")
 
         payload = {
             "name": name[:100],  # Discord limit
@@ -647,11 +650,33 @@ class DiscordIntegration:
 
         if use_forum and forum_channel_id:
             thread_name = f"{task.id}: {task.title}"[:100]
+
+            # Map task priority to forum tag
+            priority_tag_ids = None
+            if task.priority:
+                available_tags = await self.get_forum_tags(forum_channel_id)
+                if available_tags:
+                    tag_map = {t.get("name", "").lower(): t.get("id") for t in available_tags}
+                    priority_lower = task.priority.value.lower() if hasattr(task.priority, 'value') else str(task.priority).lower()
+                    # Map priority to tag: critical->urgent, high->high, medium->medium, low->low
+                    priority_to_tag = {
+                        "critical": "urgent",
+                        "urgent": "urgent",
+                        "high": "high",
+                        "medium": "medium",
+                        "low": "low",
+                    }
+                    tag_name = priority_to_tag.get(priority_lower, "pending")
+                    if tag_name in tag_map:
+                        priority_tag_ids = [tag_map[tag_name]]
+                        logger.info(f"Using priority-based tag: {tag_name} for task priority {priority_lower}")
+
             thread_id = await self.create_forum_thread(
                 forum_channel_id=forum_channel_id,
                 name=thread_name,
                 content=mention_content,
-                embed=embed
+                embed=embed,
+                tag_ids=priority_tag_ids  # Pass priority-based tag
             )
             if thread_id:
                 # Auto-pin the thread so it appears at top of forum
