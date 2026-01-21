@@ -1282,16 +1282,25 @@ Make the changes and submit again when ready!"""
                         if status.lower() not in ["completed", "cancelled"] and task_id:
                             tasks_to_delete.append(task_id)
 
-                    # Get Discord message IDs from database
+                    # Get Discord message IDs and thread IDs from database
                     task_repo = get_task_repository()
-                    discord_messages = []
+                    from ..database.repositories.staff_context import get_staff_context_repository
+                    staff_repo = get_staff_context_repository()
+
+                    discord_items = []  # (task_id, id, is_thread)
                     for task_id in tasks_to_delete:
                         try:
-                            db_task = await task_repo.get_by_id(task_id)
-                            if db_task and db_task.discord_message_id:
-                                discord_messages.append((task_id, db_task.discord_message_id))
-                        except Exception:
-                            pass
+                            # Check for forum thread first (primary for tasks)
+                            thread_id = await staff_repo.get_thread_by_task(task_id)
+                            if thread_id:
+                                discord_items.append((task_id, thread_id, True))
+                            else:
+                                # Fall back to message ID
+                                db_task = await task_repo.get_by_id(task_id)
+                                if db_task and db_task.discord_message_id:
+                                    discord_items.append((task_id, db_task.discord_message_id, False))
+                        except Exception as e:
+                            logger.debug(f"Could not get Discord ID for {task_id}: {e}")
 
                     # Delete from Sheets
                     deleted, failed = await self.sheets.delete_tasks(tasks_to_delete)
@@ -1303,14 +1312,19 @@ Make the changes and submit again when ready!"""
                         except Exception:
                             pass
 
-                    # Delete from Discord
+                    # Delete from Discord (threads and messages)
                     discord_deleted = 0
-                    for task_id, msg_id in discord_messages:
+                    for task_id, discord_id, is_thread in discord_items:
                         try:
-                            if await self.discord.delete_task_message(task_id, msg_id):
-                                discord_deleted += 1
+                            if is_thread:
+                                if await self.discord.delete_thread(discord_id):
+                                    discord_deleted += 1
+                                    logger.info(f"Deleted forum thread {discord_id} for task {task_id}")
+                            else:
+                                if await self.discord.delete_task_message(task_id, discord_id):
+                                    discord_deleted += 1
                         except Exception as e:
-                            logger.warning(f"Could not delete Discord message for {task_id}: {e}")
+                            logger.warning(f"Could not delete Discord item for {task_id}: {e}")
 
                     del self._pending_actions[user_id]
 
@@ -1355,25 +1369,30 @@ Reply **yes** to confirm or **no** to cancel.""", None
     async def _clear_specific_tasks(
         self, task_ids: list, user_name: str
     ) -> Tuple[str, Optional[Dict]]:
-        """Delete specific tasks by ID from Sheets and Discord."""
+        """Delete specific tasks by ID from Sheets and Discord (including forum threads)."""
         deleted = []
         not_found = []
         discord_deleted = 0
 
-        # Get task repository for database lookups
+        # Get repositories for database lookups
         task_repo = get_task_repository()
+        from ..database.repositories.staff_context import get_staff_context_repository
+        staff_repo = get_staff_context_repository()
 
         for task_id in task_ids:
             task_id = task_id.upper()
             try:
-                # First get the task from database to retrieve Discord message ID
+                # First get the forum thread ID (primary for tasks)
+                thread_id = None
                 discord_msg_id = None
                 try:
-                    db_task = await task_repo.get_by_id(task_id)
-                    if db_task:
-                        discord_msg_id = db_task.discord_message_id
+                    thread_id = await staff_repo.get_thread_by_task(task_id)
+                    if not thread_id:
+                        db_task = await task_repo.get_by_id(task_id)
+                        if db_task:
+                            discord_msg_id = db_task.discord_message_id
                 except Exception as e:
-                    logger.debug(f"Could not get task from database: {e}")
+                    logger.debug(f"Could not get Discord IDs from database: {e}")
 
                 # Delete from Sheets
                 success = await self.sheets.delete_task(task_id)
@@ -1387,8 +1406,16 @@ Reply **yes** to confirm or **no** to cancel.""", None
                     except Exception as e:
                         logger.debug(f"Could not delete from database: {e}")
 
-                    # Delete from Discord if we have a message ID
-                    if discord_msg_id:
+                    # Delete forum thread first (primary)
+                    if thread_id:
+                        try:
+                            if await self.discord.delete_thread(thread_id):
+                                discord_deleted += 1
+                                logger.info(f"Deleted forum thread {thread_id} for task {task_id}")
+                        except Exception as e:
+                            logger.warning(f"Could not delete forum thread for {task_id}: {e}")
+                    # Fall back to message ID if no thread
+                    elif discord_msg_id:
                         try:
                             if await self.discord.delete_task_message(task_id, discord_msg_id):
                                 discord_deleted += 1
