@@ -225,7 +225,12 @@ Only include tasks that are clearly related. Return empty array if no dependenci
 
         # Store extracted info in conversation
         if "understood" in analysis:
-            conversation.extracted_info.update(analysis["understood"])
+            understood = analysis["understood"]
+            # Ensure understood is a dict (AI sometimes returns string)
+            if isinstance(understood, dict):
+                conversation.extracted_info.update(understood)
+            else:
+                logger.warning(f"AI returned non-dict 'understood': {type(understood)} - {understood}")
 
         # Mark detailed mode in analysis
         analysis["detailed_mode"] = detailed_mode
@@ -249,9 +254,9 @@ Only include tasks that are clearly related. Return empty array if no dependenci
                 detailed_mode=detailed_mode
             )
 
-            if self_answered:
+            if self_answered and isinstance(self_answered, dict):
                 # Merge self-answered info into analysis
-                if "understood" not in analysis:
+                if "understood" not in analysis or not isinstance(analysis["understood"], dict):
                     analysis["understood"] = {}
                 analysis["understood"].update(self_answered)
                 conversation.extracted_info.update(self_answered)
