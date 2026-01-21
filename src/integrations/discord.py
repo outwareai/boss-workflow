@@ -382,13 +382,30 @@ class DiscordIntegration:
             return True
         return False
 
+    async def get_forum_tags(self, forum_channel_id: str) -> List[Dict]:
+        """
+        Get available tags for a forum channel.
+
+        Returns list of tag objects with 'id' and 'name' fields.
+        """
+        if not forum_channel_id:
+            return []
+
+        status, data = await self._api_request("GET", f"/channels/{forum_channel_id}")
+        if data and "available_tags" in data:
+            tags = data.get("available_tags", [])
+            logger.info(f"Forum channel {forum_channel_id} has {len(tags)} tags: {[t.get('name') for t in tags]}")
+            return tags
+        return []
+
     async def create_forum_thread(
         self,
         forum_channel_id: str,
         name: str,
         content: Optional[str] = None,
         embed: Optional[Dict] = None,
-        auto_archive_duration: int = 1440  # 24 hours
+        auto_archive_duration: int = 1440,  # 24 hours
+        tag_ids: Optional[List[str]] = None  # Specific tag IDs to apply
     ) -> Optional[str]:
         """
         Create a new forum thread (post).
@@ -399,6 +416,7 @@ class DiscordIntegration:
             content: Initial message content
             embed: Initial message embed
             auto_archive_duration: Minutes until auto-archive (60, 1440, 4320, 10080)
+            tag_ids: List of tag IDs to apply (if None, uses first available tag)
 
         Returns:
             Thread ID if successful, None otherwise
@@ -409,11 +427,24 @@ class DiscordIntegration:
 
         logger.info(f"Creating forum thread in channel {forum_channel_id}: {name}")
 
+        # Get available tags if none specified (some forums require tags)
+        applied_tag_ids = tag_ids
+        if not applied_tag_ids:
+            available_tags = await self.get_forum_tags(forum_channel_id)
+            if available_tags:
+                # Use first available tag as default
+                applied_tag_ids = [available_tags[0].get("id")]
+                logger.info(f"Using default tag: {available_tags[0].get('name')} ({applied_tag_ids[0]})")
+
         payload = {
             "name": name[:100],  # Discord limit
             "auto_archive_duration": auto_archive_duration,
             "message": {}
         }
+
+        # Add tags if available (required by some forum channels)
+        if applied_tag_ids:
+            payload["applied_tags"] = applied_tag_ids
 
         if content:
             payload["message"]["content"] = content[:2000] if len(content) > 2000 else content  # Discord limit
@@ -423,7 +454,7 @@ class DiscordIntegration:
         if not payload["message"]:
             payload["message"]["content"] = "Thread created"
 
-        logger.debug(f"Forum thread payload: name={name[:50]}..., content_length={len(content) if content else 0}")
+        logger.debug(f"Forum thread payload: name={name[:50]}..., tags={applied_tag_ids}")
 
         status, data = await self._api_request("POST", f"/channels/{forum_channel_id}/threads", payload)
 
