@@ -606,9 +606,9 @@ class DiscordIntegration:
         if task.assignee_discord_id:
             mention_content = f"<@{task.assignee_discord_id}> - New task assigned to you!"
 
-        # Get forum channel for this role category
+        # Get forum channel for this role category - v2.1.3 FORUM ONLY
         forum_channel_id = self._get_channel_id(ChannelType.FORUM, role_category)
-        logger.info(f"Channel ID for {role_category.value}: forum={forum_channel_id}")
+        logger.info(f"[v2.1.3] FORUM ONLY - {role_category.value}: forum_channel={forum_channel_id}")
 
         # ALWAYS use forum channel for tasks - each task gets a thread
         # This is the correct workflow: task -> forum thread -> staff replies -> completion
