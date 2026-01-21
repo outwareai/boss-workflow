@@ -606,21 +606,13 @@ class DiscordIntegration:
         if task.assignee_discord_id:
             mention_content = f"<@{task.assignee_discord_id}> - New task assigned to you!"
 
-        # Check if tasks channel is configured for this category
-        tasks_channel_id = self._get_channel_id(ChannelType.TASKS, role_category)
+        # Get forum channel for this role category
         forum_channel_id = self._get_channel_id(ChannelType.FORUM, role_category)
-        logger.info(f"Channel IDs for {role_category.value}: tasks={tasks_channel_id}, forum={forum_channel_id}")
+        logger.info(f"Channel ID for {role_category.value}: forum={forum_channel_id}")
 
-        # Post to forum channel (creates a thread) if:
-        # - Explicitly requested (channel="specs" or "forum")
-        # - Task has spec sheet URL (if attribute exists)
-        # - No tasks channel configured (fallback to forum for all tasks)
-        has_spec_url = getattr(task, 'spec_sheet_url', None)
-        use_forum = (
-            channel in ["specs", "forum"] or
-            has_spec_url or
-            not tasks_channel_id  # Fallback to forum when no tasks channel
-        )
+        # ALWAYS use forum channel for tasks - each task gets a thread
+        # This is the correct workflow: task -> forum thread -> staff replies -> completion
+        use_forum = True
 
         if use_forum and forum_channel_id:
             thread_name = f"{task.id}: {task.title}"[:100]
@@ -650,18 +642,7 @@ class DiscordIntegration:
 
                 return thread_id
 
-        # Post to tasks channel (regular message)
-        if tasks_channel_id:
-            message_id = await self.send_message(
-                channel_id=tasks_channel_id,
-                content=mention_content,
-                embed=embed
-            )
-            if message_id:
-                logger.info(f"Posted task {task.id} to tasks channel {tasks_channel_id}")
-                return message_id
-
-        logger.warning(f"No channel configured for task {task.id} (role: {role_category.value})")
+        logger.warning(f"No forum channel configured for task {task.id} (role: {role_category.value})")
         return None
 
     async def post_spec_sheet(
