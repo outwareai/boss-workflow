@@ -170,26 +170,41 @@ class DiscordIntegration:
         try:
             from .sheets import sheets_integration
             team_members = await sheets_integration.get_all_team_members()
-            logger.debug(f"Checking {len(team_members)} team members in Sheets")
+            logger.info(f"Checking {len(team_members)} team members in Sheets")
+
+            # Debug: log the actual keys from first record
+            if team_members:
+                first_keys = list(team_members[0].keys())
+                logger.info(f"Sheet column headers: {first_keys}")
 
             for member in team_members:
-                # Check multiple possible name columns (Name, empty string for headerless col A, Nickname)
-                member_name = (
-                    member.get("Name") or
-                    member.get("") or  # Headerless column A
-                    member.get("Nickname") or
-                    ""
-                ).strip().lower()
+                # Get name from multiple possible columns
+                # Try: "Name", empty string "", first value in dict, "Nickname"
+                member_name = None
 
-                # Skip empty names
+                # Try explicit column names
+                for key in ["Name", "", "Nickname", "name", "nickname"]:
+                    if key in member and member[key]:
+                        member_name = str(member[key]).strip()
+                        break
+
+                # Fallback: use FIRST column value (whatever the header is)
+                if not member_name:
+                    first_key = list(member.keys())[0] if member else None
+                    if first_key is not None:
+                        member_name = str(member[first_key]).strip()
+                        logger.debug(f"Using first column '{first_key}' value: {member_name}")
+
                 if not member_name:
                     continue
 
+                member_name_lower = member_name.lower()
+
                 # Check multiple matching strategies
-                if (member_name == assignee_lower or
-                    assignee_lower in member_name or
-                    member_name in assignee_lower):
-                    role = member.get("Role", "")
+                if (member_name_lower == assignee_lower or
+                    assignee_lower in member_name_lower or
+                    member_name_lower in assignee_lower):
+                    role = member.get("Role", "") or member.get("role", "")
                     if role:
                         logger.info(f"Found role for '{assignee}' in Sheets: '{role}' (matched name: '{member_name}')")
                         return role
@@ -197,7 +212,11 @@ class DiscordIntegration:
                         logger.warning(f"Found '{assignee}' in Sheets but no Role set")
 
             # Log all names for debugging
-            all_names = [m.get("Name") or m.get("") or m.get("Nickname") or "?" for m in team_members]
+            all_names = []
+            for m in team_members:
+                first_key = list(m.keys())[0] if m else None
+                name = m.get("Name") or m.get("") or (m.get(first_key) if first_key else None) or "?"
+                all_names.append(str(name))
             logger.warning(f"No match for '{assignee}' in team members: {all_names}")
         except Exception as e:
             logger.error(f"Sheets lookup failed for {assignee}: {e}")
