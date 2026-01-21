@@ -262,9 +262,58 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
 
             setup_task_submission_callback(handle_task_submission)
 
+            # Set up staff message callback (AI assistant for staff)
+            async def handle_staff_message(
+                user_id: str,
+                user_name: str,
+                message: str,
+                channel_id: str,
+                channel_name: str,
+                message_url: str = None,
+                attachments: list = None,
+                thread_id: str = None,
+            ):
+                """Handle staff messages for AI assistant conversations."""
+                logger.info(f"Staff message from {user_name} in {channel_name}: {message[:50]}...")
+                try:
+                    from .bot.staff_handler import get_staff_handler
+                    handler = get_staff_handler()
+                    result = await handler.handle_staff_message(
+                        user_id=user_id,
+                        user_name=user_name,
+                        message=message,
+                        channel_id=channel_id,
+                        channel_name=channel_name,
+                        message_url=message_url,
+                        attachments=attachments or [],
+                        thread_id=thread_id,
+                    )
+                    logger.info(f"Staff message handled: action={result.get('action')}")
+                    return result
+                except Exception as e:
+                    logger.error(f"Error handling staff message: {e}", exc_info=True)
+                    return {
+                        "success": False,
+                        "response": f"Sorry, I encountered an error. Please try again.",
+                        "error": str(e),
+                    }
+
+            from .integrations.discord_bot import setup_staff_message_callback
+            setup_staff_message_callback(handle_staff_message)
+
+            # Enable AI assistant in general/tasks channels
+            bot = get_discord_bot()
+            if bot:
+                # Enable for dev general channel (and any other channels you want)
+                if settings.discord_dev_general_channel_id:
+                    bot.enable_ai_assistant_for_channel(int(settings.discord_dev_general_channel_id))
+                if settings.discord_dev_tasks_channel_id:
+                    bot.enable_ai_assistant_for_channel(int(settings.discord_dev_tasks_channel_id))
+                # AI assistant also responds in threads automatically
+
             # Start bot in background
             discord_bot_task = asyncio.create_task(start_discord_bot())
-            logger.info("Discord bot starting in background...")
+            logger.info("Discord bot starting in background (with AI assistant)...")
         else:
             logger.info("Discord bot token not configured, skipping bot startup")
     except Exception as e:

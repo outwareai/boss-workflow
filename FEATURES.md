@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-21
-> **Version:** 2.0.2
+> **Version:** 2.0.3
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -600,6 +600,106 @@ Webhooks are still supported for backward compatibility but not recommended:
 - `DISCORD_TASKS_CHANNEL_WEBHOOK`
 - `DISCORD_STANDUP_CHANNEL_WEBHOOK`
 - `DISCORD_SPECS_CHANNEL_WEBHOOK`
+
+### Staff AI Assistant (NEW in v2.0.3)
+
+The bot includes a smart AI assistant that can have conversations with staff members directly in Discord. This provides contextual help for each task.
+
+**Architecture:**
+
+```
+Staff Message (Discord) ──► Identify Task ──► Get Task Context
+                                                    │
+                                                    ▼
+                                            ┌──────────────┐
+                                            │ AI Assistant │
+                                            │  (DeepSeek)  │
+                                            └──────────────┘
+                                                    │
+                      ┌──────────────┬──────────────┼──────────────┐
+                      ▼              ▼              ▼              ▼
+                  Question      Submission     Update       Escalate
+                   Answer        Validate      Track        → Boss
+```
+
+**Capabilities:**
+
+| Feature | Description |
+|---------|-------------|
+| Answer Questions | Answers questions about task requirements, criteria, deadlines |
+| Validate Submissions | Checks work against acceptance criteria, identifies missing items |
+| Guide Staff | Tells staff what's missing or needs fixing |
+| Track Context | Maintains per-task conversation history |
+| Escalate | Routes complex issues to boss via Telegram |
+
+**How It Works:**
+
+1. **Staff sends message** in enabled Discord channel or thread
+2. **System identifies task** by:
+   - Task ID mentioned in message (e.g., TASK-20260121-001)
+   - Thread linked to task
+   - Channel linked to task
+   - Staff's active task
+3. **AI processes message** with full task context
+4. **Response sent** back to Discord
+5. **If needed, escalates** to boss via Telegram
+
+**Channels Enabled:**
+
+- All task threads (automatically)
+- Dev general channel
+- Dev tasks channel
+- When bot is @mentioned
+
+**Submission Validation:**
+
+When staff says "done", "finished", or submits work, the AI validates against acceptance criteria:
+
+```
+Staff: "I'm done with the login feature, here's the PR link"
+
+Bot: **Submission Review for TASK-20260121-001**
+
+✅ Implement email/password authentication
+   _PR includes auth implementation_
+✅ Add form validation
+   _Validation visible in code_
+❌ Write unit tests
+   _No test files found in PR_
+
+**Missing items:**
+• Unit tests for authentication
+
+Please address these items and resubmit.
+```
+
+**Escalation to Boss:**
+
+When AI can't answer or staff needs help:
+
+```
+[Discord] Staff: "I need clarification on the business logic for edge case X"
+
+[Telegram] 📣 **Staff Escalation**
+           From: John
+           Task: TASK-20260121-001
+           Reason: AI couldn't answer staff's question
+
+           Message: I need clarification on the business logic for edge case X
+
+           [View in Discord](link)
+
+           _Reply here to respond to John._
+```
+
+**Files:**
+
+| File | Purpose |
+|------|---------|
+| `src/ai/staff_assistant.py` | AI assistant logic, intent detection, validation |
+| `src/memory/task_context.py` | Per-task conversation history storage |
+| `src/bot/staff_handler.py` | Routes Discord messages to AI |
+| `src/integrations/discord_bot.py` | Listens for messages, sends responses |
 
 ---
 

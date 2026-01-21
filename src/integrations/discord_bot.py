@@ -97,6 +97,22 @@ class TaskingBot(commands.Bot):
         # Callback for task submissions (staff completing tasks with proof)
         self.on_task_submission_callback = None
 
+        # Callback for staff messages (AI assistant conversations)
+        self.on_staff_message_callback = None
+
+        # Channels where the AI assistant should respond
+        # These are the general/tasks channels where staff can chat
+        self._ai_assistant_channels: set = set()
+
+    def enable_ai_assistant_for_channel(self, channel_id: int) -> None:
+        """Enable AI assistant responses in a channel."""
+        self._ai_assistant_channels.add(channel_id)
+        logger.info(f"AI assistant enabled for channel {channel_id}")
+
+    def disable_ai_assistant_for_channel(self, channel_id: int) -> None:
+        """Disable AI assistant responses in a channel."""
+        self._ai_assistant_channels.discard(channel_id)
+
     async def setup_hook(self):
         """Called when bot is ready to set up."""
         logger.info("Discord bot setup hook called")
@@ -226,6 +242,7 @@ Contact boss directly on Telegram.""",
         Handle messages for:
         1. Attendance tracking ("in", "out", "break")
         2. Task completion submissions ("I finished TASK-XXX")
+        3. AI Assistant conversations (staff questions, help)
         """
         # Ignore bot's own messages
         if message.author.bot:
@@ -241,8 +258,72 @@ Contact boss directly on Telegram.""",
         # Check for task completion messages in any other channel
         await self._handle_potential_submission(message)
 
+        # Check if AI assistant should respond in this channel
+        # Respond in: enabled channels, threads, or when bot is mentioned
+        should_respond_ai = (
+            message.channel.id in self._ai_assistant_channels or
+            isinstance(message.channel, discord.Thread) or
+            self.user in message.mentions
+        )
+
+        if should_respond_ai and self.on_staff_message_callback:
+            await self._handle_staff_ai_message(message)
+
         # Process commands normally
         await self.process_commands(message)
+
+    async def _handle_staff_ai_message(self, message: discord.Message):
+        """Handle a message that should be processed by the AI assistant."""
+        try:
+            # Get thread ID if in a thread
+            thread_id = None
+            if isinstance(message.channel, discord.Thread):
+                thread_id = str(message.channel.id)
+
+            # Extract attachment URLs
+            attachments = [att.url for att in message.attachments]
+
+            # Call the staff message handler
+            result = await self.on_staff_message_callback(
+                user_id=str(message.author.id),
+                user_name=message.author.display_name,
+                message=message.content,
+                channel_id=str(message.channel.id),
+                channel_name=message.channel.name if hasattr(message.channel, 'name') else "thread",
+                message_url=message.jump_url,
+                attachments=attachments,
+                thread_id=thread_id
+            )
+
+            if result.get("success") and result.get("response"):
+                # Send the AI response
+                response_text = result.get("response", "")
+
+                # Split long messages
+                if len(response_text) > 2000:
+                    chunks = [response_text[i:i+1990] for i in range(0, len(response_text), 1990)]
+                    for chunk in chunks:
+                        await message.reply(chunk, mention_author=False)
+                else:
+                    await message.reply(response_text, mention_author=False)
+
+                # Add reactions based on action
+                action = result.get("action")
+                if action == "escalate":
+                    await message.add_reaction("📣")  # Escalated
+                elif action == "submit_for_review":
+                    await message.add_reaction("📥")  # Submitted
+
+            elif not result.get("success") and result.get("response"):
+                # Error response
+                await message.reply(result.get("response"), mention_author=False)
+
+        except Exception as e:
+            logger.error(f"Error in staff AI message handler: {e}", exc_info=True)
+            try:
+                await message.add_reaction("⚠️")
+            except:
+                pass
 
     async def _handle_attendance_message(self, message: discord.Message, channel_name: str):
         """Handle attendance commands in attendance channels."""
@@ -777,6 +858,14 @@ def setup_task_submission_callback(callback):
     if bot:
         bot.on_task_submission_callback = callback
         logger.info("Discord bot task submission callback registered")
+
+
+def setup_staff_message_callback(callback):
+    """Set the callback function for staff AI assistant messages."""
+    bot = get_discord_bot()
+    if bot:
+        bot.on_staff_message_callback = callback
+        logger.info("Discord bot staff message callback registered")
 
 
 async def create_task_thread(
