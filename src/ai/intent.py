@@ -86,7 +86,7 @@ class UserIntent(str, Enum):
 
 
 # Team names for extraction (can be extended)
-TEAM_NAMES = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+TEAM_NAMES = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james", "zea"]
 
 
 class IntentDetector:
@@ -385,6 +385,11 @@ Only include relevant fields in extracted_data. Remove null/empty fields."""
             confidence = result.get("confidence", 0.5)
             reasoning = result.get("reasoning", "")
             extracted_data = result.get("extracted_data", {})
+
+            # Ensure extracted_data is a dict (AI sometimes returns string)
+            if not isinstance(extracted_data, dict):
+                logger.warning(f"AI returned non-dict extracted_data: {type(extracted_data)} - {extracted_data}")
+                extracted_data = {"message": message}
 
             # Clean up extracted_data - remove None/empty values
             extracted_data = {k: v for k, v in extracted_data.items() if v is not None and v != "" and v != []}

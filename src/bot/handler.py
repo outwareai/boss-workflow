@@ -499,6 +499,11 @@ What would you like to do?""", None
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
     ) -> Tuple[str, Optional[Dict]]:
         """Handle task creation - supports multiple tasks in one message."""
+        # Ensure data is a dict (defensive coding)
+        if not isinstance(data, dict):
+            logger.warning(f"_handle_create_task received non-dict data: {type(data)} - {data}")
+            data = {"message": message}
+
         # Get preferences
         prefs = await self.prefs.get_preferences(user_id)
 

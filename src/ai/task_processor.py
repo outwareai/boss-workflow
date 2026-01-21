@@ -46,7 +46,7 @@ class TaskParser:
     """
 
     # Team members for assignee detection
-    TEAM_NAMES = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james"]
+    TEAM_NAMES = ["mayank", "sarah", "john", "minty", "mike", "david", "alex", "emma", "james", "zea"]
 
     # Ordinal patterns
     ORDINAL_WORDS = r'(?:first|second|third|fourth|forth|fifth|sixth|seventh|eighth|ninth|tenth|1st|2nd|3rd|4th|5th|6th|7th|8th|9th|10th)'
@@ -182,6 +182,19 @@ class TaskParser:
             if len(task1) > 10 and len(task2) > 10:
                 logger.info(f"Split into 2 tasks using action verb 'and' pattern")
                 return [task1, task2]
+
+        # Pattern 4: "And another task is to" / "Another task is" separation
+        # Handles: "Give Zea X And another task is to Y And another task is to Z"
+        another_task_pattern = re.compile(
+            r'\s+[Aa]nd\s+another\s+task\s+(?:is\s+(?:to\s+)?)?',
+            re.IGNORECASE
+        )
+        if another_task_pattern.search(message):
+            parts = another_task_pattern.split(message)
+            tasks = [p.strip() for p in parts if p and p.strip() and len(p.strip()) > 5]
+            if len(tasks) >= 2:
+                logger.info(f"Split into {len(tasks)} tasks using 'another task' pattern")
+                return tasks
 
         # No splitting needed - single task
         return [message] if message.strip() else []
@@ -373,6 +386,19 @@ Return JSON:
 
             import json
             result = json.loads(response)
+
+            # Ensure result is a dict (AI sometimes returns unexpected types)
+            if not isinstance(result, dict):
+                logger.warning(f"AI extraction returned non-dict: {type(result)} - using fallback")
+                return {
+                    "title": parsed_task.title or parsed_task.original_text[:100],
+                    "assignee": parsed_task.assignee,
+                    "deadline": parsed_task.deadline_iso,
+                    "priority": parsed_task.priority,
+                    "task_type": "task",
+                    "acceptance_criteria": [],
+                    "estimated_effort": "TBD"
+                }
 
             # Validate the result
             result = self._validate_extraction(result, parsed_task)
