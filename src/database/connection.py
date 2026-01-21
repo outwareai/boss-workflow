@@ -66,6 +66,9 @@ class Database:
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
+            # Run migrations for new columns on existing tables
+            await self._run_migrations()
+
             self._initialized = True
             logger.info("Database initialized successfully")
             return True
@@ -73,6 +76,45 @@ class Database:
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
             return False
+
+    async def _run_migrations(self):
+        """Run schema migrations for new columns on existing tables."""
+        from sqlalchemy import text
+
+        # Define columns to add to existing tables
+        # Format: (table_name, column_name, column_definition)
+        migrations = [
+            # attendance_records table - new columns
+            ("attendance_records", "is_boss_reported", "BOOLEAN DEFAULT FALSE"),
+            ("attendance_records", "reported_by", "VARCHAR(100)"),
+            ("attendance_records", "reported_by_id", "VARCHAR(50)"),
+            ("attendance_records", "reason", "TEXT"),
+            ("attendance_records", "affected_date", "DATE"),
+            ("attendance_records", "duration_minutes", "INTEGER"),
+            ("attendance_records", "notification_sent", "BOOLEAN DEFAULT FALSE"),
+        ]
+
+        async with self.engine.begin() as conn:
+            for table_name, column_name, column_def in migrations:
+                try:
+                    # Check if column exists
+                    result = await conn.execute(text(f"""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_name = '{table_name}'
+                        AND column_name = '{column_name}'
+                    """))
+                    exists = result.fetchone()
+
+                    if not exists:
+                        logger.info(f"Migration: Adding column {table_name}.{column_name}")
+                        await conn.execute(text(f"""
+                            ALTER TABLE {table_name}
+                            ADD COLUMN {column_name} {column_def}
+                        """))
+                        logger.info(f"  ✓ Added {column_name}")
+                except Exception as e:
+                    logger.warning(f"Migration error for {table_name}.{column_name}: {e}")
 
     async def close(self):
         """Close database connection."""

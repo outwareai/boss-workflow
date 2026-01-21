@@ -147,7 +147,11 @@ class DiscordIntegration:
         2. Google Sheets Team tab (fallback, always up-to-date)
         """
         if not assignee:
+            logger.debug("get_assignee_role: No assignee provided")
             return None
+
+        assignee_lower = assignee.strip().lower()
+        logger.info(f"Looking up role for assignee: '{assignee}' (normalized: '{assignee_lower}')")
 
         # Try database first (faster)
         try:
@@ -155,8 +159,10 @@ class DiscordIntegration:
             team_repo = get_team_repository()
             member = await team_repo.find_member(assignee)
             if member and member.role:
-                logger.debug(f"Found role for {assignee} in database: {member.role}")
+                logger.info(f"Found role for {assignee} in database: {member.role}")
                 return member.role
+            else:
+                logger.debug(f"No database match for {assignee}")
         except Exception as e:
             logger.debug(f"Database lookup failed for {assignee}: {e}")
 
@@ -164,15 +170,26 @@ class DiscordIntegration:
         try:
             from .sheets import sheets_integration
             team_members = await sheets_integration.get_all_team_members()
+            logger.debug(f"Checking {len(team_members)} team members in Sheets")
+
             for member in team_members:
                 member_name = member.get("Name", "").strip().lower()
-                if member_name == assignee.lower() or assignee.lower() in member_name:
+                # Check multiple matching strategies
+                if (member_name == assignee_lower or
+                    assignee_lower in member_name or
+                    member_name in assignee_lower):
                     role = member.get("Role", "")
                     if role:
-                        logger.info(f"Found role for {assignee} in Sheets: {role}")
+                        logger.info(f"Found role for '{assignee}' in Sheets: '{role}' (matched '{member.get('Name')}')")
                         return role
+                    else:
+                        logger.warning(f"Found '{assignee}' in Sheets but no Role set")
+
+            # Log all names for debugging
+            all_names = [m.get("Name", "") for m in team_members]
+            logger.warning(f"No match for '{assignee}' in team members: {all_names}")
         except Exception as e:
-            logger.debug(f"Sheets lookup failed for {assignee}: {e}")
+            logger.error(f"Sheets lookup failed for {assignee}: {e}")
 
         return None
 
