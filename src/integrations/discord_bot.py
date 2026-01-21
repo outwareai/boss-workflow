@@ -618,6 +618,20 @@ Contact boss directly on Telegram.""",
             # Add status reactions to the original message
             await self.add_status_reactions(message)
 
+            # Auto-link thread to task for AI assistant routing
+            try:
+                from ..memory.task_context import get_task_context_manager
+                context_manager = get_task_context_manager()
+                await context_manager.link_thread_to_task(
+                    thread_id=str(thread.id),
+                    task_id=task_id,
+                    channel_id=str(channel_id),
+                    message_id=str(message_id)
+                )
+                logger.info(f"Auto-linked thread {thread.id} to task {task_id}")
+            except Exception as link_err:
+                logger.warning(f"Could not auto-link thread to task: {link_err}")
+
             return thread
 
         except discord.Forbidden as e:
@@ -776,6 +790,20 @@ Contact boss directly on Telegram.""",
                         break
                 except Exception as e:
                     logger.warning(f"Could not add reactions to forum post: {e}")
+
+            # Auto-link forum thread to task for AI assistant routing
+            try:
+                from ..memory.task_context import get_task_context_manager
+                context_manager = get_task_context_manager()
+                await context_manager.link_thread_to_task(
+                    thread_id=str(thread.id),
+                    task_id=task_id,
+                    channel_id=str(forum_channel_id),
+                    message_id=str(message.id) if message else None
+                )
+                logger.info(f"Auto-linked forum thread {thread.id} to task {task_id}")
+            except Exception as link_err:
+                logger.warning(f"Could not auto-link forum thread to task: {link_err}")
 
             return thread
 

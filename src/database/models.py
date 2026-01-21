@@ -713,3 +713,150 @@ class OAuthTokenDB(Base):
         Index("idx_oauth_email", "email"),
         Index("idx_oauth_service", "service"),
     )
+
+
+# ==================== STAFF TASK CONTEXT ====================
+
+class StaffTaskContextDB(Base):
+    """
+    Per-task conversation context for Staff AI Assistant.
+
+    Persists:
+    - Conversation history between staff and AI
+    - Task context and details
+    - Escalation history
+    - Submission attempts
+    """
+    __tablename__ = "staff_task_contexts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # TASK-YYYYMMDD-XXX
+
+    # Task details snapshot (for quick access without DB lookup)
+    task_details: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Staff info
+    staff_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Discord user ID
+    staff_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # Discord linking
+    channel_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    thread_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # Status
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active, closed
+
+    # Submission tracking
+    submission_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_submission: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    last_activity: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    messages: Mapped[List["StaffContextMessageDB"]] = relationship(
+        "StaffContextMessageDB", back_populates="context", cascade="all, delete-orphan"
+    )
+    escalations: Mapped[List["StaffEscalationDB"]] = relationship(
+        "StaffEscalationDB", back_populates="context", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("idx_staff_ctx_task", "task_id"),
+        Index("idx_staff_ctx_staff", "staff_id"),
+        Index("idx_staff_ctx_channel", "channel_id"),
+        Index("idx_staff_ctx_thread", "thread_id"),
+        Index("idx_staff_ctx_status", "status"),
+        Index("idx_staff_ctx_activity", "last_activity"),
+    )
+
+
+class StaffContextMessageDB(Base):
+    """Individual messages in a staff-AI conversation."""
+    __tablename__ = "staff_context_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    context_id: Mapped[int] = mapped_column(Integer, ForeignKey("staff_task_contexts.id"), nullable=False)
+
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # staff, assistant, boss
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Metadata
+    metadata: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)  # attachments, message_url, action
+
+    timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationship
+    context: Mapped["StaffTaskContextDB"] = relationship("StaffTaskContextDB", back_populates="messages")
+
+    __table_args__ = (
+        Index("idx_staff_msg_ctx", "context_id"),
+        Index("idx_staff_msg_time", "timestamp"),
+    )
+
+
+class StaffEscalationDB(Base):
+    """Escalation records from staff to boss."""
+    __tablename__ = "staff_escalations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    context_id: Mapped[int] = mapped_column(Integer, ForeignKey("staff_task_contexts.id"), nullable=False)
+
+    # Escalation details
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    staff_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    message_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Boss response tracking
+    boss_responded: Mapped[bool] = mapped_column(Boolean, default=False)
+    boss_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    boss_response_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Telegram message tracking for boss reply routing
+    telegram_message_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationship
+    context: Mapped["StaffTaskContextDB"] = relationship("StaffTaskContextDB", back_populates="escalations")
+
+    __table_args__ = (
+        Index("idx_staff_esc_ctx", "context_id"),
+        Index("idx_staff_esc_responded", "boss_responded"),
+        Index("idx_staff_esc_telegram", "telegram_message_id"),
+    )
+
+
+# ==================== DISCORD THREAD TASK LINKS ====================
+
+class DiscordThreadTaskLinkDB(Base):
+    """
+    Links Discord threads to tasks for automatic task identification.
+
+    When a task is posted to Discord and a thread is created,
+    this table maps thread_id → task_id for seamless staff conversations.
+    """
+    __tablename__ = "discord_thread_task_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Discord info
+    thread_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    channel_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    message_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # Original task message
+
+    # Task info
+    task_id: Mapped[str] = mapped_column(String(50), nullable=False)  # TASK-YYYYMMDD-XXX
+
+    # Metadata
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    __table_args__ = (
+        Index("idx_thread_link_thread", "thread_id"),
+        Index("idx_thread_link_task", "task_id"),
+        Index("idx_thread_link_channel", "channel_id"),
+    )

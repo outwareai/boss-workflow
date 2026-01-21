@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-21
-> **Version:** 2.0.3
+> **Version:** 2.0.4
 
 This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
 
@@ -700,6 +700,49 @@ When AI can't answer or staff needs help:
 | `src/memory/task_context.py` | Per-task conversation history storage |
 | `src/bot/staff_handler.py` | Routes Discord messages to AI |
 | `src/integrations/discord_bot.py` | Listens for messages, sends responses |
+| `src/database/repositories/staff_context.py` | Database persistence (NEW v2.0.4) |
+
+### Enhancements in v2.0.4
+
+**1. Database Persistence:**
+
+Conversation context now persists to PostgreSQL. If the server restarts, conversations are preserved:
+
+- `StaffTaskContextDB` - Per-task context storage
+- `StaffContextMessageDB` - Conversation messages
+- `StaffEscalationDB` - Escalation tracking with boss reply routing
+- `DiscordThreadTaskLinkDB` - Maps threads to tasks
+
+**2. Boss Reply Loop (Two-Way Communication):**
+
+When boss replies to an escalation in Telegram, the reply is automatically routed back to the staff member in Discord:
+
+```
+Staff: "What about edge case X?"
+       ↓ (Discord)
+Bot:   Escalates to boss via Telegram
+       ↓
+Boss:  Replies in Telegram
+       ↓
+Bot:   Routes reply back to Discord
+       ↓
+Staff: Sees boss response in thread
+```
+
+How it works:
+1. Escalation records Telegram message ID
+2. Boss replies by replying to the message in Telegram
+3. System looks up escalation by message ID
+4. Routes reply to staff's Discord channel/thread
+5. Marks escalation as responded
+
+**3. Auto-Link Threads to Tasks:**
+
+When a task thread is created in Discord (forum post or regular thread), it's automatically linked to the task. This means:
+
+- Staff can reply in any task thread and AI knows which task they're working on
+- No need to mention task ID in messages
+- Works for both forum posts and regular threads
 
 ---
 

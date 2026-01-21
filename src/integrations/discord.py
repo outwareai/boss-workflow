@@ -542,6 +542,20 @@ class DiscordIntegration:
                 # Auto-pin the thread so it appears at top of forum
                 await self.pin_thread(thread_id)
                 logger.info(f"Posted task {task.id} to forum channel {forum_channel_id} (pinned)")
+
+                # Auto-link thread to task for AI assistant routing
+                try:
+                    from ..memory.task_context import get_task_context_manager
+                    context_manager = get_task_context_manager()
+                    await context_manager.link_thread_to_task(
+                        thread_id=thread_id,
+                        task_id=task.id,
+                        channel_id=forum_channel_id
+                    )
+                    logger.info(f"Auto-linked thread {thread_id} to task {task.id}")
+                except Exception as link_err:
+                    logger.warning(f"Could not auto-link thread to task: {link_err}")
+
                 return thread_id
 
         # Post to tasks channel (regular message)
@@ -705,6 +719,20 @@ class DiscordIntegration:
             if thread_id:
                 # Auto-pin the thread so it appears at top of forum
                 await self.pin_thread(thread_id)
+
+                # Auto-link thread to task for AI assistant routing
+                try:
+                    from ..memory.task_context import get_task_context_manager
+                    context_manager = get_task_context_manager()
+                    await context_manager.link_thread_to_task(
+                        thread_id=thread_id,
+                        task_id=task_id,
+                        channel_id=forum_channel_id
+                    )
+                    logger.info(f"Auto-linked spec thread {thread_id} to task {task_id}")
+                except Exception as link_err:
+                    logger.warning(f"Could not auto-link spec thread to task: {link_err}")
+
             return thread_id
 
         # Split content into chunks for multiple messages
@@ -727,6 +755,19 @@ class DiscordIntegration:
 
         # Auto-pin the thread so it appears at top of forum
         await self.pin_thread(thread_id)
+
+        # Auto-link thread to task for AI assistant routing
+        try:
+            from ..memory.task_context import get_task_context_manager
+            context_manager = get_task_context_manager()
+            await context_manager.link_thread_to_task(
+                thread_id=thread_id,
+                task_id=task_id,
+                channel_id=forum_channel_id
+            )
+            logger.info(f"Auto-linked spec thread {thread_id} to task {task_id}")
+        except Exception as link_err:
+            logger.warning(f"Could not auto-link spec thread to task: {link_err}")
 
         # Send remaining chunks as follow-up messages in the thread
         for i, chunk in enumerate(chunks[1:], start=2):

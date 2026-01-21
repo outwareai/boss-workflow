@@ -63,6 +63,20 @@ class TelegramBotSimple:
         is_boss = str(chat_id) == str(self.boss_chat_id)
 
         try:
+            # Check if this is a reply to an escalation message (boss reply routing)
+            if is_boss and update.message.reply_to_message:
+                reply_to_msg_id = str(update.message.reply_to_message.message_id)
+                result = await self._handle_boss_reply_to_escalation(reply_to_msg_id, message)
+                if result.get("handled"):
+                    # Successfully routed to Discord
+                    task_id = result.get("task_id", "")
+                    await update.message.reply_text(
+                        f"✅ Reply sent to staff in Discord for {task_id}",
+                        parse_mode='Markdown'
+                    )
+                    return
+                # If not handled (not a reply to escalation), continue with normal processing
+
             response, action = await self.handler.handle_message(
                 user_id=user_id,
                 message=message,
@@ -246,6 +260,38 @@ class TelegramBotSimple:
 
             except Exception as e:
                 logger.error(f"Error notifying user: {e}")
+
+    async def _handle_boss_reply_to_escalation(
+        self,
+        reply_to_message_id: str,
+        boss_message: str
+    ) -> dict:
+        """
+        Handle boss replying to an escalation message.
+
+        Routes the reply to the appropriate staff member via Discord.
+
+        Args:
+            reply_to_message_id: The Telegram message ID being replied to
+            boss_message: The boss's reply text
+
+        Returns:
+            Dict with 'handled' bool and optional 'task_id'
+        """
+        try:
+            from .staff_handler import get_staff_handler
+            staff_handler = get_staff_handler()
+
+            result = await staff_handler.handle_boss_reply_to_escalation(
+                reply_to_message_id=reply_to_message_id,
+                boss_message=boss_message
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error handling boss reply to escalation: {e}", exc_info=True)
+            return {"handled": False, "error": str(e)}
 
     async def process_webhook(self, update_data: dict) -> None:
         """Process webhook update."""

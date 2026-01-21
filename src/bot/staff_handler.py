@@ -137,17 +137,24 @@ class StaffMessageHandler:
             action = result.get("action", "respond")
 
             if action == "escalate":
-                await self._escalate_to_boss(
+                telegram_msg_id = await self._escalate_to_boss(
                     task_id=task_id,
                     staff_name=user_name,
                     message=message,
                     reason=result.get("escalation_reason", "Staff needs assistance"),
                     message_url=message_url
                 )
-                self.context_manager.record_escalation(task_id, result.get("escalation_reason", ""))
+                # Record escalation with telegram message ID for boss reply routing
+                await self.context_manager.record_escalation_async(
+                    task_id=task_id,
+                    reason=result.get("escalation_reason", ""),
+                    staff_message=message,
+                    message_url=message_url,
+                    telegram_message_id=telegram_msg_id
+                )
 
             elif action == "submit_for_review":
-                await self._submit_for_boss_review(
+                telegram_msg_id = await self._submit_for_boss_review(
                     task_id=task_id,
                     staff_name=user_name,
                     message=message,
@@ -156,6 +163,15 @@ class StaffMessageHandler:
                     message_url=message_url
                 )
                 self.context_manager.record_submission(task_id, result.get("validation_result", {}))
+                # Also record as escalation for boss reply routing
+                if telegram_msg_id:
+                    await self.context_manager.record_escalation_async(
+                        task_id=task_id,
+                        reason="Work submission for review",
+                        staff_message=message,
+                        message_url=message_url,
+                        telegram_message_id=telegram_msg_id
+                    )
 
             return {
                 "success": True,
@@ -297,8 +313,12 @@ class StaffMessageHandler:
         message: str,
         reason: str,
         message_url: str = None
-    ) -> bool:
-        """Escalate a message to the boss via Telegram."""
+    ) -> Optional[str]:
+        """
+        Escalate a message to the boss via Telegram.
+
+        Returns the Telegram message ID if successful, for boss reply routing.
+        """
         try:
             text = f"""📣 **Staff Escalation**
 
@@ -311,7 +331,7 @@ class StaffMessageHandler:
 
 {f'[View in Discord]({message_url})' if message_url else ''}
 
-_Reply here to respond to {staff_name}._"""
+_Reply to this message to respond to {staff_name}._"""
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -320,14 +340,23 @@ _Reply here to respond to {staff_name}._"""
                         "chat_id": settings.telegram_boss_chat_id,
                         "text": text,
                         "parse_mode": "Markdown",
-                        "disable_web_page_preview": True
+                        "disable_web_page_preview": True,
+                        "reply_markup": {
+                            "force_reply": True,
+                            "selective": True
+                        }
                     }
                 ) as response:
-                    return response.status == 200
+                    if response.status == 200:
+                        data = await response.json()
+                        telegram_msg_id = str(data.get("result", {}).get("message_id", ""))
+                        logger.info(f"Escalation sent to boss, telegram_msg_id={telegram_msg_id}")
+                        return telegram_msg_id
+                    return None
 
         except Exception as e:
             logger.error(f"Error escalating to boss: {e}")
-            return False
+            return None
 
     async def _submit_for_boss_review(
         self,
@@ -337,8 +366,12 @@ _Reply here to respond to {staff_name}._"""
         validation_result: Dict[str, Any],
         attachments: List[str] = None,
         message_url: str = None
-    ) -> bool:
-        """Submit work for boss review via Telegram."""
+    ) -> Optional[str]:
+        """
+        Submit work for boss review via Telegram.
+
+        Returns the Telegram message ID if successful, for boss reply routing.
+        """
         try:
             overall_status = validation_result.get("overall_status", "needs_review")
             status_emoji = {"pass": "✅", "fail": "❌", "needs_review": "⚠️"}.get(overall_status, "⚠️")
@@ -355,7 +388,7 @@ _Reply here to respond to {staff_name}._"""
 {f'**Attachments:** {len(attachments)} file(s)' if attachments else ''}
 {f'[View in Discord]({message_url})' if message_url else ''}
 
-_Reply "approve" or "reject [reason]" to respond._"""
+_Reply to this message: "approve" or "reject [reason]"_"""
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -364,14 +397,23 @@ _Reply "approve" or "reject [reason]" to respond._"""
                         "chat_id": settings.telegram_boss_chat_id,
                         "text": text,
                         "parse_mode": "Markdown",
-                        "disable_web_page_preview": True
+                        "disable_web_page_preview": True,
+                        "reply_markup": {
+                            "force_reply": True,
+                            "selective": True
+                        }
                     }
                 ) as response:
-                    return response.status == 200
+                    if response.status == 200:
+                        data = await response.json()
+                        telegram_msg_id = str(data.get("result", {}).get("message_id", ""))
+                        logger.info(f"Submission sent to boss, telegram_msg_id={telegram_msg_id}")
+                        return telegram_msg_id
+                    return None
 
         except Exception as e:
             logger.error(f"Error submitting for boss review: {e}")
-            return False
+            return None
 
     async def handle_boss_reply(
         self,
@@ -422,6 +464,89 @@ _Reply "approve" or "reject [reason]" to respond._"""
 
         except Exception as e:
             logger.error(f"Error handling boss reply: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def handle_boss_reply_to_escalation(
+        self,
+        reply_to_message_id: str,
+        boss_message: str
+    ) -> Dict[str, Any]:
+        """
+        Handle boss reply to an escalation via Telegram reply.
+
+        Looks up the escalation by telegram message ID and routes
+        the response back to the staff via Discord.
+
+        Args:
+            reply_to_message_id: The Telegram message ID being replied to
+            boss_message: The boss's reply text
+
+        Returns:
+            Dict with success status and details
+        """
+        try:
+            # Look up escalation by telegram message ID
+            escalation = await self.context_manager.get_pending_escalation_by_telegram(
+                reply_to_message_id
+            )
+
+            if not escalation:
+                logger.warning(f"No pending escalation found for telegram msg {reply_to_message_id}")
+                return {
+                    "success": False,
+                    "error": "No pending escalation found for this message",
+                    "handled": False
+                }
+
+            task_id = escalation.get("task_id")
+            staff_id = escalation.get("staff_id")
+            channel_id = escalation.get("channel_id") or escalation.get("thread_id")
+
+            if not channel_id:
+                return {"success": False, "error": "No Discord channel linked to escalation"}
+
+            # Format boss reply with context
+            message_content = f"**Response from Boss:**\n{boss_message}"
+
+            # Send to Discord
+            message_id = await self.discord.send_message(
+                channel_id=int(channel_id),
+                content=f"<@{staff_id}>" if staff_id else None,
+                embed={
+                    "title": f"📨 Boss Reply - {task_id}",
+                    "description": message_content,
+                    "color": 0xF1C40F,  # Gold for boss replies
+                    "timestamp": datetime.now().isoformat(),
+                    "footer": {"text": "Reply in this thread to continue the conversation"}
+                }
+            )
+
+            if message_id:
+                # Add to conversation history
+                self.context_manager.add_message(
+                    task_id=task_id,
+                    role="boss",
+                    content=boss_message
+                )
+
+                # Mark escalation as responded
+                await self.context_manager.mark_escalation_responded(
+                    escalation_id=escalation.get("id"),
+                    boss_response=boss_message
+                )
+
+                logger.info(f"Boss reply routed to Discord for task {task_id}")
+                return {
+                    "success": True,
+                    "message_id": message_id,
+                    "task_id": task_id,
+                    "handled": True
+                }
+            else:
+                return {"success": False, "error": "Failed to send message to Discord"}
+
+        except Exception as e:
+            logger.error(f"Error handling boss reply to escalation: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
 

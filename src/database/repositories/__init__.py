@@ -12,6 +12,7 @@ from .team import TeamRepository, get_team_repository
 from .projects import ProjectRepository, get_project_repository
 from .attendance import AttendanceRepository, get_attendance_repository
 from .oauth import OAuthTokenRepository, get_oauth_repository
+from .staff_context import StaffContextRepository, get_staff_context_repository
 
 __all__ = [
     "TaskRepository",
@@ -30,4 +31,6 @@ __all__ = [
     "get_attendance_repository",
     "OAuthTokenRepository",
     "get_oauth_repository",
+    "StaffContextRepository",
+    "get_staff_context_repository",
 ]
