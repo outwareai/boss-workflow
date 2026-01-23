@@ -1,81 +1,195 @@
 # Boss Workflow Automation - Features Documentation
 
-> **Last Updated:** 2026-01-21
-> **Version:** 2.0.5
+> **Last Updated:** 2026-01-23
+> **Version:** 2.2.0
+> **Total Lines:** ~2182 | **Total Features:** 113+
 
-This document contains the complete list of features, functions, and capabilities of the Boss Workflow Automation system. **This file must be read first and updated last when making changes.**
-
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Telegram Bot Commands](#telegram-bot-commands)
-3. [Natural Language Intents](#natural-language-intents)
-4. [AI Capabilities](#ai-capabilities)
-5. [Google Sheets Integration](#google-sheets-integration)
-6. [Discord Integration](#discord-integration)
-7. [Google Calendar Integration](#google-calendar-integration)
-8. [Gmail Integration](#gmail-integration)
-9. [Scheduler & Automation](#scheduler--automation)
-10. [Memory & Learning System](#memory--learning-system)
-11. [Task Model](#task-model)
-12. [Validation System](#validation-system)
-13. [API Endpoints](#api-endpoints)
-14. [Utility Modules](#utility-modules-new-in-v153)
-15. [Time Clock / Attendance System](#time-clock--attendance-system-new-in-v154)
-16. [Configuration](#configuration)
-17. [Future Upgrades & Roadmap](#future-upgrades--roadmap)
+**Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
+**Usage Rule:** **Read this file FIRST when starting work, update LAST after making changes.**
 
 ---
 
-## Overview
+## 🎯 Quick Reference Guide
 
-Boss Workflow is a conversational task management system that allows a boss to create, assign, and track tasks through natural language via Telegram. The system uses DeepSeek AI for intent detection and clarification, syncs with Google Sheets for tracking, posts to Discord for team visibility, and includes a validation workflow for task completion.
+### System Status at a Glance
 
-### Architecture
+| Component | Status | Key Features |
+|-----------|--------|--------------|
+| **AI Engine** | ✅ Production | DeepSeek AI, Intent Detection, Voice/Vision |
+| **Telegram Bot** | ✅ Production | 40+ commands, Natural language, Multi-task |
+| **Discord Integration** | ✅ Production | 4 channels/dept, Reactions, Forum threads |
+| **Google Sheets** | ✅ Production | 8 sheets, Auto-sync, Reports |
+| **Database** | ✅ Production | PostgreSQL with full relationships |
+| **Automation** | ✅ Production | Scheduled jobs, Reminders, Auto-review |
+| **Team Access** | 🔴 Planned | Multi-user bot access |
+| **Web Dashboard** | 🔴 Planned | React/Next.js UI |
 
+### Most Used Commands
+
+```bash
+# Task Creation
+/task [description]              # Create task with AI assistance
+/urgent [description]            # High-priority task
+"John fix the login bug"         # Natural language (no command needed)
+
+# Status & Reports
+/status                          # Current overview
+/daily                           # Today's tasks
+/weekly                          # Weekly summary
+
+# Team Operations
+/team                            # View team members
+/syncteam                        # Sync team from config to DB/Sheets
+
+# Validation
+/submit [task-id]                # Team member submits work
+/approve [task-id] [message]     # Boss approves task
 ```
-Telegram (Boss) ─────┐
-                     │
-Natural Language ────┼──► DeepSeek AI ──► Task Spec ──┬──► Google Sheets
-                     │                                │
-Voice/Photos ────────┘                                ├──► Discord
-                                                      │
-                                                      ├──► Google Calendar
-                                                      │
-Scheduler ──► Reminders/Reports ──────────────────────┘
-```
+
+### File Location Quick Index
+
+| Component | File Path |
+|-----------|-----------|
+| Main Entry | `src/main.py` |
+| Bot Handler | `src/bot/handler.py` |
+| AI Intent | `src/ai/intent.py` |
+| Task Creation | `src/ai/task_processor.py` |
+| DeepSeek AI | `src/ai/deepseek.py` |
+| Discord | `src/integrations/discord.py` |
+| Sheets | `src/integrations/sheets.py` |
+| Database Models | `src/database/models.py` |
+| Scheduler | `src/scheduler/jobs.py` |
 
 ---
 
-## Telegram Bot Commands
+## 📋 Table of Contents
 
-### Task Creation & Management
+1. [Overview & Architecture](#overview--architecture)
+2. [Telegram Bot Interface](#telegram-bot-interface)
+   - [Commands Reference](#telegram-bot-commands)
+   - [Natural Language Intents](#natural-language-intents)
+3. [AI Capabilities](#ai-capabilities)
+4. [Integrations](#integrations)
+   - [Google Sheets](#google-sheets-integration)
+   - [Discord](#discord-integration)
+   - [Google Calendar](#google-calendar-integration)
+   - [Gmail](#gmail-integration)
+5. [Automation & Scheduling](#scheduler--automation)
+6. [Data Systems](#data-systems)
+   - [Memory & Learning](#memory--learning-system)
+   - [Task Model](#task-model)
+   - [Validation System](#validation-system)
+7. [API & Technical](#api--technical)
+   - [API Endpoints](#api-endpoints)
+   - [Utility Modules](#utility-modules)
+   - [Configuration](#configuration)
+8. [Team Features](#team-features)
+   - [Time Clock System](#time-clock--attendance-system)
+9. [Roadmap & Future](#future-upgrades--roadmap)
+10. [Version History](#version-history)
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/start` | Welcome message and introduction | `/start` |
-| `/help` | Full command reference | `/help` |
-| `/task [description]` | Start conversational task creation | `/task Fix the login bug` |
-| `/urgent [description]` | Create high-priority task | `/urgent Server is down` |
-| `/skip` | Skip remaining questions, use defaults | `/skip` |
-| `/done` | Finalize task with current info | `/done` |
-| `/cancel` | Abort current task creation | `/cancel` |
+---
 
-### Multi-Task Handling (NEW in v1.4, Enhanced in v1.7.5)
+## Overview & Architecture
 
-When you send multiple tasks in one message, the bot handles them **sequentially**:
+### System Summary
+
+**Boss Workflow** is a conversational task management system enabling bosses to create, assign, and track tasks through natural language via Telegram.
+
+**Core Technology Stack:**
+- **Frontend:** Telegram Bot (Python-telegram-bot)
+- **AI:** DeepSeek AI (intent detection, task generation, analysis)
+- **Backend:** FastAPI + PostgreSQL + Redis
+- **Integrations:** Discord, Google Sheets, Google Calendar, Gmail
+- **Deployment:** Railway (with auto-scaling)
+
+### Architecture Diagram
 
 ```
-You: "John fix the login bug, then Sarah update the homepage, and Mike review the API"
+┌─────────────────────────────────────────────────────────────────┐
+│                         INPUT LAYER                              │
+├─────────────────────────────────────────────────────────────────┤
+│  Telegram (Boss) ──► Voice Messages ──► Photos ──► Text         │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       AI PROCESSING LAYER                        │
+├─────────────────────────────────────────────────────────────────┤
+│  DeepSeek AI ──► Intent Detection ──► Task Spec Generation      │
+│  Whisper ──► Voice Transcription                                │
+│  Vision AI ──► Image Analysis                                    │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       DATA PERSISTENCE                           │
+├─────────────────────────────────────────────────────────────────┤
+│  PostgreSQL (Source of Truth) ◄──► Redis (Cache/Sessions)      │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      OUTPUT/SYNC LAYER                           │
+├─────────────────────────────────────────────────────────────────┤
+│  Google Sheets ──► Discord ──► Google Calendar ──► Gmail       │
+└─────────────────────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      AUTOMATION LAYER                            │
+├─────────────────────────────────────────────────────────────────┤
+│  Scheduler ──► Reminders ──► Reports ──► Proactive Check-ins   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Differentiators
+
+1. **AI-First Architecture** - Intent detection uses DeepSeek AI, not brittle regex
+2. **Zero-Command Interface** - Natural language works for 95% of operations
+3. **Multi-Modal Input** - Text, voice, images all supported
+4. **Auto-Review System** - AI validates submissions before boss sees them
+5. **Pattern Learning** - System learns from interactions over time
+6. **Department Routing** - Tasks auto-route to correct Discord channels by role
+
+---
+
+## Telegram Bot Interface
+
+### Telegram Bot Commands
+
+#### 🎯 Task Creation & Management
+
+| Command | Description | Example | Status |
+|---------|-------------|---------|--------|
+| `/start` | Welcome message and introduction | `/start` | ✅ Core |
+| `/help` | Full command reference | `/help` | ✅ Core |
+| `/task [description]` | Start conversational task creation | `/task Fix the login bug` | ✅ Core |
+| `/urgent [description]` | Create high-priority task | `/urgent Server is down` | ✅ Core |
+| `/skip` | Skip remaining questions, use defaults | `/skip` | ✅ Core |
+| `/done` | Finalize task with current info | `/done` | ✅ Core |
+| `/cancel` | Abort current task creation | `/cancel` | ✅ Core |
+
+**Implementation:** `src/bot/commands.py`
+
+---
+
+#### 🔄 Multi-Task Handling (v1.4+)
+
+**Status:** ✅ Production (Enhanced in v1.7.5)
+
+**Feature:** Sequential processing of multiple tasks in one message
+
+**How it works:**
+```
+User: "John fix the login bug, then Sarah update the homepage, and Mike review the API"
 
 Bot: "📋 Task 1 of 3
       [Shows first task preview]
 
       yes = create & next | skip = skip & next | no = cancel all"
 
-You: "yes"
+User: "yes"
 
 Bot: "✅ Task 1 created!
 
@@ -83,14 +197,19 @@ Bot: "✅ Task 1 created!
       [Shows second task preview]..."
 ```
 
-**Separators detected:** "then", "and also", "another task", "next task", numbered lists
+**Detected Separators:**
+- `"then"`
+- `"and also"`
+- `"another task"`
+- `"next task"`
+- Numbered lists (1., 2., 3.)
 
-**Single-Assignee Multi-Task (NEW in v1.7.5):**
+**Single-Assignee Multi-Task (v1.7.5):**
 
-You can now send multiple tasks for the **same person** using ordinal phrases:
+Send multiple tasks for the **same person** using ordinal phrases:
 
 ```
-You: "Tasks for Mayank no questions:
+User: "Tasks for Mayank no questions:
       First one will be to add the referral code
       Second one correct the error sequence
       Third one run Stripe payment testing
@@ -102,47 +221,86 @@ Bot: "📋 Task 1 of 4
       ..."
 ```
 
-**Ordinal patterns detected:** "First one", "Second task", "Third item", "1st one", "2nd task", etc.
-**Preamble detection:** "Tasks for [name]" or "For [name]" at the start auto-assigns all tasks to that person
+**Ordinal Patterns Detected:**
+- `"First one"`, `"Second task"`, `"Third item"`
+- `"1st one"`, `"2nd task"`, `"3rd"`, `"4th"`
+- Preamble detection: `"Tasks for [name]"` or `"For [name]"` auto-assigns all
 
-### SPECSHEETS Mode (NEW in v1.4)
+**Implementation:** `src/ai/task_processor.py` (deterministic splitting, no AI hallucination)
 
-Trigger detailed specification generation with keywords:
+---
 
+#### 📝 SPECSHEETS Mode (v1.4+)
+
+**Status:** ✅ Production
+
+**Feature:** Detailed PRD-level specification generation
+
+**Trigger Keywords:**
+- `"specsheet"`
+- `"spec sheet"`
+- `"detailed spec"`
+- `"detailed for:"`
+- `"full spec"`
+- `"comprehensive"`
+- `"more developed"`
+- `"more detailed"`
+- `"with details"`
+
+**Example:**
 ```
-You: "SPECSHEETS detailed for: Build authentication system for John"
+User: "SPECSHEETS detailed for: Build authentication system for John"
+
+Bot: [Generates comprehensive PRD with:]
+     - Multi-paragraph description (3-5 paragraphs)
+     - 4-6 detailed acceptance criteria
+     - Comprehensive subtask breakdown
+     - Technical considerations
+     - DB schema, API structure, patterns
 ```
 
-**Trigger keywords:** `specsheet`, `spec sheet`, `detailed spec`, `detailed for:`, `full spec`, `comprehensive`, `more developed`, `more detailed`, `with details`
+**Output:** Posted as Discord Forum thread with full PRD formatting
 
-**Generates:**
-- Multi-paragraph description (3-5 paragraphs)
-- 4-6 detailed acceptance criteria
-- Comprehensive subtask breakdown with implementation details
-- Technical considerations
+**Implementation:** `src/ai/deepseek.py` (PRD prompt), `src/integrations/discord.py` (forum posting)
 
-### Task Status & Reporting
+---
 
-| Command | Description |
-|---------|-------------|
-| `/status` | Current task overview with stats |
-| `/daily` | Today's tasks grouped by status |
-| `/overdue` | List all overdue tasks |
-| `/weekly` | Weekly summary with team metrics |
+#### 📊 Task Status & Reporting
 
-### Team Management
+| Command | Description | Output |
+|---------|-------------|--------|
+| `/status` | Current task overview with stats | All tasks by status with counts |
+| `/daily` | Today's tasks grouped by status | Daily breakdown |
+| `/overdue` | List all overdue tasks | Tasks past deadline |
+| `/weekly` | Weekly summary with team metrics | Full week report |
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/team` | View team members with roles | `/team` |
-| `/addteam [name] [role]` | Add new team member | `/addteam John Developer` |
-| `/syncteam` | Sync team from config/team.py to Sheets + DB | `/syncteam` |
-| `/syncteam --clear` | Clear mock data first, then sync | `/syncteam --clear` |
-| `/clearteam` | Clear all data from Team sheet | `/clearteam` |
-| `/teach [instruction]` | Teach bot preferences | `/teach When I say ASAP, deadline is 4 hours` |
-| `/preferences` | View saved preferences | `/preferences` |
+**Implementation:** `src/bot/commands.py`, `src/integrations/sheets.py`
 
-### Task Operations
+---
+
+#### 👥 Team Management
+
+| Command | Description | Example | Permissions |
+|---------|-------------|---------|-------------|
+| `/team` | View team members with roles | `/team` | All |
+| `/addteam [name] [role]` | Add new team member | `/addteam John Developer` | Boss only |
+| `/syncteam` | Sync team from config/team.py to Sheets + DB | `/syncteam` | Boss only |
+| `/syncteam --clear` | Clear mock data first, then sync | `/syncteam --clear` | Boss only |
+| `/clearteam` | Clear all data from Team sheet | `/clearteam` | Boss only |
+| `/teach [instruction]` | Teach bot preferences | `/teach When I say ASAP, deadline is 4 hours` | Boss only |
+| `/preferences` | View saved preferences | `/preferences` | All |
+
+**Team Data Sources:**
+1. **Primary:** `config/team.py` (code-defined team)
+2. **Synced to:** PostgreSQL `team_members` table
+3. **Synced to:** Google Sheets "👥 Team" sheet
+4. **Used for:** Discord routing, task assignment, workload tracking
+
+**Implementation:** `src/bot/commands.py`, `src/database/repositories/team.py`
+
+---
+
+#### ⚙️ Task Operations
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -150,17 +308,160 @@ You: "SPECSHEETS detailed for: Build authentication system for John"
 | `/delay [task-id] [deadline] [reason]` | Postpone task | `/delay TASK-001 tomorrow Client request` |
 | `/templates` | View available task templates | `/templates` |
 
-### Search & Filter (NEW in v1.1)
+**Implementation:** `src/bot/commands.py`
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/search [query]` | Search tasks by keyword | `/search login bug` |
-| `/search @name` | Find tasks by assignee | `/search @John` |
-| `/search #priority` | Filter by priority | `/search #urgent` |
-| `/search status:X` | Filter by status | `/search status:blocked` |
-| `/search due:X` | Filter by deadline | `/search due:today` |
+---
 
-### Bulk Operations (NEW in v1.1)
+#### 🔧 Comprehensive Task Operations (v2.2+)
+
+**Status:** ✅ Production
+
+**Feature:** Complete task management operations via natural language - no slash commands required.
+
+The bot now understands comprehensive task modifications through conversational language, making task management as simple as describing what you want.
+
+##### Task Modification
+
+| Operation | Natural Language Examples | What Happens |
+|-----------|--------------------------|--------------|
+| **Modify Title** | "change the title of TASK-001 to 'Fix login bug'" | Updates task title |
+| | "rename TASK-001 to 'New Title'" | |
+| **Modify Description** | "update TASK-001 description to needs API integration" | Updates description |
+| | "change description of TASK-001" | |
+| **Reassign Task** | "reassign TASK-001 to Sarah" | Changes assignee |
+| | "give the login task to John" | |
+| | "transfer TASK-001 to Mayank" | |
+| **Change Priority** | "make TASK-001 urgent" | Updates priority level |
+| | "lower priority of TASK-002 to medium" | |
+| | "high priority for TASK-003" | |
+| **Change Deadline** | "extend TASK-001 deadline to Friday" | Updates due date |
+| | "push TASK-002 deadline to next week" | |
+| | "deadline tomorrow for TASK-003" | |
+| **Change Status** | "move TASK-001 to in_progress" | Updates status |
+| | "mark TASK-002 as blocked" | |
+| | "status to review for TASK-003" | |
+
+##### Tags & Labels
+
+| Operation | Examples |
+|-----------|----------|
+| **Add Tags** | "tag TASK-001 as frontend" |
+| | "label TASK-002 as urgent" |
+| | "add tag backend to TASK-003" |
+| **Remove Tags** | "remove urgent tag from TASK-001" |
+| | "untag frontend from TASK-002" |
+| | "delete tag backend from TASK-003" |
+
+##### Subtasks
+
+| Operation | Examples |
+|-----------|----------|
+| **Add Subtask** | "add subtask to TASK-001: design mockup" |
+| | "TASK-002 subtask: write tests" |
+| **Complete Subtask** | "mark subtask 1 done on TASK-001" |
+| | "subtask #2 complete for TASK-002" |
+| | "finish subtask 3 on TASK-003" |
+
+##### Dependencies
+
+| Operation | Examples |
+|-----------|----------|
+| **Add Dependency** | "TASK-001 depends on TASK-002" |
+| | "TASK-003 is blocked by TASK-001" |
+| | "after TASK-002, do TASK-004" |
+| **Remove Dependency** | "remove dependency between TASK-001 and TASK-002" |
+| | "unblock TASK-003 from TASK-001" |
+
+##### Advanced Operations
+
+| Operation | Examples |
+|-----------|----------|
+| **Duplicate Task** | "duplicate TASK-001 for Sarah" |
+| | "copy TASK-002 for the frontend team" |
+| **Split Task** | "split TASK-001 into 2 tasks" |
+| | "break TASK-002 into multiple tasks" |
+
+**How It Works:**
+1. **AI-Powered:** DeepSeek AI detects intent and extracts task details
+2. **Context-Aware:** Can reference "this task" in ongoing conversations
+3. **Flexible Phrasing:** Natural language works - no rigid syntax
+4. **Auto-Sync:** Changes sync to PostgreSQL, Google Sheets, and Discord
+5. **Audit Trail:** All changes logged with user and timestamp
+6. **Discord Notifications:** Team sees updates in real-time
+
+**Valid Task Statuses:**
+- `pending` - Not started
+- `in_progress` - Currently working
+- `in_review` - Ready for review
+- `awaiting_validation` - Boss review needed
+- `needs_revision` - Needs changes
+- `completed` - Finished
+- `cancelled` - Cancelled
+- `blocked` - Cannot proceed
+- `delayed` - Postponed
+- `on_hold` - Paused temporarily
+- `waiting` - Waiting on external factor
+- `needs_info` - Missing information
+- `overdue` - Past deadline
+
+**Valid Priority Levels:**
+- `urgent` 🔴 - Immediate attention
+- `high` 🟠 - Important
+- `medium` 🟡 - Normal (default)
+- `low` 🟢 - When time permits
+
+**Implementation Details:**
+- **Intent Detection:** `src/ai/intent.py` (13 new intents)
+- **Handlers:** `src/bot/handler.py` (13 new handler methods)
+- **Repository:** `src/database/repositories/tasks.py`
+- **Discord:** `src/integrations/discord.py` (post_simple_message)
+- **Sheets Sync:** `src/integrations/sheets.py`
+
+**Example Workflow:**
+```
+Boss: "change TASK-001 title to 'Implement user authentication'"
+Bot: "✅ Updated TASK-001: title updated"
+
+Boss: "make it urgent and reassign to Sarah"
+Bot: "✅ Changed TASK-001 priority: medium → urgent"
+Bot: "✅ Reassigned TASK-001 from John to Sarah"
+
+Boss: "add tag security to it"
+Bot: "✅ Added tags to TASK-001: security"
+```
+
+**Natural Language Power:**
+- "the login bug" → AI identifies TASK-001 from context
+- "postpone this to Friday" → Understands "this" from conversation
+- "make urgent" → Extracts priority without explicit "priority to urgent"
+- "assign to John" → Identifies team member automatically
+
+---
+
+#### 🔍 Search & Filter (v1.1+)
+
+**Status:** ✅ Production
+
+| Command | Description | Example | Search Scope |
+|---------|-------------|---------|--------------|
+| `/search [query]` | Search tasks by keyword | `/search login bug` | Title + Description |
+| `/search @name` | Find tasks by assignee | `/search @John` | Assignee field |
+| `/search #priority` | Filter by priority | `/search #urgent` | Priority field |
+| `/search status:X` | Filter by status | `/search status:blocked` | Status field |
+| `/search due:X` | Filter by deadline | `/search due:today` | Deadline field |
+
+**Natural Language Support:**
+- `"What's John working on?"` → Automatically parsed and searched
+- `"Show me urgent tasks"` → Filters by priority
+- `"What's due today?"` → Deadline filter
+
+**Implementation:** `src/bot/commands.py`, `src/integrations/sheets.py` (search_tasks method)
+
+---
+
+#### 📦 Bulk Operations (v1.1+)
+
+**Status:** ✅ Production
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -168,7 +469,19 @@ You: "SPECSHEETS detailed for: Build authentication system for John"
 | `/block ID ID [reason]` | Block multiple tasks | `/block TASK-001 TASK-002 API down` |
 | `/assign @name ID ID` | Assign tasks to someone | `/assign @Sarah TASK-003 TASK-004` |
 
-### Recurring Tasks (NEW in v1.2)
+**Natural Language Support:**
+- `"Mark these 3 as done"` → AI extracts task IDs from context
+- `"Block all of John's tasks"` → Filters + bulk update
+
+**Implementation:** `src/bot/commands.py`, `src/integrations/sheets.py` (bulk_update_status, bulk_assign)
+
+---
+
+#### 🔁 Recurring Tasks (v1.2+)
+
+**Status:** ✅ Production
+
+**Feature:** Tasks that auto-recreate on schedule
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -179,13 +492,30 @@ You: "SPECSHEETS detailed for: Build authentication system for John"
 | `/recurring delete REC-ID` | Delete recurring task | `/recurring delete REC-001` |
 
 **Recurrence Patterns:**
-- Daily: `every:day`
-- Weekdays only: `every:weekday`
-- Weekly: `every:monday`, `every:monday,wednesday,friday`
-- Monthly: `every:1st`, `every:15th`, `every:last`
-- Interval: `every:2weeks`, `every:3days`
 
-### Time Tracking (NEW in v1.2)
+| Pattern | Description | Example |
+|---------|-------------|---------|
+| `every:day` | Every day | Daily standup |
+| `every:weekday` | Monday-Friday only | Workday check-in |
+| `every:monday` | Every Monday | Weekly meeting |
+| `every:monday,wednesday,friday` | Multiple days | MWF workout |
+| `every:1st` | 1st of every month | Monthly report |
+| `every:15th` | 15th of every month | Mid-month review |
+| `every:last` | Last day of month | EOM summary |
+| `every:2weeks` | Every 2 weeks | Bi-weekly sprint |
+| `every:3days` | Every 3 days | Regular check-in |
+
+**Scheduler:** Checks every 5 minutes for due recurring tasks
+
+**Implementation:** `src/database/models.py` (RecurringTaskDB), `src/database/repositories/recurring.py`, `src/scheduler/jobs.py`
+
+---
+
+#### ⏱️ Time Tracking (v1.2+)
+
+**Status:** ✅ Production
+
+**Feature:** Full time tracking with timers and manual logging
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -199,12 +529,23 @@ You: "SPECSHEETS detailed for: Build authentication system for John"
 | `/timesheet team` | Team timesheet | `/timesheet team` |
 
 **Duration Formats:**
-- Hours and minutes: `2h30m`
-- Hours with decimal: `1.5h`
-- Minutes only: `45m`
-- Days: `1d` (= 8 hours)
 
-### Subtasks (NEW in v1.2)
+| Format | Parsed As | Example |
+|--------|-----------|---------|
+| `2h30m` | 150 minutes | 2 hours 30 minutes |
+| `1.5h` | 90 minutes | 1.5 hours |
+| `45m` | 45 minutes | 45 minutes |
+| `1d` | 480 minutes | 1 day (8 hours) |
+
+**Implementation:** `src/database/models.py` (TimeEntryDB), `src/database/repositories/time_tracking.py`
+
+---
+
+#### 📋 Subtasks (v1.2+)
+
+**Status:** ✅ Production
+
+**Feature:** Break tasks into smaller items with progress tracking
 
 | Command | Description | Example |
 |---------|-------------|---------|
@@ -212,1766 +553,7 @@ You: "SPECSHEETS detailed for: Build authentication system for John"
 | `/subtasks TASK-ID` | List subtasks for a task | `/subtasks TASK-001` |
 | `/subdone TASK-ID #num` | Mark subtask complete | `/subdone TASK-001 1` |
 | `/subdone TASK-ID all` | Mark all subtasks done | `/subdone TASK-001 all` |
-| `/breakdown TASK-ID` | AI-powered task breakdown (NEW v1.3) | `/breakdown TASK-001` |
-
-### Validation (Team Members)
-
-| Command | Description |
-|---------|-------------|
-| `/submit [task-id]` | Start submitting proof |
-| `/submitproof` | Finish adding proof, move to notes |
-| `/addproof` | Add more proof items |
-
-### Validation (Boss)
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `/pending` | View pending validations | `/pending` |
-| `/approve [task-id] [message]` | Approve work | `/approve TASK-001 Great job!` |
-| `/reject [task-id] [feedback]` | Reject with feedback | `/reject TASK-001 Fix the footer alignment` |
-
----
-
-## Natural Language Intents
-
-The bot understands natural language without requiring slash commands:
-
-| Intent | Examples | Action |
-|--------|----------|--------|
-| `CREATE_TASK` | "John needs to fix the login bug" | Starts task creation |
-| `TASK_DONE` | "I finished the landing page" | Marks task complete |
-| `SUBMIT_PROOF` | Send screenshot or link | Adds to proof collection |
-| `CHECK_STATUS` | "what's pending?", "status" | Shows task overview |
-| `CHECK_OVERDUE` | "anything overdue?" | Lists overdue tasks |
-| `EMAIL_RECAP` | "check my emails" | Generates email summary |
-| `SEARCH_TASKS` | "What's John working on?" | Searches and filters tasks |
-| `BULK_COMPLETE` | "Mark these 3 as done" | Bulk status update |
-| `LIST_TEMPLATES` | "What templates are available?" | Shows task templates |
-| `DELAY_TASK` | "delay this to tomorrow" | Postpones task |
-| `ADD_TEAM_MEMBER` | "John is our backend dev" | Registers team member |
-| `ASK_TEAM_MEMBER` | "ask Mayank what tasks are left", "tell Sarah to update me" | Sends message to team member via Discord (NEW v1.8.3) |
-| `TEACH_PREFERENCE` | "when I say ASAP, deadline is 4 hours" | Saves preference |
-| `APPROVE_TASK` | "looks good", "approved" | Approves submission |
-| `REJECT_TASK` | "no - fix the footer" | Rejects with feedback |
-| `HELP` | "help", "what can you do?" | Shows help |
-| `GREETING` | "hi", "hello" | Friendly response |
-
----
-
-## AI Capabilities
-
-### DeepSeek Integration (`src/ai/deepseek.py`)
-
-| Function | Description |
-|----------|-------------|
-| `analyze_task_request()` | Identify missing info, confidence scores |
-| `generate_clarifying_questions()` | Create natural questions |
-| `generate_task_spec()` | Generate complete task specification |
-| `format_preview()` | Format spec as readable message |
-| `process_answer()` | Extract structured info from responses |
-| `generate_daily_standup()` | Create standup summaries |
-| `generate_weekly_summary()` | Generate weekly reports |
-
-### Intent Detection (`src/ai/intent.py`) - AI-FIRST (v2.0)
-
-**Architecture (NEW in v2.0):**
-```
-Message → Slash Command? → Direct mapping
-              ↓ No
-        Context State? → Direct mapping (awaiting confirmation, etc.)
-              ↓ No
-        AI Classification → Structured JSON → Validate → Execute
-```
-
-**Features:**
-- AI is the brain - classifies ALL natural language messages
-- Returns structured JSON: `{intent, confidence, reasoning, extracted_data}`
-- No more brittle regex patterns to maintain
-- Handles ANY phrasing naturally
-- Self-healing through examples in prompt
-- Confidence scoring with low-confidence fallback
-- Clear distinctions in prompt (communication vs task creation)
-
-### Task Clarifier (`src/ai/clarifier.py`)
-
-- Smart question generation based on confidence levels
-- Preference-based question filtering
-- Information extraction (priority, deadline, assignee)
-- Answer processing with multi-format support
-- **Task Template Detection** (NEW v1.1): Auto-detects keywords like "bug:", "hotfix:", "feature:" and applies template defaults
-- **Smart Dependency Detection** (NEW v1.1): AI analyzes existing tasks to suggest potential dependencies before task creation
-
-### Email Summarizer (`src/ai/email_summarizer.py`)
-
-- Batch email analysis (up to 20 emails)
-- Action item extraction
-- Priority categorization
-- Sender/topic grouping
-- Urgent attention flagging
-
-### Submission Reviewer (`src/ai/reviewer.py`)
-
-- Auto-review quality checks (0-100 score)
-- Proof item validation
-- Notes completeness check
-- AI-powered improvement suggestions
-- Configurable threshold (default 70)
-
-### Voice Transcription (NEW in v1.2) (`src/ai/transcriber.py`)
-
-| Function | Description |
-|----------|-------------|
-| `transcribe()` | Convert audio to text using OpenAI Whisper |
-| `transcribe_with_context()` | Transcribe with context prompt for better accuracy |
-| `transcribe_voice_message()` | Convenience wrapper for Telegram voice messages |
-
-**Features:**
-- OpenAI Whisper API integration
-- Task management context prompts ("assignments, deadlines, priorities")
-- Automatic temp file handling
-- Supports OGG, MP3, WAV, and other audio formats
-- Requires `OPENAI_API_KEY` environment variable
-
-**Usage:**
-1. Send voice message in Telegram
-2. Bot transcribes using Whisper
-3. Shows transcription: `📝 "Create urgent task for John"`
-4. Processes as normal text command
-
-### Image Vision Analysis (NEW in v1.3) (`src/ai/vision.py`)
-
-| Function | Description |
-|----------|-------------|
-| `analyze_image()` | Analyze image with custom prompt |
-| `analyze_screenshot()` | Extract structured info from screenshots |
-| `analyze_proof()` | Validate proof images for task completion |
-| `extract_text()` | OCR text extraction from images |
-| `describe_for_task()` | Analyze image in task creation context |
-
-**Features:**
-- DeepSeek VL (Vision-Language) model integration
-- Automatic base64 encoding for API calls
-- Context-aware analysis prompts
-- Proof validation with relevance assessment
-- Integration with auto-review system
-
-**Usage:**
-1. Send photo in Telegram
-2. Bot shows: `🔍 Analyzing image...`
-3. Vision AI describes what's in the image
-4. Analysis is included in task context or proof review
-
-**Proof Analysis:**
-When submitting proof screenshots:
-1. Send screenshot as proof
-2. Vision AI analyzes what the screenshot shows
-3. Analysis preview shown: `🔍 _AI Analysis: Shows completed login page..._`
-4. Analysis included in boss notification
-5. Auto-reviewer uses vision analysis for quality scoring
-
-### AI Task Breakdown (NEW in v1.3) (`src/ai/deepseek.py`)
-
-| Function | Description |
-|----------|-------------|
-| `breakdown_task()` | Analyze task and generate subtask suggestions |
-
-**Features:**
-- Analyzes task title, description, type, and acceptance criteria
-- Generates 3-8 logical subtasks with effort estimates
-- Detects if task is too simple for breakdown
-- Shows dependencies between subtasks
-- Confirms before creating subtasks
-
-**Usage:**
-```
-/breakdown TASK-001
-```
-
-**Example Output:**
-```
-AI Task Breakdown: TASK-001
-"Build user authentication system"
-
-Analysis: This is a multi-step feature requiring backend, frontend, and testing work.
-
-Suggested Subtasks:
-1. Design auth flow diagram ~30min
-2. Create database schema for users ~1h
-3. Implement login/register API ~2h (after #2)
-4. Build frontend login form ~2h (after #3)
-5. Add password reset flow ~1h (after #3)
-6. Write integration tests ~1h (after #4, #5)
-
-Total Estimated Effort: 7h 30m
-
-Create these subtasks? Reply yes or no.
-```
-
----
-
-## Google Sheets Integration
-
-### Sheet Structure (`src/integrations/sheets.py`)
-
-| Sheet | Purpose | Columns |
-|-------|---------|---------|
-| **📋 Daily Tasks** | Main task tracker | ID, Title, Description, Assignee, Priority, Status, Type, Deadline, Created, Updated, Effort, Progress, Tags, Created By, Notes, Blocked By |
-| **📊 Dashboard** | Overview with live formulas | Metrics, charts, completion rates |
-| **👥 Team** | Team directory | Name, Telegram ID, Role, Email, Active Tasks, Completed (Week/Month), Completion Rate, Avg Days, Status |
-| **📅 Weekly Reports** | Weekly summaries | Week #, Year, Dates, Tasks Created/Completed/Pending/Blocked, Completion Rate, Priority Breakdown, Top Performer, Overdue, On-Time Rate, Highlights, Blockers |
-| **📆 Monthly Reports** | Monthly analytics | Month, Year, Tasks Created/Completed/Cancelled, Completion Rate, Priority Breakdown (Created & Done), EOM Status, Team Performance, Time Metrics, Summary |
-| **📝 Notes Log** | All task notes | Timestamp, Task ID, Task Title, Author, Type, Content, Pinned |
-| **🗃️ Archive** | Completed tasks | ID, Title, Description, Assignee, Priority, Final Status, Type, Deadline, Created, Completed, Days to Complete, Notes Count, Archived On |
-| **⚙️ Settings** | Configuration | Team members, task types, priorities, statuses |
-
-### Key Functions
-
-| Function | Description |
-|----------|-------------|
-| `add_task()` | Add new task with full metadata |
-| `update_task()` | Update task properties |
-| `get_all_tasks()` | Retrieve all tasks |
-| `get_tasks_by_status()` | Filter by status |
-| `get_tasks_by_assignee()` | Filter by person |
-| `get_overdue_tasks()` | Get past-deadline tasks |
-| `get_tasks_due_soon()` | Get tasks due within X days |
-| `add_note()` | Log note for task |
-| `generate_weekly_report()` | Auto-generate weekly report |
-| `generate_monthly_report()` | Auto-generate monthly report |
-| `update_team_member()` | Add/update team member |
-| `archive_task()` | Move to archive |
-| `archive_old_completed()` | Archive tasks older than X days |
-| `search_tasks()` | Search with filters (query, assignee, status, priority, due) |
-| `bulk_update_status()` | Update status for multiple tasks at once |
-| `bulk_assign()` | Assign multiple tasks to a person |
-
-### Formatting Features
-
-- Montserrat font throughout
-- Color-coded headers per sheet
-- Priority conditional formatting (red/orange/yellow/green)
-- Status conditional formatting (8 colors)
-- Overdue row highlighting
-- Alternating row colors (banding)
-- Dropdown validations (Priority, Status, Type, Progress, Role)
-- Frozen headers and first columns
-- Optimized column widths
-
----
-
-## Discord Integration
-
-### Channel-Based Bot API (NEW in v1.5.0)
-
-**MAJOR CHANGE:** Discord integration now uses Bot API with Channel IDs instead of webhooks. This provides full permissions for message management, thread creation/deletion, and @mentions.
-
-### Features (`src/integrations/discord.py`)
-
-| Function | Description |
-|----------|-------------|
-| `send_message()` | Send message to any channel |
-| `edit_message()` | Edit existing message |
-| `delete_message()` | Delete message from channel |
-| `create_forum_thread()` | Create forum post with embed |
-| `delete_thread()` | Delete thread/forum post |
-| `add_reaction()` | Add reaction to message |
-| `get_channel_threads()` | List all threads in channel |
-| `bulk_delete_threads()` | Delete threads matching prefix |
-| `post_task()` | Smart task posting (forum or text) |
-| `post_spec_sheet()` | Detailed spec as forum thread |
-| `post_standup()` | Daily standup to report channel |
-| `post_weekly_summary()` | Weekly report embed |
-| `post_alert()` | Alerts to tasks channel |
-| `post_general_message()` | Post to general channel |
-| `post_help()` | Help message with reaction guide |
-| `cleanup_task_channel()` | Clean all task threads |
-| `send_direct_message_to_team()` | Send boss message to team member via channel (NEW v1.8.3) |
-| `ask_team_member_status()` | Ask team member a question via Discord (NEW v1.8.3) |
-
-### Channel Structure (Per Department)
-
-Each department (Dev, Admin, Marketing, Design) has 4 dedicated channels:
-
-| Channel Type | Purpose | Content |
-|--------------|---------|---------|
-| **Forum** | Detailed specs, creates threads per task | Spec sheets, complex tasks |
-| **Tasks** | Regular tasks, status updates | Simple tasks, overdue alerts, cancellations |
-| **Report** | Standup and reports | Daily standup, weekly summary |
-| **General** | General messages | Help, announcements |
-
-### Channel Configuration
-
-**Dev Category (Primary - configured):**
-```bash
-DISCORD_DEV_FORUM_CHANNEL_ID=1459834094304104653
-DISCORD_DEV_TASKS_CHANNEL_ID=1461760665873158349
-DISCORD_DEV_REPORT_CHANNEL_ID=1461760697334632651
-DISCORD_DEV_GENERAL_CHANNEL_ID=1461760791719182590
-```
-
-**Other Categories (Future - set when needed):**
-- `DISCORD_ADMIN_*_CHANNEL_ID` - Admin department
-- `DISCORD_MARKETING_*_CHANNEL_ID` - Marketing department
-- `DISCORD_DESIGN_*_CHANNEL_ID` - Design department
-
-### Role-Based Routing
-
-Tasks are automatically routed to department channels based on assignee's role:
-
-| Role Keywords | Target Category |
-|---------------|-----------------|
-| developer, backend, frontend, engineer, qa, devops | Dev |
-| admin, administrator, manager, lead, director | Admin |
-| marketing, content, social, growth, seo, ads | Marketing |
-| designer, ui, ux, graphic, creative, artist | Design |
-
-**How it works:**
-1. Task created with assignee
-2. System looks up assignee's role from database
-3. Routes to matching department's channels
-4. Falls back to Dev category if no match
-
-### Content Routing
-
-Within each department, content goes to appropriate channel:
-
-| Content Type | Target Channel |
-|--------------|----------------|
-| Detailed specs, complex tasks | Forum (creates thread) |
-| Simple tasks, overdue, cancelled | Tasks |
-| Daily standup, weekly summary | Report |
-| Help, announcements | General |
-
-### Discord Bot Reaction Listener
-
-The system includes a full Discord bot (`src/integrations/discord_bot.py`) that listens for reactions on task messages and automatically updates task status.
-
-**Setup Requirements:**
-- `DISCORD_BOT_TOKEN` - Bot token from Discord Developer Portal
-- Bot needs `MESSAGE_CONTENT`, `GUILD_REACTIONS`, `GUILDS`, `GUILD_MEMBERS` intents enabled
-
-**Reaction to Status Mapping:**
-
-| Reaction | Status |
-|----------|--------|
-| ✅ | completed |
-| 🚧 | in_progress |
-| 🚫 | blocked |
-| ⏸️ | on_hold |
-| 🔄 | in_review |
-| ❌ | cancelled |
-| ⏳ | pending |
-| 👀 | in_review |
-| 🔴 | urgent (changes priority) |
-
-### Embed Format
-
-- Task ID and title
-- Priority emoji (🟢🟡🟠🔴)
-- Status with emoji
-- Assignee with Discord @mention
-- Deadline
-- Estimated effort
-- Acceptance criteria with checkmarks
-- Pinned notes
-- Delay reason if delayed
-
-### @Mention Format
-
-Team members must have numeric Discord user IDs in `config/team.py`:
-```python
-"discord_id": "392400310108291092",  # Numeric ID, not username
-```
-To get numeric ID: Discord Developer Mode → Right-click user → Copy ID
-
-### Discord Cleanup Command
-
-`/cleandiscord [channel_id]` - Delete all task threads from a channel
-
-```
-/cleandiscord                    # Uses default dev forum channel
-/cleandiscord 1459834094304104653  # Specific channel
-```
-
-### Legacy Webhooks (Deprecated)
-
-Webhooks are still supported for backward compatibility but not recommended:
-- `DISCORD_WEBHOOK_URL`
-- `DISCORD_TASKS_CHANNEL_WEBHOOK`
-- `DISCORD_STANDUP_CHANNEL_WEBHOOK`
-- `DISCORD_SPECS_CHANNEL_WEBHOOK`
-
-### Staff AI Assistant (NEW in v2.0.3)
-
-The bot includes a smart AI assistant that can have conversations with staff members directly in Discord. This provides contextual help for each task.
-
-**Architecture:**
-
-```
-Staff Message (Discord) ──► Identify Task ──► Get Task Context
-                                                    │
-                                                    ▼
-                                            ┌──────────────┐
-                                            │ AI Assistant │
-                                            │  (DeepSeek)  │
-                                            └──────────────┘
-                                                    │
-                      ┌──────────────┬──────────────┼──────────────┐
-                      ▼              ▼              ▼              ▼
-                  Question      Submission     Update       Escalate
-                   Answer        Validate      Track        → Boss
-```
-
-**Capabilities:**
-
-| Feature | Description |
-|---------|-------------|
-| Answer Questions | Answers questions about task requirements, criteria, deadlines |
-| Validate Submissions | Checks work against acceptance criteria, identifies missing items |
-| Guide Staff | Tells staff what's missing or needs fixing |
-| Track Context | Maintains per-task conversation history |
-| Escalate | Routes complex issues to boss via Telegram |
-
-**How It Works:**
-
-1. **Staff sends message** in enabled Discord channel or thread
-2. **System identifies task** by:
-   - Task ID mentioned in message (e.g., TASK-20260121-001)
-   - Thread linked to task
-   - Channel linked to task
-   - Staff's active task
-3. **AI processes message** with full task context
-4. **Response sent** back to Discord
-5. **If needed, escalates** to boss via Telegram
-
-**Channels Enabled:**
-
-- All task threads (automatically)
-- Dev general channel
-- Dev tasks channel
-- When bot is @mentioned
-
-**Submission Validation:**
-
-When staff says "done", "finished", or submits work, the AI validates against acceptance criteria:
-
-```
-Staff: "I'm done with the login feature, here's the PR link"
-
-Bot: **Submission Review for TASK-20260121-001**
-
-✅ Implement email/password authentication
-   _PR includes auth implementation_
-✅ Add form validation
-   _Validation visible in code_
-❌ Write unit tests
-   _No test files found in PR_
-
-**Missing items:**
-• Unit tests for authentication
-
-Please address these items and resubmit.
-```
-
-**Escalation to Boss:**
-
-When AI can't answer or staff needs help:
-
-```
-[Discord] Staff: "I need clarification on the business logic for edge case X"
-
-[Telegram] 📣 **Staff Escalation**
-           From: John
-           Task: TASK-20260121-001
-           Reason: AI couldn't answer staff's question
-
-           Message: I need clarification on the business logic for edge case X
-
-           [View in Discord](link)
-
-           _Reply here to respond to John._
-```
-
-**Files:**
-
-| File | Purpose |
-|------|---------|
-| `src/ai/staff_assistant.py` | AI assistant logic, intent detection, validation |
-| `src/memory/task_context.py` | Per-task conversation history storage |
-| `src/bot/staff_handler.py` | Routes Discord messages to AI |
-| `src/integrations/discord_bot.py` | Listens for messages, sends responses |
-| `src/database/repositories/staff_context.py` | Database persistence (NEW v2.0.4) |
-
-### Enhancements in v2.0.4
-
-**1. Database Persistence:**
-
-Conversation context now persists to PostgreSQL. If the server restarts, conversations are preserved:
-
-- `StaffTaskContextDB` - Per-task context storage
-- `StaffContextMessageDB` - Conversation messages
-- `StaffEscalationDB` - Escalation tracking with boss reply routing
-- `DiscordThreadTaskLinkDB` - Maps threads to tasks
-
-**2. Boss Reply Loop (Two-Way Communication):**
-
-When boss replies to an escalation in Telegram, the reply is automatically routed back to the staff member in Discord:
-
-```
-Staff: "What about edge case X?"
-       ↓ (Discord)
-Bot:   Escalates to boss via Telegram
-       ↓
-Boss:  Replies in Telegram
-       ↓
-Bot:   Routes reply back to Discord
-       ↓
-Staff: Sees boss response in thread
-```
-
-How it works:
-1. Escalation records Telegram message ID
-2. Boss replies by replying to the message in Telegram
-3. System looks up escalation by message ID
-4. Routes reply to staff's Discord channel/thread
-5. Marks escalation as responded
-
-**3. Auto-Link Threads to Tasks:**
-
-When a task thread is created in Discord (forum post or regular thread), it's automatically linked to the task. This means:
-
-- Staff can reply in any task thread and AI knows which task they're working on
-- No need to mention task ID in messages
-- Works for both forum posts and regular threads
-
----
-
-## Google Calendar Integration
-
-### Features (`src/integrations/calendar.py`)
-
-| Function | Description |
-|----------|-------------|
-| `create_task_event()` | Add task deadline to assignee's personal calendar |
-| `update_task_event()` | Modify event if deadline changes |
-| `delete_task_event()` | Remove event if task cancelled |
-| `get_events_today()` | Retrieve today's events |
-| `get_upcoming_deadlines()` | Get tasks due within X hours |
-| `create_reminder_event()` | Create standalone reminder |
-| `get_daily_schedule()` | Get all events for a day |
-
-### Per-User Calendar Support (NEW in v1.5.1)
-
-Events are created directly on the assignee's personal Google Calendar when:
-1. Staff member shares their calendar with the service account
-2. Their Calendar ID is stored in the Team sheet
-
-**Setup for Staff Members:**
-
-1. **Share Calendar with Service Account:**
-   - Open Google Calendar → Settings → Select your calendar
-   - Under "Share with specific people", add:
-     `tasking-boss-bot@tasking-boss-bot.iam.gserviceaccount.com`
-   - Give "Make changes to events" permission
-
-2. **Get Calendar ID:**
-   - In Calendar Settings → "Integrate calendar"
-   - Copy the Calendar ID (usually your email, or a long string ending in @group.calendar.google.com)
-
-3. **Add to Team Sheet:**
-   - Open the 👥 Team sheet
-   - Add the Calendar ID in the "Calendar ID" column for that team member
-
-**How It Works:**
-```
-Task Created for Minty →
-  System looks up Minty's Calendar ID from Sheets →
-  Creates event on Minty's personal calendar →
-  Minty sees task deadline directly in her Google Calendar
-```
-
-**Fallback Behavior:**
-- If no Calendar ID configured: Event created on default (primary) calendar
-- If calendar not shared: Error logged, event creation fails gracefully
-- Email invites still sent as attendees if email configured
-
-### Event Properties
-
-- Color-coded by priority (Green/Yellow/Orange/Red)
-- Multi-step reminders based on priority:
-  - Low: 1 hour before
-  - Medium: 1 hour, 30 min before
-  - High: 2 hours, 1 hour, 30 min before
-  - Urgent: 4 hours, 2 hours, 1 hour, 30 min before
-- Description includes: task description, assignee, acceptance criteria, task ID
-- Status prefix in title: ⏰ DELAYED or 🚨 OVERDUE
-
----
-
-## Gmail Integration
-
-### Features (`src/integrations/gmail.py`)
-
-| Function | Description |
-|----------|-------------|
-| `get_emails_since()` | Fetch recent emails by timeframe |
-| `is_available()` | Check if Gmail configured |
-| `generate_digest_for_period()` | Morning/evening summaries |
-
-### Email Digest Contents
-
-- Total and unread counts
-- Important email count
-- AI-generated summary
-- Action items list
-- Priority emails
-- Category breakdown
-
----
-
-## Web Onboarding Portal (NEW in v1.5.2)
-
-### Staff Self-Service Onboarding
-
-A web-based onboarding page for new team members to register themselves.
-
-**URL:** `https://boss-workflow-production.up.railway.app/onboard`
-
-### Features (`src/web/routes.py`)
-
-| Endpoint | Description |
-|----------|-------------|
-| `/onboard` | Staff onboarding form (4-step wizard) |
-| `/team` | View team members list |
-| `/auth/google/calendar` | Google Calendar OAuth flow |
-| `/auth/google/tasks` | Google Tasks OAuth flow |
-| `/api/onboard` | Form submission API |
-
-### Onboarding Flow
-
-**Step 1: Basic Information**
-- Full name
-- Email address
-- Role/Department (Developer, Admin, Marketing, Designer, etc.)
-
-**Step 2: Discord Setup**
-- Discord User ID (with instructions to get it)
-- Optional Discord username
-
-**Step 3: Google Integration**
-- Connect Google Calendar (OAuth2)
-- Connect Google Tasks (OAuth2)
-- Both are optional
-
-**Step 4: Confirmation**
-- Review details
-- Complete setup
-
-### What Happens on Submit
-
-1. Staff info saved to 👥 Team sheet
-2. Staff info saved to PostgreSQL database
-3. Google OAuth tokens stored (if connected)
-4. Staff appears in system immediately
-
-### Google OAuth Setup Required
-
-To enable "Connect Google Calendar/Tasks" buttons:
-
-1. Go to Google Cloud Console → APIs & Services → OAuth consent screen
-2. Create consent screen (External type for personal accounts)
-3. Add scopes: `calendar`, `tasks`
-4. Create OAuth2 credentials (Web application)
-5. Add redirect URI: `https://boss-workflow-production.up.railway.app/auth/google/callback`
-6. Set environment variables:
-   - `GOOGLE_OAUTH_CLIENT_ID`
-   - `GOOGLE_OAUTH_CLIENT_SECRET`
-
-### Design
-
-Dark minimalist theme matching outsupplements.com:
-- Dark background (#0a0a0a)
-- Card style (#1a1a1a)
-- Green accent (#4ade80)
-- Inter font family
-- Step indicator with progress
-- Mobile responsive
-
----
-
-## Scheduler & Automation
-
-### Scheduled Jobs (`src/scheduler/jobs.py`)
-
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| `daily_standup_job` | 9 AM daily | Summary of today's tasks + comprehensive email digest (Telegram only) |
-| `eod_reminder_job` | 6 PM daily | Pending/overdue tasks, tomorrow's priorities |
-| `weekly_summary_job` | Friday 5 PM | Team performance, completed vs pending, trends |
-| `monthly_report_job` | 1st of month 9 AM | Monthly analytics, productivity insights |
-| `deadline_reminder` | 2 hours before | Reminder to assignee and boss |
-| `overdue_alert` | Every 4 hours | Lists overdue tasks with days count |
-| `conversation_cleanup` | Every 5 minutes | Auto-finalize timed-out conversations |
-| `recurring_tasks_job` | Every 5 minutes | Create task instances from recurring templates (NEW v1.2) |
-| `morning_digest` | 10 AM | Email summary for morning (Telegram only) |
-| `evening_digest` | 9 PM | Email summary for evening (Telegram only) |
-| `sync_attendance` | Every 15 minutes | Sync attendance records from PostgreSQL to Google Sheets (NEW v1.5.4) |
-| `weekly_time_report` | Monday 10 AM | Generate weekly time/attendance report for all staff (NEW v1.5.4) |
-
-### Email Digest in Daily Standup (NEW in v1.4.1)
-
-After the daily standup message, a **separate comprehensive email summary** is automatically sent to Telegram (boss only, not Discord).
-
-**Features:**
-- Sent as separate message right after task standup
-- Only goes to Telegram (boss) - not Discord
-- Shows email overview (total, unread, important counts)
-- AI-powered summary of key emails
-- Extracted action items
-- Priority emails highlighted
-- List of latest 15 emails with status icons
-
-**Requirements:**
-- Set `ENABLE_EMAIL_DIGEST=true` in environment
-- Gmail must be configured (run `python setup_gmail.py` first)
-
-**Example Output:**
-```
-📧 Comprehensive Email Summary
-
-📊 Overview
-• Total: 12 emails
-• Unread: 5 🔵
-• Important: 2 ⭐
-
-📝 AI Summary
-[AI-generated summary of key emails...]
-
-📌 Action Items
-• Reply to client about proposal by EOD
-• Review contract draft from legal
-
-🚨 Priority Emails
-• John Smith: Urgent - Production issue needs attention
-
-📬 Latest Emails
-1. 🔵 ⭐ John Smith: Urgent - Production issue
-2. 🔵 Client Name: Re: Proposal feedback
-3. Sarah: Weekly report ready for review
-...
-```
-
-### Configurable Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `TIMEZONE` | Asia/Bangkok | Scheduler timezone |
-| `DAILY_STANDUP_HOUR` | 9 | Morning standup time |
-| `EOD_REMINDER_HOUR` | 18 | End-of-day reminder time |
-| `WEEKLY_SUMMARY_DAY` | friday | Weekly report day |
-| `WEEKLY_SUMMARY_HOUR` | 17 | Weekly report time |
-| `DEADLINE_REMINDER_HOURS` | 2 | Hours before deadline to remind |
-| `OVERDUE_ALERT_INTERVAL_HOURS` | 4 | How often to alert about overdue |
-
----
-
-## Memory & Learning System
-
-### User Preferences (`src/memory/preferences.py`)
-
-**Defaults:**
-- Default priority level
-- Deadline behavior (next business day, EOD, etc.)
-- Specification format (detailed, brief)
-
-**Question Behavior:**
-- `always_ask` - Fields to always ask about
-- `skip_questions_for` - Fields to never ask about
-- `always_show_preview` - Always preview before creating
-
-**Team Knowledge:**
-- Team member registry with name, Telegram ID, Discord ID, email, role, skills, default task types
-
-**Custom Triggers:**
-- Pattern → Action mapping
-- Example: "ASAP" → deadline: 4 hours
-
-**Task Templates (NEW in v1.1):**
-
-| Template | Auto-fills |
-|----------|------------|
-| `bug` | type=bug, priority=high, tags=["bugfix"] |
-| `hotfix` | type=bug, priority=urgent, deadline=4 hours |
-| `feature` | type=feature, effort="1 day", tags=["feature"] |
-| `research` | type=research, priority=low |
-| `meeting` | type=meeting, effort="1 hour" |
-| `docs` | type=task, priority=low, tags=["documentation"] |
-| `refactor` | type=task, priority=low, tags=["refactor", "tech-debt"] |
-| `test` | type=task, priority=medium, tags=["testing"] |
-
-Templates are auto-detected from natural language (e.g., "bug: login crashes" triggers bug template).
-
-### Learning System (`src/memory/learning.py`)
-
-| Teaching Type | Example |
-|---------------|---------|
-| Trigger | "When I say ASAP, set deadline to 4 hours" |
-| Team member | "John is our backend expert" |
-| Question preference | "Always ask about deadline" |
-| Defaults | "My default priority is medium" |
-
----
-
-## Task Model
-
-### Task Properties (`src/models/task.py`)
-
-```
-id: TASK-YYYYMMDD-XXX format
-title, description
-assignee (name)
-priority: low, medium, high, urgent
-status: (see below)
-task_type: task, bug, feature, research
-deadline, created_at, updated_at
-started_at, completed_at
-estimated_effort: "2 hours", "1 day", etc.
-acceptance_criteria: List of checkable items
-tags: Custom categorization
-notes: List with author and timestamp
-discord_message_id, sheets_row_id, calendar_event_id
-```
-
-### Task Statuses (14 total)
-
-| Status | Description |
-|--------|-------------|
-| `pending` | Not yet started |
-| `in_progress` | Currently being worked on |
-| `in_review` | Code/work review stage |
-| `awaiting_validation` | Submitted for boss review |
-| `needs_revision` | Rejected, needs changes |
-| `completed` | Finished successfully |
-| `cancelled` | Not doing |
-| `blocked` | Can't proceed |
-| `delayed` | Postponed with new deadline |
-| `undone` | Was completed but needs rework |
-| `on_hold` | Paused intentionally |
-| `waiting` | Waiting for external dependency |
-| `needs_info` | Blocked pending information |
-| `overdue` | Past deadline, not completed |
-
----
-
-## Validation System
-
-### Validation Flow (`src/models/validation.py`)
-
-1. Team member completes task
-2. Team member runs `/submit [task-id]`
-3. Sends proof (screenshots, links, documents)
-4. Adds notes explaining completion
-5. Auto-review checks quality (score 0-100)
-6. If score >= 70: sent to boss
-7. If score < 70: suggestions shown, can improve or send anyway
-8. Boss sees submission in Telegram
-9. Boss approves or rejects with feedback
-10. If rejected: team member can resubmit
-
-### Proof Item Types
-
-- `SCREENSHOT` - Photo/image file
-- `VIDEO` - Video recording
-- `LINK` - URL to demo/PR/deployment
-- `DOCUMENT` - Attached file
-- `NOTE` - Text explanation
-- `CODE_COMMIT` - Git commit reference
-
-### Auto-Review Checks
-
-- Proof item count (minimum expected)
-- Screenshot/link presence
-- Notes completeness
-- Length validation
-- AI quality assessment
-
----
-
-## API Endpoints
-
-### Health & Status
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Root health check |
-| `/health` | GET | Detailed service status |
-
-### Webhooks
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/webhook/telegram` | POST | Telegram updates |
-| `/webhook/discord` | POST | Discord reactions |
-
-### Task Operations
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/tasks/daily` | GET | Today's tasks |
-| `/api/tasks/overdue` | GET | Overdue tasks |
-| `/api/status` | GET | Overall status |
-| `/api/weekly-overview` | GET | Weekly statistics |
-
-### Scheduling
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/trigger-job/{job_id}` | POST | Manually trigger job |
-
-### Preferences
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/preferences/{user_id}` | GET | Get preferences |
-| `/api/preferences/{user_id}/teach` | POST | Add preference |
-
-### Database Operations (PostgreSQL)
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/db/tasks` | GET | List tasks from database |
-| `/api/db/tasks/{task_id}` | GET | Get task with relationships |
-| `/api/db/tasks/{task_id}/subtasks` | POST | Add subtask to task |
-| `/api/db/tasks/{task_id}/dependencies` | POST | Add dependency between tasks |
-| `/api/db/audit/{task_id}` | GET | Get audit history for task |
-| `/api/db/projects` | GET | List all projects |
-| `/api/db/projects` | POST | Create new project |
-| `/api/db/sync` | POST | Trigger Sheets sync |
-| `/api/db/stats` | GET | Get database statistics |
-
----
-
-## PostgreSQL Database
-
-### Overview
-
-PostgreSQL serves as the **source of truth** for all data. Google Sheets remains as the **boss dashboard** for visual tracking. Data flows:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      DATA ARCHITECTURE                               │
-├──────────────────┬──────────────────┬───────────────────────────────┤
-│   POSTGRESQL     │   GOOGLE SHEETS  │         REDIS                 │
-│ (Source of Truth)│ (Boss Dashboard) │   (Cache/Realtime)            │
-├──────────────────┼──────────────────┼───────────────────────────────┤
-│ • All tasks      │ • Task view      │ • Active sessions             │
-│ • Conversations  │ • Reports        │ • Rate limiting               │
-│ • Audit logs     │ • Team roster    │ • Temporary state             │
-│ • Relationships  │                  │                               │
-│ • AI memory      │                  │                               │
-└──────────────────┴──────────────────┴───────────────────────────────┘
-```
-
-### Database Tables (`src/database/models.py`)
-
-| Table | Purpose | Key Fields |
-|-------|---------|------------|
-| `tasks` | Main task storage | task_id, title, description, status, priority, assignee, deadline, project_id |
-| `projects` | Group related tasks | name, description, status, color |
-| `subtasks` | Break tasks into pieces | task_id, title, completed, order |
-| `task_dependencies` | Task relationships | task_id, depends_on_id, dependency_type |
-| `audit_logs` | Full change history | action, entity_id, old_value, new_value, changed_by, timestamp |
-| `conversations` | Chat sessions | user_id, stage, context, generated_spec, outcome |
-| `messages` | Individual messages | conversation_id, role, content, intent_detected |
-| `ai_memory` | User context | user_id, preferences, team_knowledge, custom_triggers |
-| `team_members` | Team roster | name, telegram_id, discord_id, email, role, skills |
-| `webhook_events` | Event log | source, event_type, payload, processed |
-| `recurring_tasks` | Recurring task templates (NEW v1.2) | recurring_id, title, pattern, time, next_run, is_active, instances_created |
-| `time_entries` | Time tracking log (NEW v1.2) | entry_id, task_id, user_id, started_at, ended_at, duration_minutes, entry_type |
-| `active_timers` | Currently running timers (NEW v1.2) | user_id, time_entry_id, task_ref, started_at |
-
-### Task Relationships
-
-**Subtasks** - Break large tasks into smaller pieces:
-```python
-await task_repo.add_subtask("TASK-001", "Design mockup")
-await task_repo.add_subtask("TASK-001", "Implement frontend")
-await task_repo.complete_subtask(subtask_id, "John")
-```
-
-**Dependencies** - Define task ordering:
-```python
-# TASK-002 is blocked by TASK-001
-await task_repo.add_dependency("TASK-002", "TASK-001", "blocked_by")
-
-# Get what's blocking a task
-blocking = await task_repo.get_blocking_tasks("TASK-002")
-
-# Get what a task is blocking
-blocked = await task_repo.get_blocked_tasks("TASK-001")
-```
-
-Dependency types:
-- `blocked_by` - This task cannot start until another completes
-- `depends_on` - This task needs another's output
-- `blocks` - This task prevents another from starting
-- `required_by` - Another task needs this one first
-
-**Projects** - Group related tasks:
-```python
-project = await project_repo.create(name="Website Redesign")
-await task_repo.assign_to_project("TASK-001", project.id)
-stats = await project_repo.get_project_stats(project.id)
-```
-
-### Audit Logging
-
-Every change is tracked automatically:
-
-| Action | Description |
-|--------|-------------|
-| `created` | Task/entity created |
-| `updated` | Field changed |
-| `status_changed` | Status transition |
-| `assigned` | Task assigned to someone |
-| `note_added` | Note added to task |
-| `proof_submitted` | Proof submitted for review |
-| `approved` | Task approved by boss |
-| `rejected` | Task rejected with feedback |
-| `subtask_added` | Subtask created |
-| `dependency_added` | Dependency established |
-| `synced_to_sheets` | Data synced to Sheets |
-
-Query audit history:
-```python
-audit_repo = get_audit_repository()
-
-# Get full history for a task
-history = await audit_repo.get_task_history("TASK-001")
-
-# Get user activity
-activity = await audit_repo.get_user_activity(user_id, days=7)
-
-# Get activity stats
-stats = await audit_repo.get_activity_stats(days=7)
-```
-
-### Conversation History
-
-All conversations are persisted:
-
-```python
-conv_repo = get_conversation_repository()
-
-# Create conversation
-conv = await conv_repo.create(user_id, user_name="Mat")
-
-# Add messages
-await conv_repo.add_message(conv.conversation_id, "user", "Create task for John")
-await conv_repo.add_message(conv.conversation_id, "assistant", "What's the deadline?")
-
-# Complete conversation
-await conv_repo.complete(conv.conversation_id, outcome="completed", task_id="TASK-001")
-
-# Get user history
-history = await conv_repo.get_user_history(user_id, limit=20)
-```
-
-### AI Memory
-
-Persistent context per user:
-
-```python
-memory_repo = get_ai_memory_repository()
-
-# Get full context for AI
-context = await memory_repo.get_full_context_for_ai(user_id)
-
-# Update preferences
-await memory_repo.update_preferences(user_id, {"default_priority": "medium"})
-
-# Add custom trigger
-await memory_repo.add_trigger(user_id, "ASAP", {"deadline_hours": 4})
-
-# Add team knowledge
-await memory_repo.add_team_member(user_id, "Mayank", {
-    "role": "developer",
-    "discord_id": "@MAYANK",
-    "skills": ["frontend", "react"]
-})
-```
-
-### Sheets Sync
-
-Tasks automatically sync to Sheets:
-
-```python
-sync = get_sheets_sync()
-
-# Sync pending tasks
-result = await sync.sync_pending_tasks()
-# {"synced": 5, "failed": 0}
-
-# Full sync (all tasks)
-result = await sync.full_sync()
-# {"total": 50, "synced": 50, "failed": 0}
-
-# Import from Sheets (migration)
-result = await sync.sync_from_sheets()
-# {"imported": 25, "skipped": 10}
-```
-
-Tasks are flagged `needs_sheet_sync=True` on any change. A scheduled job syncs periodically.
-
-### Repository Pattern
-
-All database operations use the repository pattern:
-
-```python
-from src.database.repositories import (
-    get_task_repository,
-    get_audit_repository,
-    get_conversation_repository,
-    get_ai_memory_repository,
-    get_team_repository,
-    get_project_repository,
-)
-
-# Each repository is a singleton
-task_repo = get_task_repository()
-audit_repo = get_audit_repository()
-conv_repo = get_conversation_repository()
-memory_repo = get_ai_memory_repository()
-team_repo = get_team_repository()
-project_repo = get_project_repository()
-```
-
----
-
-## Utility Modules (NEW in v1.5.3)
-
-Centralized utilities for consistent behavior across the application.
-
-### Datetime Utilities (`src/utils/datetime_utils.py`)
-
-All datetime handling uses these functions to ensure timezone consistency:
-
-```python
-from src.utils import (
-    get_local_tz,       # Get configured timezone
-    get_local_now,      # Current time in local TZ (naive)
-    to_naive_local,     # Convert any datetime to naive local
-    to_aware_utc,       # Convert to timezone-aware UTC
-    parse_deadline,     # Parse deadline strings ("tomorrow", "2026-01-20")
-    format_deadline,    # Format for display ("Jan 20, 2026 5:00 PM")
-    is_overdue,         # Check if deadline passed
-    hours_until_deadline,  # Hours remaining (negative if overdue)
-)
-
-# Convert timezone-aware deadline to naive local for PostgreSQL
-db_deadline = to_naive_local(task.deadline)
-
-# Parse user input like "tomorrow" or "2026-01-20T18:00:00+07:00"
-deadline = parse_deadline("tomorrow")  # Returns naive local datetime
-```
-
-### Team Utilities (`src/utils/team_utils.py`)
-
-Centralized team member lookup across all data sources:
-
-```python
-from src.utils import (
-    lookup_team_member,     # Find member by name (DB → Sheets → config)
-    get_assignee_info,      # Get all IDs for notifications
-    get_role_for_assignee,  # Get role for channel routing
-    validate_discord_id,    # Validate numeric Discord ID format
-)
-
-# Get assignee info for task creation
-info = await get_assignee_info("Mayank")
-# Returns: {"discord_id": "123...", "email": "...", "telegram_id": "...", "role": "Developer"}
-
-# Lookup searches in order:
-# 1. PostgreSQL database (fastest)
-# 2. Google Sheets Team tab (source of truth)
-# 3. config/team.py (local fallback)
-```
-
-### Validation Utilities (`src/utils/validation.py`)
-
-Task validation before database save:
-
-```python
-from src.utils import (
-    validate_task_data,        # Full task validation
-    validate_email,            # Email format check
-    validate_task_id,          # Task ID format (TASK-YYYYMMDD-XXX)
-    validate_priority,         # Priority value check
-    validate_status,           # Status value check
-    validate_status_transition,  # Transition validity check
-)
-
-# Validate before creating task
-result = validate_task_data(
-    title="Fix login bug",
-    assignee="Mayank",
-    assignee_discord_id="1234567890123456789",
-    priority="high",
-)
-
-if not result.is_valid:
-    print(f"Errors: {result.errors}")
-else:
-    if result.warnings:
-        print(f"Warnings: {result.warnings}")
-    # Proceed with task creation
-```
-
-**Validation Checks:**
-- Title required (3-500 characters)
-- Priority must be: low, medium, high, urgent
-- Status must be valid (14 statuses)
-- Discord ID format (17-19 digits)
-- Email format validation
-- Deadline in past (warning)
-- Assignee without contact info (warning)
-
----
-
-## Time Clock / Attendance System (NEW in v1.5.4)
-
-A simple, Discord-based attendance tracking system where staff send messages like "in", "out", "break" in dedicated channels.
-
-### Discord Channels for Attendance
-
-| Department | Channel ID | Purpose |
-|------------|------------|---------|
-| Dev | 1462451610184843449 | Developer attendance |
-| Admin | 1462451782470078628 | Admin attendance |
-
-### Staff Commands (Discord Message)
-
-Staff simply send a message in their department's attendance channel:
-
-| Message | Action | Bot Reaction |
-|---------|--------|--------------|
-| `in` | Clock in for the day | ✅ (+ ⏰ if late) |
-| `out` | Clock out for the day | 👋 |
-| `break` | Toggle break on/off | ☕ (start) / 💪 (end) |
-
-**Example:**
-```
-Staff sends: "in"
-Bot reacts: ✅
-(If late, also: ⏰)
-```
-
-### Late Detection
-
-The system automatically detects late arrivals based on:
-
-1. **Expected work start time**: Default 9:00 AM Thailand time
-2. **Grace period**: Default 15 minutes
-3. **Timezone support**: Each staff member can have their own timezone configured
-
-**Late Detection Algorithm:**
-```
-1. User sends "in" → capture event_time (UTC)
-2. Look up team member by Discord ID
-3. Get their timezone from Team sheet (default: Asia/Bangkok)
-4. Get their work_start from Team sheet (default: 09:00)
-5. Convert work_start to UTC for comparison
-6. Apply grace period (default: 15 min)
-7. If event_time > (work_start + grace_period):
-   - is_late = True
-   - late_minutes = (event_time - work_start).minutes
-   - React with ⏰ emoji
-```
-
-**Multi-Timezone Example:**
-```
-Staff: Mayank (India, UTC+5:30)
-Thailand work start: 9:00 AM (UTC+7)
-
-Expected start in Mayank's time:
-  9:00 ICT = 7:30 IST (1.5 hours behind)
-
-If Mayank clocks in at 8:00 AM IST:
-  = 9:30 AM ICT → 30 min late! ⏰
-
-If Mayank clocks in at 7:15 AM IST:
-  = 8:45 AM ICT → Within grace period ✅
-```
-
-### Google Sheets Integration
-
-Two new sheets are created:
-
-**⏰ Time Logs** (compact, 8 columns):
-
-| Column | Description |
-|--------|-------------|
-| Record ID | ATT-YYYYMMDD-XXX |
-| Date | YYYY-MM-DD |
-| Time | HH:MM |
-| Name | Staff name |
-| Event | in/out/break in/break out |
-| Late | Yes/No/- |
-| Late Min | Minutes late (0 if not) |
-| Channel | dev/admin |
-
-**📊 Time Reports** (weekly summary, 11 columns):
-
-| Column | Description |
-|--------|-------------|
-| Week | Week number |
-| Year | 2026 |
-| Name | Staff name |
-| Days Worked | Count |
-| Total Hours | Sum |
-| Avg Start | Average clock-in time |
-| Avg End | Average clock-out time |
-| Late Days | Count |
-| Total Late | Minutes |
-| Break Time | Total break duration |
-| Notes | Manual notes |
-
-**Updated 👥 Team sheet** - 2 new columns:
-
-| Column | Description |
-|--------|-------------|
-| Timezone | e.g., Asia/Kolkata, Asia/Bangkok |
-| Work Start | e.g., 09:00 (in Thailand time) |
-
-### Database Model
-
-```python
-class AttendanceRecordDB:
-    id: int
-    record_id: str  # ATT-YYYYMMDD-XXX
-    user_id: str    # Discord user ID
-    user_name: str
-    event_type: str  # clock_in, clock_out, break_start, break_end
-    event_time: datetime  # Local time
-    event_time_utc: datetime  # UTC for calculations
-    channel_id: str
-    channel_name: str  # dev/admin
-    is_late: bool
-    late_minutes: int
-    expected_time: datetime (nullable)
-    synced_to_sheets: bool
-    created_at: datetime
-```
-
-### Service Layer (`src/services/attendance.py`)
-
-| Function | Description |
-|----------|-------------|
-| `process_clock_in()` | Record clock-in, check for late, return reaction info |
-| `process_clock_out()` | Record clock-out, auto-end break if needed |
-| `process_break_toggle()` | Toggle break on/off state |
-| `calculate_late_status()` | Compare clock-in vs expected time with timezone handling |
-| `get_user_daily_summary()` | Get today's attendance for a user |
-
-### Repository Layer (`src/database/repositories/attendance.py`)
-
-| Function | Description |
-|----------|-------------|
-| `record_event()` | Save clock in/out/break event |
-| `get_user_events_for_date()` | Daily log for a user |
-| `get_user_last_event()` | For break toggle logic |
-| `get_weekly_summary()` | Per-user weekly stats |
-| `get_team_weekly_summary()` | All users weekly stats |
-| `get_unsynced_records()` | For Sheets sync |
-| `mark_synced()` | After Sheets sync |
-
-### Scheduled Jobs
-
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| `sync_attendance` | Every 15 min | Sync PostgreSQL → Google Sheets |
-| `weekly_time_report` | Monday 10 AM | Generate weekly summary, post to Discord/Telegram |
-
-### Configuration
-
-```bash
-# Attendance channels (env vars or settings.py)
-DISCORD_ATTENDANCE_DEV_CHANNEL_ID=1462451610184843449
-DISCORD_ATTENDANCE_ADMIN_CHANNEL_ID=1462451782470078628
-
-# Working hours (Thailand time)
-DEFAULT_WORK_START_HOUR=9
-DEFAULT_WORK_END_HOUR=18
-DEFAULT_GRACE_PERIOD_MINUTES=15
-
-# Sync interval
-ATTENDANCE_SYNC_INTERVAL_MINUTES=15
-```
-
-### Setup
-
-1. **Run setup_sheets.py** to create ⏰ Time Logs and 📊 Time Reports sheets
-2. **Configure Discord channels** in settings (or use defaults)
-3. **Update Team sheet** with Timezone and Work Start columns for each staff member
-4. **Staff sends messages** in their attendance channel
-
-### Boss Attendance Reporting (NEW in v1.5.7)
-
-Allows the boss to report attendance events for team members via natural language in Telegram.
-
-**Example Inputs:**
-- "Mayank didn't come to the meeting today, count as absence"
-- "Sarah was 30 minutes late this morning"
-- "John left early yesterday at 3pm"
-- "Mike is on sick leave today"
-
-**Supported Attendance Types:**
-
-| Status Type | Display | Example Input |
-|-------------|---------|---------------|
-| `absence_reported` | Absent | "didn't come today", "absent", "no show" |
-| `late_reported` | Late (X min) | "was 30 minutes late", "came late" |
-| `early_departure_reported` | Left Early | "left at 3pm", "left early" |
-| `sick_leave_reported` | Sick Leave | "on sick leave", "called in sick" |
-| `excused_absence_reported` | Excused | "day off", "WFH", "approved leave" |
-
-**Flow:**
-1. Boss sends natural language message about attendance
-2. AI extracts: person, status type, date, reason, duration
-3. Bot shows confirmation preview:
-   ```
-   📋 Attendance Report Preview
-
-   👤 Person: Mayank
-   📌 Status: Absent
-   📅 Date: 2026-01-19
-   📝 Reason: missed meeting
-
-   Confirm this report? (yes/no)
-   ```
-4. On "yes" → Records to DB + syncs to Sheets + sends Discord notification
-5. Confirmation sent to boss
-
-**Database Fields Added to `AttendanceRecordDB`:**
-```python
-is_boss_reported: bool = False
-reported_by: Optional[str] = None       # Boss name
-reported_by_id: Optional[str] = None    # Boss ID
-reason: Optional[str] = None            # Reason for absence
-affected_date: Optional[date] = None    # Date being reported
-duration_minutes: Optional[int] = None  # For late arrivals
-notification_sent: bool = False         # Discord notification status
-```
-
-**New Event Types:**
-```python
-class AttendanceEventTypeEnum:
-    # ... existing types ...
-    ABSENCE_REPORTED = "absence_reported"
-    LATE_REPORTED = "late_reported"
-    EARLY_DEPARTURE_REPORTED = "early_departure_reported"
-    SICK_LEAVE_REPORTED = "sick_leave_reported"
-    EXCUSED_ABSENCE_REPORTED = "excused_absence_reported"
-```
-
-**Google Sheets Format:**
-Boss-reported entries appear in ⏰ Time Logs with `[BR]` prefix:
-```
-[BR] Absent | Reported by Boss: missed meeting
-[BR] Late (30min) | Reported by Boss: traffic
-```
-
-**Discord Notification:**
-When boss reports attendance, the team member is always notified in their department's general channel:
-```
-📋 Attendance Report
-
-The boss has recorded the following for @Mayank:
-
-Status: Absent
-Date: 2026-01-19
-Reason: missed meeting
-```
-
-**Service Layer Functions:**
-| Function | Description |
-|----------|-------------|
-| `record_boss_reported_attendance()` | Main entry point for recording boss-reported events |
-| `_find_team_member_by_name()` | Lookup team member by name (partial match) |
-| `_sync_boss_reported_to_sheets()` | Sync to Time Logs with [BR] prefix |
-| `_send_attendance_notification()` | Send Discord notification to team member |
-
-**Repository Function:**
-| Function | Description |
-|----------|-------------|
-| `record_boss_reported_event()` | Create attendance record with boss-reported fields |
-
-**Intent Detection:**
-The `REPORT_ABSENCE` intent is triggered by keywords:
-- absence, absent, didn't come, not coming, missed, no show
-- late, came late, was late, arrived late, minutes late
-- left early, leaving early, early departure, left at
-- sick leave, sick day, on leave, day off, called in sick
-- not present, count as absence, mark as absent
-
-**Edge Cases Handled:**
-1. **Team member not found** → Uses raw name, warns boss
-2. **Relative dates** → Parses "yesterday", "this morning", "last Monday"
-3. **Duplicate reports** → Future: Check for existing report same person/date/type
-4. **Conflicting data** → Future: Warn if already clocked in
-
----
-
-## Configuration
-
-### Environment Variables (`.env`)
-
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Telegram bot API token |
-| `TELEGRAM_BOSS_CHAT_ID` | Boss's Telegram chat ID |
-| `DEEPSEEK_API_KEY` | DeepSeek AI API key |
-| `DEEPSEEK_BASE_URL` | DeepSeek API endpoint |
-| `OPENAI_API_KEY` | OpenAI API key for Whisper voice transcription (NEW v1.2) |
-| `DISCORD_BOT_TOKEN` | Discord bot token (REQUIRED for v1.5+) |
-| `DISCORD_DEV_FORUM_CHANNEL_ID` | Dev forum channel for specs (NEW v1.5) |
-| `DISCORD_DEV_TASKS_CHANNEL_ID` | Dev tasks channel for regular tasks (NEW v1.5) |
-| `DISCORD_DEV_REPORT_CHANNEL_ID` | Dev report channel for standup (NEW v1.5) |
-| `DISCORD_DEV_GENERAL_CHANNEL_ID` | Dev general channel (NEW v1.5) |
-| `DISCORD_ADMIN_*_CHANNEL_ID` | Admin department channels (optional) |
-| `DISCORD_MARKETING_*_CHANNEL_ID` | Marketing department channels (optional) |
-| `DISCORD_DESIGN_*_CHANNEL_ID` | Design department channels (optional) |
-| `DISCORD_WEBHOOK_URL` | Legacy webhook (deprecated) |
-| `DISCORD_TASKS_CHANNEL_WEBHOOK` | Legacy webhook (deprecated) |
-| `DISCORD_STANDUP_CHANNEL_WEBHOOK` | Legacy webhook (deprecated) |
-| `GOOGLE_CREDENTIALS_JSON` | Service account JSON |
-| `GOOGLE_SHEET_ID` | Google Sheets document ID |
-| `GOOGLE_CALENDAR_ID` | Google Calendar ID |
-| `WEBHOOK_BASE_URL` | Railway/deployment URL |
-| `TIMEZONE` | Scheduler timezone |
-| `GMAIL_USER_EMAIL` | Gmail for digests |
-| `DATABASE_URL` | PostgreSQL connection string (auto-set by Railway) |
-| `REDIS_URL` | Redis connection string (optional) |
-| `GOOGLE_OAUTH_CLIENT_ID` | OAuth2 client ID for user Google auth (NEW v1.5.2) |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth2 client secret for user Google auth (NEW v1.5.2) |
-
----
-
-## File Structure
-
-```
-boss-workflow/
-├── config/
-│   ├── __init__.py
-│   └── settings.py          # Pydantic settings
-├── src/
-│   ├── ai/
-│   │   ├── clarifier.py     # Question generation
-│   │   ├── deepseek.py      # AI integration
-│   │   ├── email_summarizer.py
-│   │   ├── intent.py        # Intent detection
-│   │   ├── prompts.py       # AI prompts
-│   │   ├── reviewer.py      # Auto-review
-│   │   ├── transcriber.py   # Voice transcription (Whisper) [NEW v1.2]
-│   │   └── vision.py        # Image analysis (DeepSeek VL) [NEW v1.3]
-│   ├── web/                  # Web onboarding portal [NEW v1.5.2]
-│   │   ├── __init__.py
-│   │   ├── routes.py         # FastAPI routes for web pages
-│   │   └── templates/
-│   │       └── onboard.html  # Staff onboarding form
-│   ├── bot/
-│   │   ├── commands.py      # Slash commands
-│   │   ├── conversation.py  # Conversation flow
-│   │   ├── handler.py       # Unified handler
-│   │   ├── telegram.py      # Telegram integration
-│   │   ├── telegram_simple.py
-│   │   └── validation.py    # Input validation
-│   ├── integrations/
-│   │   ├── calendar.py      # Google Calendar
-│   │   ├── discord.py       # Discord webhooks
-│   │   ├── discord_bot.py   # Discord bot for reactions [NEW v1.2]
-│   │   ├── drive.py         # Google Drive
-│   │   ├── gmail.py         # Gmail
-│   │   ├── meet.py          # Google Meet
-│   │   ├── sheets.py        # Google Sheets
-│   │   └── tasks.py         # Google Tasks
-│   ├── memory/
-│   │   ├── context.py       # Conversation context
-│   │   ├── learning.py      # Learning system
-│   │   └── preferences.py   # User preferences
-│   ├── models/
-│   │   ├── conversation.py  # Conversation state
-│   │   ├── task.py          # Task model
-│   │   └── validation.py    # Validation model
-│   ├── database/
-│   │   ├── __init__.py      # Database module
-│   │   ├── connection.py    # Async SQLAlchemy engine
-│   │   ├── models.py        # SQLAlchemy models
-│   │   ├── sync.py          # Sheets sync layer
-│   │   └── repositories/
-│   │       ├── tasks.py     # Task CRUD with relationships
-│   │       ├── audit.py     # Audit log operations
-│   │       ├── conversations.py  # Chat history
-│   │       ├── ai_memory.py # AI context persistence
-│   │       ├── team.py      # Team member operations
-│   │       ├── projects.py  # Project operations
-│   │       ├── recurring.py # Recurring tasks [NEW v1.2]
-│   │       └── time_tracking.py # Time tracking [NEW v1.2]
-│   ├── scheduler/
-│   │   ├── jobs.py          # Scheduled jobs
-│   │   └── reminders.py     # Reminder service
-│   └── main.py              # FastAPI app
-├── setup_sheets.py          # Google Sheets setup
-├── setup_gmail.py           # Gmail OAuth setup
-├── test_all.py              # Test suite
-├── requirements.txt         # Dependencies
-├── .env                     # Environment variables
-├── FEATURES.md              # This file
-└── CLAUDE.md                # AI assistant instructions
-```
-
----
-
-## Future Upgrades & Roadmap
-
-### Phase 1: Quick Wins - COMPLETED in v1.1 ✅
-
-#### 1. Task Templates ✅
-**Status:** ✅ Implemented (v1.1)
-**Files:** `src/memory/preferences.py`, `src/ai/clarifier.py`, `src/bot/commands.py`
-
-8 built-in templates with auto-detection: bug, hotfix, feature, research, meeting, docs, refactor, test.
-
-**Usage:**
-- Natural: "bug: Login page crashes" → Auto-applies bug template
-- Command: `/templates` → View all templates
-
----
-
-#### 2. Discord Reaction Status Updates ✅
-**Status:** ✅ Implemented (v1.1)
-**Files:** `src/integrations/discord.py`
-
-All task embeds now include reaction guide in footer:
-- ✅ = Done, 🚧 = Working, 🚫 = Blocked, ⏸️ = Paused, 🔄 = Review
-
-Added `post_help()` method for Discord-side help.
-
----
-
-#### 3. Task Search ✅
-**Status:** ✅ Implemented (v1.1)
-**Files:** `src/bot/commands.py`, `src/bot/handler.py`, `src/integrations/sheets.py`
-
-Natural language + command support:
-- "What's John working on?" → AI-parsed search
-- `/search @John` → Tasks for John
-- `/search #urgent status:blocked due:today` → Multiple filters
-
----
-
-#### 4. Bulk Status Update ✅
-**Status:** ✅ Implemented (v1.1)
-**Files:** `src/bot/commands.py`, `src/integrations/sheets.py`
-
-Commands:
-- `/complete TASK-001 TASK-002` → Mark multiple done
-- `/block TASK-001 TASK-002 reason` → Block with reason
-- `/assign @Sarah TASK-003 TASK-004` → Bulk assign
-
-Natural language: "Mark these 3 as done"
-
----
-
-#### 5. Smart Dependencies ✅
-**Status:** ✅ Implemented (v1.1)
-**Files:** `src/ai/clarifier.py`, `src/bot/handler.py`
-
-AI automatically:
-- Scans active tasks for potential dependencies
-- Shows "Potential Dependencies" in task preview
-- Asks before final confirmation if dependencies found
-- Suggests adding `blocked_by` relationship
-
----
-
-### Phase 2: Medium Effort (High Value) - COMPLETED in v1.2 ✅
-
-#### 6. Recurring Tasks ✅
-**Status:** ✅ Implemented (v1.2)
-**Files:** `src/database/models.py`, `src/database/repositories/recurring.py`, `src/bot/commands.py`, `src/scheduler/jobs.py`
-
-Tasks that auto-recreate on schedule. Scheduler checks every 5 minutes for due recurring tasks.
-
-**Commands:**
-- `/recurring "title" pattern time` - Create recurring task
-- `/recurring list` - View all recurring tasks
-- `/recurring pause/resume ID` - Control recurring tasks
-- `/recurring delete ID` - Remove recurring task
-
-**Recurrence Patterns:**
-- Daily: `every:day`
-- Weekdays: `every:weekday`
-- Weekly: `every:monday`, `every:monday,wednesday,friday`
-- Monthly: `every:1st`, `every:15th`, `every:last`
-- Interval: `every:2weeks`, `every:3days`
-
----
-
-#### 7. Time Tracking ✅
-**Status:** ✅ Implemented (v1.2)
-**Files:** `src/database/models.py`, `src/database/repositories/time_tracking.py`, `src/bot/commands.py`
-
-Full time tracking with timers and manual logging:
-
-**Commands:**
-- `/start TASK-ID` - Start timer
-- `/stop` - Stop active timer
-- `/log TASK-ID 2h30m` - Manual time entry
-- `/time TASK-ID` - Show time on task
-- `/timesheet` - Personal timesheet
-- `/timesheet team` - Team timesheet
-
-**Duration Parsing:**
-- `2h30m` → 150 minutes
-- `1.5h` → 90 minutes
-- `45m` → 45 minutes
-- `1d` → 480 minutes (8 hours)
-
----
-
-#### 8. Smart Assignee Suggestion
-**Status:** 🔴 Not Started
-**Complexity:** Medium
-**Files:** `src/ai/clarifier.py`, `src/memory/preferences.py`
-
-AI suggests best assignee based on:
-- Skills match (from team profile)
-- Current workload (active task count)
-- Past performance on similar tasks
-- Availability (on_hold tasks, leave status)
-
-```
-Boss: "Need someone to fix the React dashboard"
-Bot: "Based on skills and workload, I suggest:
-      1. Sarah (React expert, 2 active tasks)
-      2. John (knows React, 4 active tasks)
-      Who should I assign?"
-```
-
----
-
-#### 9. Subtasks ✅
-**Status:** ✅ Implemented (v1.2)
-**Files:** `src/database/models.py`, `src/database/repositories/tasks.py`, `src/bot/commands.py`
-
-Break tasks into smaller items with progress tracking:
-
-**Commands:**
-- `/subtask TASK-ID "title"` - Add subtask
-- `/subtasks TASK-ID` - List subtasks
-- `/subdone TASK-ID 1` - Complete subtask #1
-- `/subdone TASK-ID all` - Complete all subtasks
+| `/breakdown TASK-ID` | AI-powered task breakdown (v1.3) | `/breakdown TASK-001` |
 
 **Features:**
 - Automatic ordering (order number auto-assigned)
@@ -1979,204 +561,2671 @@ Break tasks into smaller items with progress tracking:
 - Mark complete by order number
 - List shows checkbox status (☐/☑)
 
----
-
-#### 10. Voice Commands (Whisper) ✅
-**Status:** ✅ Implemented (v1.2)
-**Files:** `src/ai/transcriber.py`, `src/bot/telegram_simple.py`
-
-Hands-free task creation via voice messages:
-
-1. Send voice message in Telegram
-2. Bot transcribes using OpenAI Whisper API
-3. Shows transcription: `📝 "Create task for John"`
-4. Processes as normal text command
-
-**Features:**
-- OpenAI Whisper API integration
-- Context-aware prompts for task management terms
-- Supports OGG, MP3, WAV audio formats
-- Requires `OPENAI_API_KEY` environment variable
-
----
-
-### Phase 3: Major Features
-
-#### 11. PostgreSQL Backend
-**Status:** ✅ COMPLETED
-**Complexity:** High
-
-PostgreSQL is now the primary data store:
-- ✅ Faster queries (sub-millisecond vs 500ms+ API)
-- ✅ No rate limits
-- ✅ Complex queries (JOINs, aggregations)
-- ✅ Full conversation history
-- ✅ Audit logs
-- ✅ Task relationships (subtasks, dependencies, projects)
-- ✅ AI memory persistence
-- ✅ Google Sheets sync layer
-
----
-
-#### 12. Team Member Bot Access
-**Status:** 🔴 Not Started
-**Complexity:** High
-
-Team members interact directly via Telegram:
-- Each member links their Telegram to profile
-- Members receive task assignments directly
-- Members can `/done`, `/block`, `/note` their tasks
-- Members submit proofs directly
-- Boss sees all, members see only their tasks
-
----
-
-#### 13. Web Dashboard
-**Status:** 🔴 Not Started
-**Complexity:** High
-
-React/Next.js dashboard with:
-- Kanban board view
-- Gantt chart for timelines
-- Team workload visualization
-- Burndown charts
-- Real-time updates via WebSocket
-
----
-
-#### 14. Slack Integration
-**Status:** 🔴 Not Started
-**Complexity:** Medium
-
-Mirror Discord functionality to Slack:
-- Task embeds in Slack
-- Slash commands in Slack
-- Reaction-based status updates
-- Thread-based task discussions
-
----
-
-#### 15. AI Task Breakdown ✅
-**Status:** ✅ Implemented (v1.3)
-**Files:** `src/ai/deepseek.py`, `src/ai/prompts.py`, `src/bot/commands.py`
-
-AI-powered task breakdown into subtasks:
-
-**Command:** `/breakdown TASK-001`
-
-**Features:**
-- Analyzes task complexity and suggests 3-8 subtasks
-- Shows effort estimates and dependencies
-- Detects if task is too simple for breakdown
-- Confirms before creating subtasks
-- Integrates with existing subtask system
-
-**Example:**
+**AI Breakdown Example:**
 ```
 Boss: /breakdown TASK-001
 
 Bot: "AI Task Breakdown: TASK-001
-      Build user authentication system
+     Build user authentication system
 
-      Analysis: Multi-step feature requiring backend and frontend work.
+     Analysis: Multi-step feature requiring backend and frontend work.
 
-      Suggested Subtasks:
-      1. Design auth flow ~30min
-      2. Create database schema ~1h
-      3. Implement login/register API ~2h (after #2)
-      4. Build frontend forms ~2h (after #3)
-      5. Add password reset ~1h
-      6. Write tests ~1h
+     Suggested Subtasks:
+     1. Design auth flow ~30min
+     2. Create database schema ~1h
+     3. Implement login/register API ~2h (after #2)
+     4. Build frontend forms ~2h (after #3)
+     5. Add password reset ~1h
+     6. Write tests ~1h
 
-      Total Estimated Effort: 7h 30m
+     Total Estimated Effort: 7h 30m
 
-      Create these subtasks? Reply yes or no."
+     Create these subtasks? Reply yes or no."
+```
+
+**Implementation:** `src/database/models.py` (SubtaskDB), `src/database/repositories/tasks.py`, `src/ai/deepseek.py` (breakdown_task)
+
+---
+
+#### ✅ Validation (Team Members)
+
+**Status:** ✅ Production
+
+| Command | Description | Flow |
+|---------|-------------|------|
+| `/submit [task-id]` | Start submitting proof | Initiates proof collection |
+| `/submitproof` | Finish adding proof, move to notes | Transitions to notes phase |
+| `/addproof` | Add more proof items | Adds to existing proof |
+
+**Submission Flow:**
+```
+1. Team member: /submit TASK-001
+2. Bot: "Send proof (screenshots, links, files)"
+3. Member: [sends screenshots/links]
+4. Member: "that's all"
+5. Bot: "Add notes about what you did?"
+6. Member: "Fixed login bug, tested on Chrome/Safari"
+7. Bot: "Send to boss? (yes/no)"
+8. Member: "yes"
+   → Auto-review kicks in (scores submission)
+   → If score ≥ 70: Sent to boss
+   → If score < 70: Suggestions shown, ask to improve
+```
+
+**Implementation:** `src/bot/validation.py`, `src/ai/reviewer.py`
+
+---
+
+#### ✅ Validation (Boss)
+
+**Status:** ✅ Production
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/pending` | View pending validations | `/pending` |
+| `/approve [task-id] [message]` | Approve work | `/approve TASK-001 Great job!` |
+| `/reject [task-id] [feedback]` | Reject with feedback | `/reject TASK-001 Fix the footer alignment` |
+
+**Approval Flow:**
+```
+Boss receives notification with:
+- Task details
+- All proof items (screenshots, links)
+- Team member's notes
+- AI analysis (if images)
+
+Boss replies:
+- "approved" or "yes" or "looks good" → Task marked completed
+- "no - [feedback]" → Task marked needs_revision, feedback sent to member
+```
+
+**Implementation:** `src/bot/validation.py`, `src/bot/handler.py`
+
+---
+
+### Natural Language Intents
+
+**System:** AI-First Intent Detection (v2.0) - DeepSeek AI classifies ALL natural language
+
+**Architecture:**
+```
+Message → Slash Command? ──Yes──► Direct mapping
+              │
+              No
+              ▼
+        Context State? ──Yes──► Direct mapping (awaiting confirmation, etc.)
+              │
+              No
+              ▼
+        AI Classification ──► Structured JSON ──► Validate ──► Execute
+```
+
+**AI Output Format:**
+```json
+{
+  "intent": "CREATE_TASK",
+  "confidence": 0.95,
+  "reasoning": "User mentions person and action",
+  "extracted_data": {
+    "assignee": "John",
+    "title": "Fix login bug",
+    "priority": "medium"
+  }
+}
+```
+
+#### Supported Intents
+
+| Intent | Examples | Action | Confidence Threshold |
+|--------|----------|--------|---------------------|
+| `CREATE_TASK` | "John needs to fix the login bug" | Starts task creation | 0.7+ |
+| `TASK_DONE` | "I finished the landing page" | Marks task complete | 0.8+ |
+| `SUBMIT_PROOF` | Send screenshot or link | Adds to proof collection | 0.9+ |
+| `CHECK_STATUS` | "what's pending?", "status" | Shows task overview | 0.7+ |
+| `CHECK_OVERDUE` | "anything overdue?" | Lists overdue tasks | 0.8+ |
+| `EMAIL_RECAP` | "check my emails" | Generates email summary | 0.8+ |
+| `SEARCH_TASKS` | "What's John working on?" | Searches and filters tasks | 0.7+ |
+| `BULK_COMPLETE` | "Mark these 3 as done" | Bulk status update | 0.8+ |
+| `LIST_TEMPLATES` | "What templates are available?" | Shows task templates | 0.9+ |
+| `DELAY_TASK` | "delay this to tomorrow" | Postpones task | 0.8+ |
+| `ADD_TEAM_MEMBER` | "John is our backend dev" | Registers team member | 0.8+ |
+| `ASK_TEAM_MEMBER` | "ask Mayank what tasks are left" | Sends message via Discord (v1.8.3) | 0.8+ |
+| `TEACH_PREFERENCE` | "when I say ASAP, deadline is 4 hours" | Saves preference | 0.8+ |
+| `APPROVE_TASK` | "looks good", "approved" | Approves submission | 0.9+ |
+| `REJECT_TASK` | "no - fix the footer" | Rejects with feedback | 0.9+ |
+| `HELP` | "help", "what can you do?" | Shows help | 0.9+ |
+| `GREETING` | "hi", "hello" | Friendly response | 0.9+ |
+
+**Key Features:**
+- No brittle regex patterns
+- Handles ANY phrasing naturally
+- Self-healing through examples in prompt
+- Confidence scoring with fallback
+- Clear distinctions (communication vs task creation)
+
+**Implementation:** `src/ai/intent.py` (AI classification), `src/bot/handler.py` (intent routing)
+
+---
+
+## AI Capabilities
+
+### AI Components Overview
+
+| Component | Model/Tech | Purpose | Status |
+|-----------|------------|---------|--------|
+| **Intent Detection** | DeepSeek Chat | Classify user messages | ✅ Production |
+| **Task Generation** | DeepSeek Chat | Generate task specs | ✅ Production |
+| **Voice Transcription** | OpenAI Whisper | Audio → Text | ✅ Production |
+| **Image Analysis** | DeepSeek VL | Vision understanding | ✅ Production |
+| **Email Summarization** | DeepSeek Chat | Email digests | ✅ Production |
+| **Submission Review** | DeepSeek Chat | Quality scoring | ✅ Production |
+| **Pattern Learning** | Custom ML | Learn from interactions | ✅ Production |
+| **Task Breakdown** | DeepSeek Chat | Generate subtasks | ✅ Production |
+
+---
+
+### DeepSeek Integration
+
+**File:** `src/ai/deepseek.py`
+
+**Key Functions:**
+
+| Function | Description | Input | Output |
+|----------|-------------|-------|--------|
+| `analyze_task_request()` | Identify missing info, confidence scores | User message | Analysis dict |
+| `generate_clarifying_questions()` | Create natural questions | Missing fields | List of questions |
+| `generate_task_spec()` | Generate complete task specification | Context dict | Task spec |
+| `format_preview()` | Format spec as readable message | Task spec | Formatted string |
+| `process_answer()` | Extract structured info from responses | User answer | Extracted data |
+| `generate_daily_standup()` | Create standup summaries | Task list | Standup text |
+| `generate_weekly_summary()` | Generate weekly reports | Week data | Report text |
+| `breakdown_task()` | Analyze task and suggest subtasks | Task details | Subtask list |
+
+**API Configuration:**
+- **Endpoint:** `https://api.deepseek.com/v1/chat/completions`
+- **Model:** `deepseek-chat`
+- **Max Tokens:** 4000 (configurable)
+- **Temperature:** 0.7 (task generation), 0.3 (structured extraction)
+
+---
+
+### Intent Detection (AI-FIRST v2.0)
+
+**File:** `src/ai/intent.py`
+
+**Architecture:**
+```python
+def detect_intent(message: str, context: dict) -> IntentResult:
+    """
+    AI-powered intent classification
+
+    Returns:
+        IntentResult(
+            intent: str,           # Intent name
+            confidence: float,     # 0.0 - 1.0
+            reasoning: str,        # Why this intent?
+            extracted_data: dict   # Extracted entities
+        )
+    """
+```
+
+**Prompt Strategy:**
+- Includes 20+ examples of each intent
+- Clear distinctions between similar intents
+- Context-aware (considers conversation state)
+- Handles edge cases explicitly
+
+**Fallback Behavior:**
+- If confidence < 0.6: Ask clarifying question
+- If confidence 0.6-0.7: Confirm with user
+- If confidence > 0.7: Execute directly
+
+**Benefits over Regex:**
+- ✅ Handles ANY phrasing
+- ✅ Understands context and nuance
+- ✅ Self-healing through examples
+- ✅ No pattern maintenance
+- ✅ Adapts to new phrasings naturally
+
+---
+
+### Task Clarifier
+
+**File:** `src/ai/clarifier.py`
+
+**Features:**
+
+1. **Smart Question Generation** - Based on confidence levels
+2. **Preference-Based Filtering** - Doesn't ask if preference exists
+3. **Information Extraction** - Priority, deadline, assignee from text
+4. **Answer Processing** - Multi-format support
+5. **Template Detection** (v1.1) - Auto-applies templates from keywords
+6. **Dependency Detection** (v1.1) - Suggests potential dependencies
+7. **Complexity Detection** (v2.2) - Scores task complexity 1-10
+8. **Role-Aware Defaults** (v2.2) - Smart defaults based on assignee role
+9. **Intelligent Self-Answering** (v2.2) - AI tries to answer questions before asking user
+
+**v2.2 Smart AI Features:**
+
+| Feature | Description | Behavior |
+|---------|-------------|----------|
+| **Complexity Detection** | Scores tasks 1-10 based on keywords, length, scope | 1-3: Skip questions, 4-6: 1-2 critical questions, 7-10: Full clarification |
+| **Role-Aware Defaults** | Applies defaults based on assignee role | Developer: 4h effort, Admin: 2h effort, Marketing: 3h effort, Design: 6h effort |
+| **Keyword Inference** | Infers role from task keywords when no assignee | "fix bug" → Developer, "schedule meeting" → Admin, "design mockup" → Design |
+| **Self-Answering Loop** | AI attempts to answer its own questions first | Only asks user truly ambiguous questions |
+
+**Complexity Keywords:**
+
+| Category | Keywords | Effect |
+|----------|----------|--------|
+| **Simple** (-2 to score) | fix, typo, small, quick, simple, minor, update | Lower complexity |
+| **Skip Indicators** (-3 to score) | "no questions", "just do", "straightforward" | Force simple mode |
+| **Complex** (+2 to score) | system, architecture, integration, design, build | Higher complexity |
+| **Scope** (+2 to score) | multiple, several, complex, comprehensive, complete | Higher complexity |
+| **Technical** (+1 to score) | api, database, migration, authentication, payment | Slightly higher |
+
+**Role-Based Routing:**
+
+| Role Keywords | Category | Channel |
+|---------------|----------|---------|
+| dev, engineer, backend, frontend | Developer | DEV Forum |
+| admin, manager, lead, director | Admin | ADMIN Forum |
+| market, content, social, growth | Marketing | MARKETING Forum |
+| design, ui, ux, graphic | Design | DESIGN Forum |
+
+**Template Keywords:**
+
+| Keyword | Template Applied | Default Priority | Default Effort |
+|---------|------------------|------------------|----------------|
+| `bug:` | Bug Fix | High | 2h |
+| `hotfix:` | Hotfix | Critical | 1h |
+| `feature:` | New Feature | Medium | 1 day |
+| `research:` | Research | Low | 4h |
+| `meeting:` | Meeting | Medium | 1h |
+| `docs:` | Documentation | Low | 2h |
+| `refactor:` | Code Refactor | Medium | 4h |
+| `test:` | Testing | Medium | 3h |
+
+**Example Flow:**
+```
+User: "bug: Login page crashes on mobile"
+
+AI:
+- Detects "bug:" keyword
+- Applies Bug Fix template
+- Sets priority: High
+- Sets effort: 2h
+- Skips priority question
+- Only asks: "Who should fix this?"
 ```
 
 ---
 
-### Phase 4: Analytics & Intelligence
+### Email Summarizer
 
-#### 16. Velocity Tracking
-Track story points or task counts per sprint/week for capacity planning.
+**File:** `src/ai/email_summarizer.py`
 
-#### 17. Burndown Charts
-Visual progress toward sprint/milestone goals.
+**Features:**
+- Batch email analysis (up to 20 emails)
+- Action item extraction
+- Priority categorization
+- Sender/topic grouping
+- Urgent attention flagging
 
-#### 18. Prediction Engine
-"Based on history, this task will likely take 3 days" using ML on past task data.
+**Output Format:**
+```
+☀️ Morning Email Digest
+Jan 16 - 7:00 AM
 
-#### 19. Bottleneck Detection
-AI identifies where tasks get stuck most (in_review? blocked?) and suggests process improvements.
+📬 23 emails | 8 unread
 
-#### 20. Auto-Prioritization
-Dynamically adjust priority based on deadline proximity and dependencies.
+Summary:
+Received 3 client updates requiring responses, 5 internal
+notifications, and 15 newsletters. Client X needs approval
+on the new proposal by EOD.
+
+Action Items:
+  ☐ Reply to Client X proposal (deadline today)
+  ☐ Review John's PR comments
+  ☐ Schedule team sync for next week
+
+Priority:
+  📧 Re: Contract Approval Needed...
+     _Client X_
+  📧 Urgent: Production Issue...
+     _DevOps Team_
+
+Breakdown: work: 8 | clients: 3 | newsletters: 12
+```
+
+**Scheduling:**
+- Morning digest: 7 AM (configurable via `MORNING_DIGEST_HOUR`)
+- Evening digest: 8 PM (configurable via `EVENING_DIGEST_HOUR`)
+
+**Implementation:** Sent via Telegram (boss only, not Discord for privacy)
 
 ---
 
-### Implementation Priority
+### Submission Reviewer
 
-| Priority | Feature | Effort | Impact | Status |
-|----------|---------|--------|--------|--------|
-| 1 | Task Templates | Low | High | ✅ Done |
-| 2 | Discord Reactions | Low | High | ✅ Done |
-| 3 | Task Search | Low | Medium | ✅ Done |
-| 4 | Bulk Updates | Low | Medium | ✅ Done |
-| 5 | Smart Dependencies | Medium | High | ✅ Done |
-| 6 | Recurring Tasks | Medium | High | ✅ Done |
-| 7 | Time Tracking | Medium | Medium | ✅ Done |
-| 8 | Team Bot Access | High | Very High | 🔴 Planned |
-| 9 | PostgreSQL | High | High | ✅ Done |
-| 10 | Subtasks Commands | Medium | Medium | ✅ Done |
-| 11 | Voice Commands | Medium | Medium | ✅ Done |
-| 12 | Web Dashboard | High | Very High | 🔴 Planned |
-| 13 | AI Task Breakdown | Medium | High | ✅ Done |
+**File:** `src/ai/reviewer.py`
+
+**Feature:** Auto-review quality checks before boss sees submission
+
+**Scoring Criteria (0-100):**
+
+| Criteria | Weight | What It Checks |
+|----------|--------|----------------|
+| Proof Quality | 40% | Screenshots clear? Links working? Files relevant? |
+| Notes Completeness | 30% | Detailed explanation? What was done? What was tested? |
+| Acceptance Criteria | 20% | All criteria addressed? Evidence provided? |
+| Communication | 10% | Clear writing? Professional? |
+
+**Thresholds:**
+- **70+:** Pass → Send to boss
+- **50-69:** Warning → Suggest improvements
+- **<50:** Fail → Require revision
+
+**Example Flow:**
+```
+Developer: "I finished the landing page"
+→ sends 1 screenshot
+→ "that's all"
+→ "tested it quickly"
+
+Bot: "⚠️ Your submission needs some work:
+      • Notes are too brief (score: 40/100)
+      • Missing details about what was tested
+      • Only 1 proof item (expected 2-3)
+
+      Suggested notes: 'Completed landing page redesign.
+      Tested on Chrome and Safari. All responsive
+      breakpoints working.'
+
+      Score: 55/100 (need 70+)
+
+      Reply:
+      • 'yes' - Apply my suggestions
+      • 'no' - Send to boss anyway
+      • 'edit' - Type better notes yourself"
+
+Developer: "yes"
+
+Bot: "✨ Applied! Score now: 85/100. Ready to send to boss? (yes/no)"
+```
+
+**Configuration:**
+- Threshold: `SUBMISSION_REVIEW_THRESHOLD=70` (env variable)
+- Can be disabled: `ENABLE_AUTO_REVIEW=false`
+
+---
+
+### Voice Transcription (v1.2+)
+
+**File:** `src/ai/transcriber.py`
+**Status:** ✅ Production
+
+**Technology:** OpenAI Whisper API
+
+**Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `transcribe()` | Convert audio to text |
+| `transcribe_with_context()` | Transcribe with context prompt for accuracy |
+| `transcribe_voice_message()` | Telegram voice message wrapper |
+
+**Features:**
+- Context-aware prompts: "assignments, deadlines, priorities"
+- Automatic temp file handling
+- Supports: OGG, MP3, WAV, and other formats
+- Requires: `OPENAI_API_KEY` environment variable
+
+**Usage Flow:**
+```
+1. User sends voice message in Telegram
+2. Bot downloads audio file
+3. Whisper transcribes with task management context
+4. Bot shows: 📝 "Create urgent task for John"
+5. Processes transcription as normal text command
+```
+
+**Accuracy Tips:**
+- Speak clearly
+- Mention names explicitly
+- State deadlines clearly ("by Friday")
+- Use task-related keywords
+
+---
+
+### Image Vision Analysis (v1.3+)
+
+**File:** `src/ai/vision.py`
+**Status:** ✅ Production
+
+**Technology:** DeepSeek VL (Vision-Language) model
+
+**Functions:**
+
+| Function | Description | Use Case |
+|----------|-------------|----------|
+| `analyze_image()` | Analyze image with custom prompt | General analysis |
+| `analyze_screenshot()` | Extract structured info from screenshots | UI/UX review |
+| `analyze_proof()` | Validate proof images for task completion | Submission validation |
+| `extract_text()` | OCR text extraction | Document scanning |
+| `describe_for_task()` | Analyze in task creation context | Reference images |
+
+**Features:**
+- Automatic base64 encoding for API calls
+- Context-aware analysis prompts
+- Proof validation with relevance assessment
+- Integration with auto-review system
+
+**Usage - Proof Analysis:**
+```
+1. Team member submits task with screenshot
+2. Vision AI analyzes: "Shows completed login page with email/password fields, Google OAuth button, responsive design on mobile view"
+3. Analysis shown in preview
+4. Included in boss notification
+5. Auto-reviewer uses analysis for quality scoring
+```
+
+**Usage - Task Creation:**
+```
+User: [sends mockup image] "Build this dashboard for Sarah"
+
+Bot: 🔍 Analyzing image...
+     "I see a dashboard with 3 charts (line, bar, pie),
+     user stats panel, and recent activity feed.
+
+     Creating task: Build dashboard with analytics..."
+```
+
+**Supported Formats:** JPEG, PNG, GIF, WebP
+
+---
+
+### AI Task Breakdown (v1.3+)
+
+**File:** `src/ai/deepseek.py`
+**Status:** ✅ Production
+**Function:** `breakdown_task()`
+
+**Feature:** AI analyzes task and generates subtask suggestions
+
+**Input Analysis:**
+- Task title and description
+- Task type (feature, bug, research)
+- Acceptance criteria
+- Estimated effort
+
+**Output:**
+- 3-8 logical subtasks
+- Effort estimates per subtask
+- Dependency relationships
+- Total estimated time
+- Detects if task is too simple
+
+**Example:**
+```
+Command: /breakdown TASK-001
+
+Input: "Build user authentication system"
+
+Output:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AI Task Breakdown: TASK-001
+"Build user authentication system"
+
+Analysis: This is a multi-step feature requiring
+backend, frontend, and testing work.
+
+Suggested Subtasks:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Design auth flow diagram
+   Effort: ~30min
+
+2. Create database schema for users
+   Effort: ~1h
+
+3. Implement login/register API
+   Effort: ~2h
+   Dependencies: After #2
+
+4. Build frontend login form
+   Effort: ~2h
+   Dependencies: After #3
+
+5. Add password reset flow
+   Effort: ~1h
+   Dependencies: After #3
+
+6. Write integration tests
+   Effort: ~1h
+   Dependencies: After #4, #5
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Total Estimated Effort: 7h 30m
+
+Create these subtasks? Reply yes or no.
+```
+
+**Smart Detection:**
+- If task is too simple (e.g., "Update README"), AI responds: "This task is straightforward and doesn't need breakdown"
+- If dependencies are circular, AI resolves them
+
+**Integration:** Subtasks created directly in database and synced to Sheets
+
+---
+
+## Integrations
+
+### Google Sheets Integration
+
+**File:** `src/integrations/sheets.py`
+**Status:** ✅ Production
+
+#### Sheet Structure
+
+**Workbook:** Single Google Sheet with 8 tabs
+
+| Sheet Name | Purpose | Row Limit | Update Frequency |
+|------------|---------|-----------|------------------|
+| **📋 Daily Tasks** | Main task tracker | Unlimited | Real-time |
+| **📊 Dashboard** | Live metrics & charts | Formula-driven | Real-time |
+| **👥 Team** | Team directory | ~50 | On syncteam |
+| **📅 Weekly Reports** | Weekly summaries | ~52/year | Weekly (Monday) |
+| **📆 Monthly Reports** | Monthly analytics | ~12/year | Monthly (1st) |
+| **📝 Notes Log** | All task notes | Unlimited | Real-time |
+| **🗃️ Archive** | Completed tasks | Unlimited | Daily cleanup |
+| **⚙️ Settings** | Configuration | Static | Manual |
+
+#### 📋 Daily Tasks Sheet
+
+**Columns:**
+
+| Column | Type | Description | Validation |
+|--------|------|-------------|------------|
+| ID | Text | Task ID (TASK-001) | Auto-generated |
+| Title | Text | Task title (max 120 chars) | Required |
+| Description | Text | Full description | Optional |
+| Assignee | Text | Team member name | Dropdown |
+| Priority | Text | urgent/high/medium/low | Dropdown |
+| Status | Text | One of 14 statuses | Dropdown |
+| Type | Text | feature/bug/hotfix/etc | Dropdown |
+| Deadline | DateTime | ISO format or formatted | Date validation |
+| Created | DateTime | Creation timestamp | Auto |
+| Updated | DateTime | Last update timestamp | Auto |
+| Effort | Text | 2h30m, 1d, etc | Duration format |
+| Progress | Number | 0-100% | Number validation |
+| Tags | Text | Comma-separated | Optional |
+| Created By | Text | Creator name | Auto |
+| Notes | Text | Latest note | Auto-sync |
+| Blocked By | Text | Task ID dependencies | Optional |
+
+**Formatting:**
+- Priority conditional: Red (urgent), Orange (high), Yellow (medium), Green (low)
+- Status conditional: 14 colors (one per status)
+- Overdue highlighting: Red background if past deadline
+- Frozen: Header row + first column
+- Banding: Alternating row colors for readability
+
+#### 📊 Dashboard Sheet
+
+**Sections:**
+
+1. **Overview Metrics**
+   - Total tasks
+   - Completed this week
+   - Completion rate
+   - Average days to complete
+
+2. **Status Breakdown** (Pie chart)
+   - Tasks by status with counts
+
+3. **Priority Distribution** (Bar chart)
+   - Tasks by priority level
+
+4. **Team Performance** (Table)
+   - Tasks per member
+   - Completion rates
+   - Average effort
+
+5. **Trends** (Line chart)
+   - Tasks created vs completed (last 30 days)
+
+**Formula Examples:**
+```
+Total Tasks: =COUNTA('📋 Daily Tasks'!A:A) - 1
+Completed This Week: =COUNTIFS('📋 Daily Tasks'!F:F, "completed", '📋 Daily Tasks'!I:I, ">=TODAY()-7")
+Completion Rate: =COUNTIF('📋 Daily Tasks'!F:F, "completed") / COUNTA('📋 Daily Tasks'!A:A)
+```
+
+#### 👥 Team Sheet
+
+**Columns:**
+
+| Column | Description | Auto-Calculated? |
+|--------|-------------|------------------|
+| Name | Team member name | ❌ |
+| Telegram ID | Numeric Telegram ID | ❌ |
+| Discord ID | Discord user ID | ❌ |
+| Role | Dev/Admin/Marketing/Design | ❌ |
+| Email | Contact email | ❌ |
+| Calendar ID | Google Calendar ID | ❌ (defaults to email) |
+| Timezone | e.g., America/New_York | ❌ |
+| Work Start | e.g., 09:00 | ❌ |
+| Active Tasks | Count of in_progress tasks | ✅ |
+| Completed (Week) | Completed this week | ✅ |
+| Completed (Month) | Completed this month | ✅ |
+| Completion Rate | Percentage | ✅ |
+| Avg Days | Average days to complete | ✅ |
+| Status | Active/On Leave/Inactive | ❌ |
+
+**Team Data Flow:**
+```
+config/team.py (Source of Truth)
+       ↓ /syncteam command
+PostgreSQL team_members table
+       ↓ Auto-sync
+Google Sheets 👥 Team sheet
+       ↓ Used by
+Discord routing, Task assignment, Workload tracking
+```
+
+#### 📅 Weekly Reports Sheet
+
+**Columns:**
+
+| Column | Description | Generated How |
+|--------|-------------|---------------|
+| Week # | Week number of year | Auto (ISO week) |
+| Year | 2026 | Auto |
+| Dates | "Jan 13 - Jan 19" | Auto (Mon-Sun) |
+| Tasks Created | Count | Query |
+| Tasks Completed | Count | Query |
+| Tasks Pending | Count | Query |
+| Tasks Blocked | Count | Query |
+| Completion Rate | Percentage | Calculated |
+| Priority Breakdown | "Urgent: 5, High: 10..." | Query |
+| Top Performer | Team member with most completions | Query |
+| Overdue | Count of overdue tasks | Query |
+| On-Time Rate | % completed before deadline | Calculated |
+| Highlights | Key achievements | AI-generated |
+| Blockers | Main blockers | AI-generated |
+
+**Generation:** Scheduled job runs every Monday at 10 AM
+
+#### 📆 Monthly Reports Sheet
+
+**Similar structure to Weekly**, but aggregated monthly
+
+**Additional Fields:**
+- EOM Status (end of month snapshot)
+- Team Performance (detailed breakdown per member)
+- Time Metrics (average effort, total hours logged)
+- Summary (AI-generated monthly summary)
+
+**Generation:** Scheduled job runs on the 1st of each month at 9 AM
+
+#### 📝 Notes Log Sheet
+
+**Columns:**
+
+| Column | Description |
+|--------|-------------|
+| Timestamp | When note was added |
+| Task ID | Associated task |
+| Task Title | For reference |
+| Author | Who added the note |
+| Type | Status Change/Comment/Update |
+| Content | Note text |
+| Pinned | Boolean (important notes) |
+
+**Purpose:** Audit trail of all task notes and status changes
+
+#### 🗃️ Archive Sheet
+
+**Purpose:** Store completed/cancelled tasks to keep Daily Tasks clean
+
+**Columns:** Same as Daily Tasks, plus:
+- Final Status (completed/cancelled)
+- Days to Complete (deadline - created)
+- Notes Count (number of notes added)
+- Archived On (timestamp)
+
+**Archiving Rules:**
+- Auto-archive completed tasks > 30 days old
+- Manual archive via command
+- Cancelled tasks archived immediately
+
+#### ⚙️ Settings Sheet
+
+**Purpose:** Configuration and reference data
+
+**Sections:**
+1. **Task Types** (feature, bug, hotfix, research, meeting, docs, refactor, test)
+2. **Priorities** (urgent, high, medium, low)
+3. **Statuses** (14 statuses with descriptions)
+4. **Roles** (Developer, Admin, Marketing, Design)
+
+**Used for:** Dropdown validations in Daily Tasks sheet
+
+---
+
+#### Key Functions
+
+**File:** `src/integrations/sheets.py`
+
+| Function | Description | Parameters | Returns |
+|----------|-------------|------------|---------|
+| `add_task()` | Add new task | Task data dict | Task ID |
+| `update_task()` | Update task properties | Task ID, update dict | Success bool |
+| `get_all_tasks()` | Retrieve all tasks | None | List of tasks |
+| `get_tasks_by_status()` | Filter by status | Status string | List of tasks |
+| `get_tasks_by_assignee()` | Filter by person | Assignee name | List of tasks |
+| `get_overdue_tasks()` | Get past-deadline tasks | None | List of tasks |
+| `get_tasks_due_soon()` | Get tasks due within X days | Days (int) | List of tasks |
+| `add_note()` | Log note for task | Task ID, content | Note ID |
+| `generate_weekly_report()` | Auto-generate weekly report | Week number | Report dict |
+| `generate_monthly_report()` | Auto-generate monthly report | Month number | Report dict |
+| `update_team_member()` | Add/update team member | Member data | Success bool |
+| `archive_task()` | Move to archive | Task ID | Success bool |
+| `archive_old_completed()` | Archive tasks older than X days | Days (int) | Count archived |
+| `search_tasks()` | Search with filters | Filters dict | List of tasks |
+| `bulk_update_status()` | Update status for multiple | Task IDs, status | Success bool |
+| `bulk_assign()` | Assign multiple tasks | Task IDs, assignee | Success bool |
+
+**Error Handling:**
+- Retries on transient errors (3 attempts, exponential backoff)
+- Detailed logging
+- Fallback to database if Sheets unavailable
+
+**Performance:**
+- Batch operations where possible
+- Caching for read-heavy operations
+- Async updates to avoid blocking
+
+---
+
+### Discord Integration
+
+**File:** `src/integrations/discord.py`
+**Status:** ✅ Production (v1.5.0+)
+
+**Major Change (v1.5.0):** Switched from webhooks to **Bot API with Channel IDs** for full permissions
+
+#### Channel Structure
+
+**Per Department:** Dev, Admin, Marketing, Design
+
+Each department has **4 dedicated channels:**
+
+| Channel Type | Purpose | Content | Permissions |
+|--------------|---------|---------|-------------|
+| **Forum** | Detailed specs | Spec sheets, complex tasks | Create/delete threads |
+| **Tasks** | Regular tasks | Simple tasks, alerts, cancellations | Post/edit/delete messages |
+| **Report** | Reports | Daily standup, weekly summary | Post messages |
+| **General** | General | Help, announcements | Post messages |
+
+#### Dev Department (Configured)
+
+| Channel | ID | Type |
+|---------|-----|------|
+| Dev Forum | `1459834094304104653` | Forum |
+| Dev Tasks | `1461760665873158349` | Text |
+| Dev Report | `1461760697334632651` | Text |
+| Dev General | `1461760791719182590` | Text |
+
+#### Admin Department (Configured)
+
+| Channel | ID | Type |
+|---------|-----|------|
+| Admin Forum | `1462370539858432145` | Forum |
+| Admin Tasks | *(not set)* | Text |
+| Admin Report | `1462370845908402268` | Text |
+| Admin General | `1462370950627725362` | Text |
+
+**Note:** Marketing and Design departments not yet configured
+
+---
+
+#### Key Functions
+
+**File:** `src/integrations/discord.py`
+
+| Function | Description | Parameters |
+|----------|-------------|------------|
+| `send_message()` | Send message to any channel | channel_id, content, embed |
+| `edit_message()` | Edit existing message | channel_id, message_id, new_content |
+| `delete_message()` | Delete message | channel_id, message_id |
+| `create_forum_thread()` | Create forum post with embed | forum_id, title, content, tags |
+| `delete_thread()` | Delete thread/forum post | thread_id |
+| `add_reaction()` | Add reaction to message | channel_id, message_id, emoji |
+| `get_channel_threads()` | List all threads | channel_id |
+| `bulk_delete_threads()` | Delete threads matching prefix | channel_id, title_prefix |
+| `post_task()` | Smart task posting (forum or text) | task_data, department |
+| `post_spec_sheet()` | Detailed spec as forum thread | spec_data, department |
+| `post_standup()` | Daily standup to report channel | standup_data, department |
+| `post_weekly_summary()` | Weekly report embed | summary_data, department |
+| `post_alert()` | Alerts to tasks channel | alert_message, department |
+| `post_general_message()` | Post to general channel | message, department |
+| `post_help()` | Help message with reaction guide | department |
+| `cleanup_task_channel()` | Clean all task threads | department |
+| `send_direct_message_to_team()` | Send boss message to team member (v1.8.3) | member_name, message |
+| `ask_team_member_status()` | Ask question via Discord (v1.8.3) | member_name, question |
+
+---
+
+#### Smart Content Routing
+
+**Algorithm:**
+```python
+def post_task(task, department):
+    if task.is_specsheet or task.detailed_mode:
+        # Complex tasks → Forum (as thread)
+        create_forum_thread(forum_id, task)
+    else:
+        # Simple tasks → Tasks channel
+        send_message(tasks_channel_id, task_embed)
+```
+
+**Department Routing:**
+```python
+def get_department_channels(assignee):
+    role = get_team_member_role(assignee)
+
+    if role == "Developer":
+        return DEV_CHANNELS
+    elif role == "Admin":
+        return ADMIN_CHANNELS
+    elif role == "Marketing":
+        return MARKETING_CHANNELS
+    elif role == "Design":
+        return DESIGN_CHANNELS
+    else:
+        return DEV_CHANNELS  # Default
+```
+
+---
+
+#### Task Embed Format
+
+**Regular Task:**
+```
+┌─────────────────────────────────────┐
+│ 🎯 TASK-001: Fix login bug          │
+├─────────────────────────────────────┤
+│ Assignee: @John                     │
+│ Priority: 🔴 High                   │
+│ Deadline: Jan 16, 2026 5:00 PM     │
+│ Status: pending                     │
+│                                     │
+│ Description:                         │
+│ Users cannot log in on mobile...    │
+│                                     │
+│ Acceptance Criteria:                │
+│ ☐ Login works on iOS              │
+│ ☐ Login works on Android           │
+│ ☐ Error messages are clear         │
+├─────────────────────────────────────┤
+│ Reactions:                          │
+│ ✅ Done | 🚧 Working | 🚫 Blocked  │
+│ ⏸️ Paused | 🔄 Review              │
+└─────────────────────────────────────┘
+```
+
+**Spec Sheet (Forum):**
+```
+📋 Authentication System Implementation
+
+🎯 Overview
+────────────────────────────────────
+[5-paragraph description with executive summary,
+business value, technical approach, integrations,
+success metrics]
+
+🏗️ Implementation Tasks
+────────────────────────────────────
+1. Design auth flow diagram
+   ~30min
+
+2. Create database schema for users
+   ~1h
+   [Dependencies: None]
+
+3. Implement login/register API
+   ~2h
+   [Dependencies: Task #2]
+   [Technical: FastAPI endpoints, JWT tokens,
+   bcrypt password hashing]
+
+[... more tasks ...]
+
+✅ Acceptance Criteria
+────────────────────────────────────
+☐ Users can register with email/password
+☐ Login with email/password works
+☐ JWT tokens expire after 24 hours
+☐ Password reset flow functional
+☐ OAuth with Google works
+☐ All endpoints return proper error messages
+
+🔧 Technical Considerations
+────────────────────────────────────
+Database Schema:
+- users table: id, email, hashed_password, created_at
+- sessions table: id, user_id, token, expires_at
+
+API Structure:
+- POST /auth/register
+- POST /auth/login
+- POST /auth/refresh
+- POST /auth/reset-password
+
+Security:
+- bcrypt for password hashing (cost factor 12)
+- JWT with RS256 signing
+- Rate limiting: 5 requests/minute per IP
+- HTTPS only
+
+Performance:
+- Redis caching for session tokens
+- Database indexes on email, user_id
+
+────────────────────────────────────
+Assignee: @John | Priority: High
+Deadline: Jan 20, 2026
+Created: Jan 16, 2026 by Boss
+```
+
+---
+
+#### Reaction System
+
+**Emoji → Status Mapping:**
+
+| Emoji | Status | Auto-Update |
+|-------|--------|-------------|
+| ✅ | completed | Yes |
+| 🚧 | in_progress | Yes |
+| 🚫 | blocked | Yes |
+| ⏸️ | on_hold | Yes |
+| 🔄 | in_review | Yes |
+| 📝 | needs_info | Yes |
+| ⏰ | overdue | No (auto-set by system) |
+| 👍 | (no change) | No |
+
+**Implementation:** Discord bot listens for reactions, updates PostgreSQL + Google Sheets
+
+**File:** `src/integrations/discord_bot.py`
+
+---
+
+#### Direct Team Communication (v1.8.3)
+
+**Feature:** Boss can message team members via Discord WITHOUT creating a task
+
+**Use Cases:**
+- "ask Mayank what tasks are left"
+- "tell Sarah to update me"
+- "check with John about the deployment"
+- "ping Mike for status"
+
+**Flow:**
+```
+Boss (Telegram): "ask Mayank what tasks are left"
+
+Bot:
+1. Detects ASK_TEAM_MEMBER intent
+2. Finds Mayank's role (Developer)
+3. Routes to Dev General channel
+4. Posts message with @mention:
+
+   "Hey @Mayank! Boss wants to know: what tasks do you have left?"
+
+Bot (Telegram response): "✅ Sent message to Mayank in Dev General channel"
+```
+
+**Reformulation:** Messages are AI-reformulated to be directed AT the team member
+
+**Implementation:** `send_direct_message_to_team()`, `ask_team_member_status()`
+
+---
+
+### Google Calendar Integration
+
+**File:** `src/integrations/calendar.py`
+**Status:** ✅ Production
+
+#### Features
+
+**Per-User Calendars (v1.5.1):**
+- Events created directly on assignee's personal calendar
+- Requires calendar shared with service account
+- Falls back to boss's calendar if not shared
+- Calendar ID stored in Team sheet (defaults to email)
+
+#### Event Types
+
+| Event Type | When Created | Duration | Reminders |
+|------------|-------------|----------|-----------|
+| **Task Deadline** | Task created with deadline | 30 min | 2h, 1h before |
+| **Meeting** | Task type = "meeting" | Custom | 30min, 10min before |
+| **Recurring Task** | Recurring task instance | 30 min | 1h before |
+
+#### Event Format
+
+**Title:** `[TASK-001] Fix login bug`
+
+**Description:**
+```
+Task: TASK-001
+Title: Fix login bug
+Assignee: John
+Priority: High
+Status: pending
+
+Description:
+Users cannot log in on mobile devices.
+
+Acceptance Criteria:
+- Login works on iOS
+- Login works on Android
+- Error messages are clear
+
+Google Sheets: [Link]
+Discord: [Thread Link]
+```
+
+**Reminders:**
+- 2 hours before (email)
+- 1 hour before (notification)
+- 30 minutes before (popup)
+
+#### Key Functions
+
+| Function | Description |
+|----------|-------------|
+| `create_task_event()` | Create calendar event for task |
+| `update_task_event()` | Update existing event (deadline change) |
+| `delete_task_event()` | Remove event (task completed/cancelled) |
+| `get_user_calendar_id()` | Lookup assignee's calendar ID |
+| `create_meeting_event()` | Create meeting with attendees |
+
+**Calendar Lookup Flow:**
+```
+1. Check Team sheet "Calendar ID" column
+2. If empty, use email as calendar ID
+3. If sharing error, fall back to config default
+4. Log warning if fallback used
+```
+
+**Configuration:**
+- `GOOGLE_CALENDAR_ID` - Default/fallback calendar
+- Service account must have "Make changes to events" permission
+
+---
+
+### Gmail Integration
+
+**File:** `src/integrations/gmail.py`
+**Status:** ✅ Production
+
+#### Features
+
+1. **Email Digests** (v1.4.1)
+   - Morning: 7 AM (configurable)
+   - Evening: 8 PM (configurable)
+   - Boss-only (privacy)
+   - Sent via Telegram, not Discord
+
+2. **Email Summarization**
+   - AI-powered summary
+   - Action item extraction
+   - Priority categorization
+   - Sender grouping
+
+#### Digest Format
+
+```
+☀️ Morning Email Digest
+Jan 16 - 7:00 AM
+
+📬 23 emails | 8 unread
+
+Summary:
+────────────────────────────────────
+Received 3 client updates requiring responses,
+5 internal notifications, and 15 newsletters.
+Client X needs approval on proposal by EOD.
+
+Action Items:
+────────────────────────────────────
+  ☐ Reply to Client X proposal (deadline today)
+  ☐ Review John's PR comments
+  ☐ Schedule team sync for next week
+
+Priority Emails:
+────────────────────────────────────
+  📧 Re: Contract Approval Needed
+     From: Client X
+     Received: 8:30 AM
+
+  📧 Urgent: Production Issue
+     From: DevOps Team
+     Received: 6:15 AM
+
+Breakdown:
+────────────────────────────────────
+Work: 8 | Clients: 3 | Newsletters: 12
+```
+
+#### Key Functions
+
+| Function | Description |
+|----------|-------------|
+| `fetch_recent_emails()` | Get last N emails |
+| `generate_digest()` | Create AI summary |
+| `send_digest_telegram()` | Send to boss via Telegram |
+| `categorize_emails()` | Work/Client/Newsletter classification |
+
+**Scheduling:**
+- Morning job: `send_morning_digest` (cron: `0 7 * * *`)
+- Evening job: `send_evening_digest` (cron: `0 20 * * *`)
+
+**Configuration:**
+- `MORNING_DIGEST_HOUR=7` (env)
+- `EVENING_DIGEST_HOUR=20` (env)
+- `TIMEZONE=America/New_York` (for correct timing)
+
+---
+
+## Scheduler & Automation
+
+**File:** `src/scheduler/jobs.py`
+**Status:** ✅ Production
+
+**Technology:** APScheduler (Advanced Python Scheduler)
+
+### Scheduled Jobs
+
+| Job Name | Schedule | Description | Runs |
+|----------|----------|-------------|------|
+| `send_daily_standup` | 9:00 AM daily | Daily summary to Discord Report channel | 1x/day |
+| `send_morning_digest` | 7:00 AM daily | Email digest via Telegram | 1x/day |
+| `send_evening_digest` | 8:00 PM daily | Evening email digest | 1x/day |
+| `send_deadline_reminders` | Every 15 min | Task deadline notifications | 96x/day |
+| `send_overdue_alerts` | 10:00 AM, 2:00 PM | Overdue task alerts | 2x/day |
+| `generate_weekly_report` | Monday 10:00 AM | Weekly summary to Sheets + Discord | 1x/week |
+| `generate_monthly_report` | 1st of month 9:00 AM | Monthly analytics | 1x/month |
+| `process_recurring_tasks` | Every 5 min | Check and create due recurring tasks | 288x/day |
+| `sync_attendance` | Every 15 min | Sync attendance to Sheets (v1.5.4) | 96x/day |
+| `weekly_time_report` | Monday 10:00 AM | Weekly time report (v1.5.4) | 1x/week |
+| `proactive_checkins` | Every hour | Check in on stalled tasks (v2.0.5) | 24x/day |
+| `cleanup_old_tasks` | Sunday 2:00 AM | Archive old completed tasks | 1x/week |
+| `process_message_queue` | Every 15 sec | Retry failed messages (v2.0.5) | 240x/hour |
+
+### Job Details
+
+#### Daily Standup
+
+**Trigger:** 9:00 AM daily
+**Target:** Discord Report channel (per department)
+**Content:**
+
+```
+🌅 Daily Standup - Jan 16, 2026
+─────────────────────────────────────
+
+📊 Overview
+────────────
+✅ Completed Yesterday: 5 tasks
+🚧 In Progress: 8 tasks
+📋 Pending: 12 tasks
+🚫 Blocked: 2 tasks
+
+👥 Team Activity
+────────────
+John (Dev):
+  ✅ Fixed login bug
+  ✅ Deployed hotfix
+  🚧 Working on: Dashboard refactor
+
+Sarah (Dev):
+  ✅ Completed homepage update
+  🚧 Working on: API optimization
+
+Mayank (Dev):
+  🚧 Working on: Stripe integration
+  🚧 Working on: Email deploy
+
+🔔 Action Required
+────────────
+⚠️ TASK-005 blocked by API access
+⏰ TASK-012 due today (John)
+⏰ TASK-018 due today (Sarah)
+
+💡 Focus Areas Today
+────────────
+- Complete Stripe payment testing
+- Fix email deployment issues
+- Address API blocker
+```
+
+**Implementation:** `send_daily_standup()` → Posts to all departments
+
+---
+
+#### Deadline Reminders
+
+**Trigger:** Every 15 minutes
+**Logic:** Check tasks due within next 2 hours, 1 hour, 30 minutes
+
+**Anti-Spam System (v2.0.2):**
+- Tracks which tasks reminded at each interval
+- ONE reminder per task per interval
+- Intervals: 2h, 1h, 30m before deadline
+- Skips tasks already overdue
+- Only posts to Discord at 1-hour mark
+
+**Reminder Format (Telegram):**
+```
+⏰ Deadline Reminder
+
+TASK-001: Fix login bug
+Assignee: @John
+Due in: 1 hour (5:00 PM)
+
+Status: in_progress
+Priority: High
+```
+
+**Reminder Format (Discord - 1h mark only):**
+```
+⏰ @John - Your task is due in 1 hour!
+
+TASK-001: Fix login bug
+Deadline: Jan 16, 2026 5:00 PM
+
+[View Task Button]
+```
+
+**Deduplication:** `src/services/reminder_tracker.py` stores reminded task IDs per interval
+
+---
+
+#### Overdue Alerts
+
+**Trigger:** 10:00 AM, 2:00 PM daily
+**Target:** Telegram (boss) + Discord (team)
+
+**Alert Format:**
+```
+🚨 Overdue Tasks Alert
+
+3 tasks are past their deadline:
+
+1. TASK-008: API integration
+   Assignee: John
+   Was due: Jan 15, 3:00 PM (1 day overdue)
+   Status: in_progress
+
+2. TASK-015: Email template
+   Assignee: Sarah
+   Was due: Jan 14, 11:00 AM (2 days overdue)
+   Status: pending
+
+3. TASK-022: Testing
+   Assignee: Mayank
+   Was due: Jan 13, 5:00 PM (3 days overdue)
+   Status: blocked
+   Reason: Waiting for API access
+
+Please follow up with your team.
+```
+
+---
+
+#### Proactive Check-ins (v2.0.5)
+
+**Trigger:** Every hour
+**Logic:** Find tasks with no updates in 4+ hours
+
+**Check-in Message (Discord):**
+```
+👋 Hey @John! Just checking in...
+
+TASK-001: Fix login bug
+Last update: 6 hours ago
+Status: in_progress
+
+How's it going? Any blockers?
+```
+
+**Implementation:**
+- `src/scheduler/jobs.py` (proactive_checkins job)
+- Only sends if task is `in_progress` or `in_review`
+- Friendly, non-pressuring tone
+- Tracks last check-in time (doesn't spam)
+
+---
+
+#### Weekly Report
+
+**Trigger:** Monday 10:00 AM
+**Targets:** Google Sheets + Discord Report channel
+
+**Report Sections:**
+1. **Week Summary** (Jan 13-19, 2026)
+2. **Tasks Created:** 25
+3. **Tasks Completed:** 18
+4. **Completion Rate:** 72%
+5. **Priority Breakdown:** Urgent: 5, High: 12, Medium: 6, Low: 2
+6. **Top Performer:** John (8 tasks completed)
+7. **Overdue:** 3 tasks
+8. **On-Time Rate:** 85%
+9. **Highlights:** Key achievements (AI-generated)
+10. **Blockers:** Main issues (AI-generated)
+
+**Stored in:** Google Sheets "📅 Weekly Reports" sheet
+
+---
+
+#### Message Queue Processor (v2.0.5)
+
+**Trigger:** Every 15 seconds
+**Purpose:** Retry failed Discord/API messages
+
+**Features:**
+- Exponential backoff (1s, 2s, 4s, 8s, 16s)
+- Max retries: 5
+- Dead letter queue for permanent failures
+- Background worker doesn't block main app
+
+**Implementation:** `src/services/message_queue.py`
+
+**Queued Message Types:**
+- Discord posts
+- Google Sheets updates
+- Calendar events
+- Telegram messages
+
+**Monitoring:** Available in audit dashboard at `/audit`
+
+---
+
+## Data Systems
+
+### Memory & Learning System
+
+**Files:** `src/memory/`
+
+#### Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Preferences** | `preferences.py` | User preferences (boss & team) |
+| **Context** | `context.py` | Conversation context |
+| **Learning** | `learning.py` | Learning from teachings |
+| **Pattern Learning** | `pattern_learning.py` | Pattern recognition (v2.0.5) |
+| **Task Context** | `task_context.py` | Recent task context |
+
+---
+
+#### Preferences System
+
+**Storage:** PostgreSQL `ai_memory` table + Redis cache
+
+**Preference Types:**
+
+| Type | Example | Usage |
+|------|---------|-------|
+| **Deadline Rules** | "ASAP = 4 hours" | Auto-set deadlines |
+| **Team Skills** | "John = React expert" | Smart assignment |
+| **Priority Rules** | "Client X = high priority" | Auto-prioritization |
+| **Default Assignees** | "bugs → John" | Auto-assignment |
+| **Work Hours** | "9 AM - 5 PM" | Schedule tasks |
+| **Communication Style** | "Brief updates" | Format responses |
+
+**Teaching Flow:**
+```
+Boss: "When I say ASAP, deadline is 4 hours"
+
+Bot: "✅ Got it! I'll remember that.
+
+     Preference saved:
+     - Keyword: 'ASAP'
+     - Deadline: 4 hours from now
+
+     Next time you say 'ASAP bug fix', I'll set deadline to 4 hours automatically."
+```
+
+**Implementation:**
+```python
+class PreferencesManager:
+    def save_preference(user_id, key, value, category):
+        # Save to database
+        # Update Redis cache
+        # Log for audit
+
+    def get_preference(user_id, key):
+        # Check Redis first
+        # Fallback to database
+        # Return default if not found
+```
+
+---
+
+#### Pattern Learning (v2.0.5)
+
+**File:** `src/memory/pattern_learning.py`
+**Status:** ✅ Production
+
+**What It Learns:**
+
+1. **Staff Working Styles**
+   - Typical task completion times
+   - Preferred communication style
+   - Common blockers
+
+2. **Common Issues**
+   - Recurring bugs
+   - Frequent blockers
+   - Dependency patterns
+
+3. **Successful Resolutions**
+   - What worked before
+   - Effective approaches
+   - Best practices
+
+4. **Boss Preferences**
+   - Approval patterns
+   - Rejection reasons
+   - Communication preferences
+
+**Learning Process:**
+```
+Every interaction:
+1. Extract: What happened?
+2. Categorize: What type of interaction?
+3. Store: Pattern in database
+4. Aggregate: Update statistics
+5. Use: Inform future AI responses
+```
+
+**Example Usage:**
+```
+Task assigned to John: "Fix dashboard bug"
+
+Pattern Learner checks:
+- John's past "dashboard" tasks → Average 4h completion
+- John's typical blockers → Often needs design assets
+- Boss's past approvals → Prefers screenshots + live demo
+
+AI uses this context:
+"Based on similar tasks, estimated 4h.
+John, make sure to get design assets from Sarah first.
+When submitting, include screenshots + live demo link (boss prefers this)."
+```
+
+**Storage:** PostgreSQL `pattern_memory` table
+
+---
+
+### Task Model
+
+**File:** `src/database/models.py`
+**Status:** ✅ Production
+
+#### Task Schema (TaskDB)
+
+**Database:** PostgreSQL
+
+| Column | Type | Description | Nullable | Default |
+|--------|------|-------------|----------|---------|
+| `id` | String | TASK-001 format | No | Auto-gen |
+| `title` | String(120) | Task title | No | - |
+| `description` | Text | Full description | Yes | None |
+| `assignee` | String | Team member name | Yes | None |
+| `assignee_telegram_id` | BigInteger | Telegram user ID | Yes | None |
+| `priority` | String | urgent/high/medium/low | No | "medium" |
+| `status` | String | One of 14 statuses | No | "pending" |
+| `type` | String | feature/bug/hotfix/etc | No | "task" |
+| `deadline` | DateTime | ISO format | Yes | None |
+| `created_at` | DateTime | Auto-set | No | Now |
+| `updated_at` | DateTime | Auto-updated | No | Now |
+| `created_by` | String | Creator name | Yes | "Boss" |
+| `estimated_effort` | String | 2h30m, 1d, etc | Yes | None |
+| `actual_effort` | Integer | Minutes logged | Yes | 0 |
+| `progress` | Integer | 0-100 | No | 0 |
+| `tags` | String | Comma-separated | Yes | None |
+| `notes` | Text | Latest note | Yes | None |
+| `blocked_by` | String | Task ID dependencies | Yes | None |
+| `acceptance_criteria` | JSON | List of criteria | Yes | [] |
+| `spec_sheet_url` | String | Discord forum URL | Yes | None |
+| `discord_thread_id` | String | Discord thread ID | Yes | None |
+| `is_deleted` | Boolean | Soft delete flag | No | False |
+
+#### 14 Task Statuses
+
+| Status | Description | Icon | Next Actions |
+|--------|-------------|------|--------------|
+| `pending` | Not started yet | 📋 | Start working |
+| `in_progress` | Currently working | 🚧 | Continue or block |
+| `in_review` | Submitted for review | 🔄 | Approve/reject |
+| `awaiting_validation` | Waiting for boss approval | ⏳ | Boss reviews |
+| `needs_revision` | Rejected, needs changes | 🔁 | Fix and resubmit |
+| `completed` | Approved and done | ✅ | Archive |
+| `cancelled` | Cancelled, won't do | 🚫 | Archive |
+| `blocked` | Blocked by external factor | 🛑 | Resolve blocker |
+| `delayed` | Postponed to later | ⏸️ | Resume when ready |
+| `undone` | Was completed, now reopened | ↩️ | Fix issue |
+| `on_hold` | Paused temporarily | ⏸️ | Resume later |
+| `waiting` | Waiting for something | ⏳ | Check dependency |
+| `needs_info` | Missing information | ❓ | Provide info |
+| `overdue` | Past deadline | 🚨 | Urgent attention |
+
+**Status Transitions:**
+```
+pending → in_progress → in_review → awaiting_validation → completed
+                  ↓                         ↓
+               blocked                needs_revision → in_progress
+                  ↓
+               on_hold → in_progress
+```
+
+---
+
+#### Relationships
+
+**1. Subtasks** (One-to-Many)
+```python
+class TaskDB:
+    subtasks = relationship("SubtaskDB", back_populates="parent_task")
+
+class SubtaskDB:
+    id: String          # SUB-001
+    task_id: String     # TASK-001 (foreign key)
+    title: String
+    completed: Boolean
+    order: Integer      # Display order
+```
+
+**2. Time Entries** (One-to-Many)
+```python
+class TimeEntryDB:
+    id: String          # TIME-001
+    task_id: String     # TASK-001
+    user_name: String
+    duration: Integer   # Minutes
+    started_at: DateTime
+    ended_at: DateTime
+    notes: String
+```
+
+**3. Task Dependencies** (Many-to-Many)
+```python
+class TaskDependencyDB:
+    task_id: String         # TASK-002
+    depends_on_task_id: String  # TASK-001
+    # Means: TASK-002 depends on TASK-001
+```
+
+**4. Notes** (Embedded in Task)
+```python
+# Notes stored as JSON in notes column
+notes: [
+    {
+        "timestamp": "2026-01-16T10:30:00",
+        "author": "John",
+        "type": "status_change",
+        "content": "Started working on this",
+        "pinned": false
+    }
+]
+```
+
+---
+
+### Validation System
+
+**File:** `src/bot/validation.py`
+**Status:** ✅ Production
+
+#### Validation Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    VALIDATION WORKFLOW                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  TEAM MEMBER                          BOSS                       │
+│  ───────────                          ────                       │
+│  1. "I finished the landing page"                               │
+│     ↓                                                            │
+│  2. Send screenshots/links                                       │
+│     📸 Screenshot 1                                              │
+│     📸 Screenshot 2                                              │
+│     🔗 Live demo link                                            │
+│     ↓                                                            │
+│  3. "that's all"                                                │
+│     ↓                                                            │
+│  4. Add notes (optional)                                         │
+│     "Fixed the login bug,                                        │
+│      tested on Chrome/Safari"                                    │
+│     ↓                                                            │
+│  5. AUTO-REVIEW KICKS IN                                         │
+│     ┌─────────────────────────┐                                 │
+│     │ AI Reviewer scores:     │                                 │
+│     │ • Proof: 85/100         │                                 │
+│     │ • Notes: 60/100         │                                 │
+│     │ • Criteria: 90/100      │                                 │
+│     │ Total: 78/100           │                                 │
+│     └─────────────────────────┘                                 │
+│     ↓                                                            │
+│  6a. IF SCORE ≥ 70:                                             │
+│      "✅ Looks good! Send to boss?"                             │
+│      ↓                                                           │
+│      "yes" ──────────────────────▶ 7. Receives request          │
+│                                         with all proof           │
+│                                         ↓                        │
+│                                      8. Reviews work             │
+│                                         ↓                        │
+│  ┌──────────────────────────────── 9a. "approved"               │
+│  │                                      "Great work!"            │
+│  ▼                                      ↓                        │
+│  10a. 🎉 "TASK APPROVED!"           Task → COMPLETED             │
+│                                                                  │
+│  ─────── OR ───────                                             │
+│                                                                  │
+│  ┌──────────────────────────────── 9b. "no - fix footer"        │
+│  │                                                               │
+│  ▼                                      ↓                        │
+│  10b. 🔄 "REVISION NEEDED"          Task → NEEDS_REVISION        │
+│      Feedback displayed                                          │
+│      ↓                                                           │
+│  11. Make changes, submit again...                               │
+│                                                                  │
+│  ─────── OR (SCORE < 70) ───────                                │
+│                                                                  │
+│  6b. "⚠️ Your submission needs work:                            │
+│       • Notes too brief (40/100)                                │
+│       • Missing test details                                    │
+│                                                                  │
+│       Suggested: 'Completed landing page...                     │
+│       Tested on Chrome, Safari...'                              │
+│                                                                  │
+│       Score: 55/100 (need 70+)                                  │
+│                                                                  │
+│       • 'yes' - Apply suggestions                               │
+│       • 'no' - Send anyway                                      │
+│       • 'edit' - Write your own"                                │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Validation States
+
+**Database:** PostgreSQL `validation_requests` table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | String | VAL-001 |
+| `task_id` | String | TASK-001 |
+| `submitter` | String | Team member name |
+| `proof_items` | JSON | List of proof |
+| `notes` | Text | Submission notes |
+| `review_score` | Integer | 0-100 (auto-review) |
+| `suggestions` | Text | AI suggestions |
+| `status` | String | pending/approved/rejected |
+| `boss_feedback` | Text | Boss's response |
+| `submitted_at` | DateTime | When submitted |
+| `reviewed_at` | DateTime | When boss reviewed |
+
+#### Proof Item Types
+
+| Type | Description | Validation |
+|------|-------------|------------|
+| **Screenshot** | Image file | Vision AI analyzes |
+| **Link** | URL | Check accessibility |
+| **File** | Document | Check format |
+| **Git Commit** | Commit SHA | Verify exists |
+| **Text Note** | Description | Check completeness |
+
+#### Auto-Review Scoring
+
+**File:** `src/ai/reviewer.py`
+
+**Scoring Algorithm:**
+```python
+def calculate_score(proof_items, notes, acceptance_criteria):
+    score = 0
+
+    # 1. Proof Quality (40%)
+    if len(proof_items) >= 2:
+        score += 20
+    if has_screenshots(proof_items):
+        score += 10
+    if has_links(proof_items):
+        score += 10
+
+    # 2. Notes Completeness (30%)
+    if len(notes) > 50:
+        score += 10
+    if contains_testing_details(notes):
+        score += 10
+    if explains_what_was_done(notes):
+        score += 10
+
+    # 3. Acceptance Criteria (20%)
+    for criterion in acceptance_criteria:
+        if criterion_addressed(criterion, notes, proof_items):
+            score += (20 / len(acceptance_criteria))
+
+    # 4. Communication (10%)
+    if professional_tone(notes):
+        score += 5
+    if clear_writing(notes):
+        score += 5
+
+    return score
+```
+
+**Stricter Validation (v2.0.5):**
+- Staff must **explicitly address EACH** acceptance criterion
+- Vague "done" statements rejected
+- Must explain what they did for EACH criterion with proof/details
+- Vision AI analysis validates screenshots match claims
+
+---
+
+## API & Technical
+
+### API Endpoints
+
+**File:** `src/main.py`
+**Framework:** FastAPI
+**Status:** ✅ Production
+
+#### Public Endpoints
+
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/` | GET | API status | None |
+| `/health` | GET | Health check | None |
+| `/webhook/telegram` | POST | Telegram bot webhook | Telegram secret |
+| `/onboard` | GET | Team onboarding form (v1.5.2) | None |
+| `/onboard` | POST | Submit onboarding data | None |
+| `/team` | GET | View team members | None |
+| `/oauth/callback` | GET | Google OAuth callback (v1.5.2) | None |
+
+#### Admin Endpoints
+
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/audit` | GET | Audit dashboard (v2.0.5) | Admin |
+| `/api/audit/stats` | GET | JSON audit stats (v2.0.5) | Admin |
+| `/api/tasks` | GET | List all tasks | API key |
+| `/api/tasks/{id}` | GET | Get task details | API key |
+| `/api/tasks` | POST | Create task | API key |
+| `/api/tasks/{id}` | PUT | Update task | API key |
+| `/api/tasks/{id}` | DELETE | Delete task | API key |
+| `/api/team` | GET | List team members | API key |
+
+#### Webhook Handler
+
+**File:** `src/main.py` → `telegram_webhook()`
+
+**Flow:**
+```python
+@app.post("/webhook/telegram")
+async def telegram_webhook(update: dict, background_tasks: BackgroundTasks):
+    """
+    1. Validate Telegram secret token
+    2. Parse update (message, callback, reaction)
+    3. Add to background tasks (non-blocking)
+    4. Return 200 OK immediately
+    """
+
+    background_tasks.add_task(process_telegram_update, update)
+    return {"status": "ok"}
+
+async def process_telegram_update(update):
+    """
+    1. Extract message/user info
+    2. Route to appropriate handler
+    3. Process with AI if needed
+    4. Send response
+    5. Update database/sheets
+    6. Log for audit
+    """
+```
+
+**Why Background Tasks:**
+- Telegram webhooks timeout after 60s
+- Some operations (AI, Sheets sync) take time
+- Background processing prevents timeouts
+- User gets immediate response
+
+---
+
+#### Onboarding Portal (v1.5.2)
+
+**Endpoint:** `/onboard` (GET)
+
+**Purpose:** Self-service team member registration
+
+**Flow:**
+```
+1. Team member visits /onboard
+2. Fills 4-step form:
+   Step 1: Name, Role, Email
+   Step 2: Telegram ID, Discord ID
+   Step 3: Google OAuth (Calendar/Tasks)
+   Step 4: Confirmation
+3. Submits → Saves to PostgreSQL + Sheets
+4. Redirects to confirmation page
+```
+
+**OAuth Integration:**
+- User clicks "Connect Google"
+- Popup opens for Google auth
+- Grants Calendar + Tasks permissions
+- Returns to form with credentials
+- Calendar ID auto-set to email
+
+**UI:** Dark minimalist design, mobile-responsive
+
+---
+
+#### Audit Dashboard (v2.0.5)
+
+**Endpoint:** `/audit` (GET)
+
+**Purpose:** Monitor system health and failed operations
+
+**Displays:**
+1. **Message Queue Status**
+   - Pending messages count
+   - Failed messages count
+   - Retry attempts histogram
+
+2. **Dead Letter Queue**
+   - Permanently failed messages
+   - Error details
+   - Retry history
+
+3. **Rate Limit Stats**
+   - Requests per user
+   - Throttled requests
+   - Burst capacity used
+
+4. **Recent Tasks**
+   - Last 10 tasks created
+   - Status distribution
+   - Completion times
+
+**JSON API:** `/api/audit/stats` returns same data as JSON
+
+---
+
+### Utility Modules
+
+**Directory:** `src/utils/`
+**Status:** ✅ Production (v1.5.3+)
+
+#### datetime_utils.py
+
+**Purpose:** Consistent timezone handling
+
+| Function | Description |
+|----------|-------------|
+| `to_naive_local()` | Convert aware datetime to naive local |
+| `parse_deadline()` | Parse natural deadline strings |
+| `get_local_now()` | Get current time in configured timezone |
+| `format_datetime()` | Format for display |
+
+**Fixes:** PostgreSQL offset-naive/aware datetime errors
+
+**Example:**
+```python
+from src.utils.datetime_utils import parse_deadline
+
+deadline = parse_deadline("tomorrow at 5pm")
+# Returns: datetime(2026, 1, 17, 17, 0, 0)
+
+deadline = parse_deadline("next Friday")
+# Returns: datetime(2026, 1, 24, 23, 59, 59)
+```
+
+---
+
+#### team_utils.py
+
+**Purpose:** Team member lookups with fallback
+
+| Function | Description |
+|----------|-------------|
+| `get_assignee_info()` | Get full team member data |
+| `lookup_team_member()` | 3-tier fallback lookup |
+| `get_department_from_role()` | Role → Department mapping |
+
+**3-Tier Fallback:**
+```python
+def lookup_team_member(name):
+    # 1. Try PostgreSQL database
+    member = db.get_team_member(name)
+    if member:
+        return member
+
+    # 2. Try Google Sheets
+    member = sheets.get_team_member(name)
+    if member:
+        return member
+
+    # 3. Try config/team.py
+    member = config.TEAM.get(name)
+    if member:
+        return member
+
+    return None  # Not found
+```
+
+**Benefits:** Resilient to database/API failures
+
+---
+
+#### validation_utils.py
+
+**Purpose:** Validate data before saving
+
+| Function | Description |
+|----------|-------------|
+| `validate_task_data()` | Check task fields |
+| `validate_team_data()` | Check team member fields |
+| `validate_deadline()` | Ensure deadline is future |
+| `validate_priority()` | Check valid priority value |
+
+**Example:**
+```python
+from src.utils.validation_utils import validate_task_data
+
+task = {
+    "title": "Fix bug",
+    "priority": "CRITICAL",  # Invalid
+    "deadline": "2025-01-01"  # Past
+}
+
+errors, warnings = validate_task_data(task)
+
+errors:
+  - "Invalid priority: CRITICAL (must be urgent/high/medium/low)"
+  - "Deadline is in the past"
+
+warnings:
+  - "No assignee specified"
+  - "Estimated effort not provided"
+```
+
+**Benefits:** Catch errors before database save
+
+---
+
+### Configuration
+
+**File:** `config/settings.py`
+**Status:** ✅ Production
+
+#### Environment Variables
+
+**Required:**
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | `123456:ABC-DEF...` |
+| `TELEGRAM_BOSS_CHAT_ID` | Boss's Telegram user ID | `987654321` |
+| `DEEPSEEK_API_KEY` | DeepSeek AI API key | `sk-...` |
+| `GOOGLE_CREDENTIALS_JSON` | Service account JSON (base64) | `eyJ0eXBlIjoi...` |
+| `GOOGLE_SHEET_ID` | Google Sheet ID | `1BxiMVs0...` |
+| `DATABASE_URL` | PostgreSQL connection | `postgresql://user:pass@host/db` |
+
+**Optional:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DISCORD_BOT_TOKEN` | Discord bot token | None (v1.5.0+) |
+| `DISCORD_DEV_FORUM` | Dev forum channel ID | None |
+| `DISCORD_DEV_TASKS` | Dev tasks channel ID | None |
+| `DISCORD_DEV_REPORT` | Dev report channel ID | None |
+| `DISCORD_DEV_GENERAL` | Dev general channel ID | None |
+| `OPENAI_API_KEY` | For Whisper transcription | None |
+| `GOOGLE_CALENDAR_ID` | Default calendar ID | Boss's email |
+| `GOOGLE_OAUTH_CLIENT_ID` | OAuth client ID (v1.5.2) | None |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | OAuth secret (v1.5.2) | None |
+| `TIMEZONE` | System timezone | `America/New_York` |
+| `MORNING_DIGEST_HOUR` | Morning email digest hour | `7` |
+| `EVENING_DIGEST_HOUR` | Evening email digest hour | `20` |
+| `SUBMISSION_REVIEW_THRESHOLD` | Auto-review pass score | `70` |
+| `ENABLE_AUTO_REVIEW` | Enable/disable auto-review | `true` |
+| `REDIS_URL` | Redis connection | `redis://localhost:6379` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+
+#### Team Configuration
+
+**File:** `config/team.py`
+
+**Purpose:** Code-defined team roster (source of truth)
+
+**Example:**
+```python
+TEAM = {
+    "John": {
+        "name": "John Doe",
+        "role": "Developer",
+        "email": "john@example.com",
+        "telegram_id": 123456789,
+        "discord_id": "987654321098765432",
+        "calendar_id": "john@example.com",
+        "timezone": "America/New_York",
+        "work_start": "09:00",
+        "skills": ["React", "Python", "FastAPI"]
+    },
+    "Sarah": {
+        "name": "Sarah Smith",
+        "role": "Developer",
+        "email": "sarah@example.com",
+        "telegram_id": 234567890,
+        "discord_id": "876543210987654321",
+        "calendar_id": "sarah@example.com",
+        "timezone": "America/Los_Angeles",
+        "work_start": "09:00",
+        "skills": ["Design", "Frontend", "UX"]
+    },
+    "Mayank": {
+        "name": "Mayank Patel",
+        "role": "Developer",
+        "email": "mayank@example.com",
+        "telegram_id": 345678901,
+        "discord_id": "765432109876543210",
+        "calendar_id": "mayank@example.com",
+        "timezone": "Asia/Kolkata",
+        "work_start": "10:00",
+        "skills": ["Backend", "APIs", "Stripe"]
+    },
+    "Minty": {
+        "name": "Minty Lee",
+        "role": "Admin",
+        "email": "sutima2543@gmail.com",
+        "telegram_id": None,
+        "discord_id": "834982814910775306",
+        "calendar_id": "sutima2543@gmail.com",
+        "timezone": "Asia/Bangkok",
+        "work_start": "09:00",
+        "skills": ["Admin", "Operations"]
+    }
+}
+
+# Department → Roles mapping
+DEPARTMENTS = {
+    "Dev": ["Developer"],
+    "Admin": ["Admin"],
+    "Marketing": ["Marketing Manager", "Content Writer"],
+    "Design": ["Designer", "UX Designer"]
+}
+```
+
+**Sync Command:** `/syncteam` → Copies to PostgreSQL + Google Sheets
+
+---
+
+## Team Features
+
+### Time Clock / Attendance System
+
+**Status:** ✅ Production (v1.5.4+)
+**Files:** `src/services/attendance.py`, `src/database/repositories/attendance.py`
+
+#### Features
+
+**1. Discord Check-in/Check-out**
+   - Staff post "in", "out", "break" in attendance channels
+   - Bot detects and records events
+   - Adds reactions: ✅ (in), 👋 (out), ☕ (break on), 💪 (break off)
+
+**2. Late Detection**
+   - Compares check-in time to configured work start
+   - Grace period: 15 minutes (configurable)
+   - Adds ⏰ reaction if late
+   - Timezone-aware calculations
+
+**3. Break Toggle**
+   - Single "break" message toggles break on/off
+   - ☕ reaction = break started
+   - 💪 reaction = break ended
+   - Tracks break duration
+
+**4. Google Sheets Sync**
+   - Records sync to "⏰ Time Logs" sheet
+   - Scheduled job every 15 minutes
+   - Shows: Name, Date, Check In, Check Out, Break Duration, Total Hours, Status
+
+**5. Weekly Reports**
+   - Generated every Monday 10 AM
+   - Saved to "📊 Time Reports" sheet
+   - Shows: Weekly hours, Late count, Average hours/day
+
+#### Discord Channels
+
+| Department | Channel Name | Channel ID |
+|------------|--------------|------------|
+| **Dev** | dev-attendance | `1462451610184843449` |
+| **Admin** | admin-attendance | `1462451782470078628` |
+
+*Marketing and Design not yet configured*
+
+#### Attendance Commands
+
+**Team Members:**
+- `"in"` - Check in
+- `"out"` - Check out
+- `"break"` - Toggle break (on/off)
+
+**Boss:**
+- `/timesheet` - View your timesheet
+- `/timesheet @name` - View someone's timesheet
+- `/timesheet team` - View full team timesheet
+- `/timesheet week` - This week's summary
+
+#### Database Schema
+
+**Table:** `attendance_records`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | String | ATT-001 |
+| `user_name` | String | Team member |
+| `user_telegram_id` | BigInteger | Telegram ID |
+| `user_discord_id` | String | Discord ID |
+| `event_type` | String | check_in/check_out/break_start/break_end |
+| `timestamp` | DateTime | When event occurred (timezone-aware) |
+| `location` | String | Optional GPS |
+| `notes` | String | Optional notes |
+| `is_late` | Boolean | Late check-in? |
+| `late_minutes` | Integer | How many min late |
+| `date` | Date | For daily grouping |
+
+#### Clock-out Reminder (v2.0.5)
+
+**Feature:** When staff clocks out, system shows reminder of pending tasks
+
+**Message:**
+```
+👋 You're clocking out for the day!
+
+📋 Reminder - You still have these tasks:
+
+🚧 In Progress:
+  • TASK-001: Fix login bug (Due: Tomorrow)
+  • TASK-008: API integration (Due: Jan 20)
+
+📋 Pending:
+  • TASK-015: Email template (Due: Jan 18)
+
+Have a great evening! 🌙
+```
+
+**Implementation:** `src/services/attendance.py` (clock_out_reminder)
+
+---
+
+## Future Upgrades & Roadmap
+
+### Completed Phases
+
+#### ✅ Phase 1: Quick Wins (v1.1)
+- Task Templates
+- Discord Reaction Status Updates
+- Task Search
+- Bulk Status Updates
+- Smart Dependencies
+
+#### ✅ Phase 2: Medium Effort (v1.2)
+- Recurring Tasks
+- Time Tracking
+- Subtasks
+- Voice Commands (Whisper)
+
+#### ✅ Phase 3: Major Features (v1.3+)
+- PostgreSQL Backend
+- AI Task Breakdown
+- Image Vision Analysis
+- Channel-Based Discord (v1.5.0)
+- Time Clock/Attendance (v1.5.4)
+- Advanced Automation (v2.0.5)
+
+---
+
+### Planned Features
+
+#### 🔴 Priority 1: Team Member Bot Access
+
+**Status:** Not Started
+**Effort:** High
+**Impact:** VERY HIGH
+
+**Description:**
+Multi-user Telegram bot access where team members interact directly
+
+**Features:**
+- Each member links Telegram to profile
+- Members receive task assignments directly
+- Members can `/done`, `/block`, `/note` their tasks
+- Members submit proofs directly
+- Boss sees all, members see only their tasks
+- Permission system (boss vs team member)
+
+**Implementation Plan:**
+1. User authentication layer
+2. Permission system (role-based)
+3. Multi-user message routing
+4. Privacy filters (members see only own tasks)
+5. Task assignment notifications
+6. Status update commands for members
+
+**Database Changes:**
+- Add `user_permissions` table
+- Add `telegram_auth_tokens` table
+- Update `team_members` with telegram linkage
+
+**Why High Priority:**
+- Unlocks true workflow automation
+- Eliminates manual bottlenecks
+- Real-time team collaboration
+- Market differentiator
+
+---
+
+#### 🔴 Priority 2: Web Dashboard
+
+**Status:** Not Started
+**Effort:** High
+**Impact:** VERY HIGH
+
+**Description:**
+React/Next.js dashboard for visual task management
+
+**Features:**
+- Kanban board view (drag & drop)
+- Gantt chart for timelines
+- Team workload visualization
+- Burndown charts
+- Real-time updates (WebSocket)
+- Mobile-responsive
+- Dark/light theme
+
+**Pages:**
+1. **Dashboard** - Overview metrics, charts
+2. **Tasks** - Kanban board
+3. **Timeline** - Gantt view
+4. **Team** - Team performance
+5. **Reports** - Analytics
+6. **Calendar** - Calendar view
+7. **Settings** - Configuration
+
+**Tech Stack:**
+- Frontend: Next.js 14, React, TailwindCSS
+- State: Zustand or Jotai
+- Real-time: Socket.IO
+- Charts: Recharts or Chart.js
+- Backend API: Existing FastAPI endpoints
+
+**Authentication:**
+- OAuth 2.0 with Google
+- Role-based access (boss vs team)
+- API key for programmatic access
+
+---
+
+#### 🔴 Priority 3: Smart Assignee Suggestion
+
+**Status:** Not Started
+**Effort:** Medium
+**Impact:** Medium-High
+
+**Description:**
+AI suggests best person for each task based on skills, workload, performance
+
+**Algorithm:**
+```python
+def suggest_assignee(task):
+    candidates = []
+
+    for member in team:
+        score = 0
+
+        # 1. Skills match (40%)
+        if task_requires_skill(task, member.skills):
+            score += 40
+
+        # 2. Workload (30%)
+        active_count = get_active_tasks(member)
+        if active_count < 3:
+            score += 30
+        elif active_count < 5:
+            score += 20
+        else:
+            score += 10
+
+        # 3. Past performance (20%)
+        completion_rate = get_completion_rate(member)
+        score += completion_rate * 20
+
+        # 4. Availability (10%)
+        if member.status == "active":
+            score += 10
+
+        candidates.append((member, score))
+
+    # Sort by score, return top 3
+    return sorted(candidates, key=lambda x: x[1], reverse=True)[:3]
+```
+
+**UI:**
+```
+Boss: "Need someone to fix the React dashboard"
+
+Bot: "Based on skills and workload, I suggest:
+
+      1. ⭐ Sarah (Score: 95)
+         • Skills: React, Frontend (perfect match)
+         • Workload: 2 active tasks (light)
+         • Completion rate: 92%
+
+      2. John (Score: 75)
+         • Skills: React, Backend (partial match)
+         • Workload: 4 active tasks (moderate)
+         • Completion rate: 88%
+
+      3. Mike (Score: 60)
+         • Skills: JavaScript (related)
+         • Workload: 3 active tasks (moderate)
+         • Completion rate: 85%
+
+      Who should I assign? (reply with name or number)"
+```
+
+**Data Requirements:**
+- Team skills (already in config/team.py)
+- Active task counts (query database)
+- Historical completion rates (calculate from database)
+- Availability status (from Team sheet)
+
+---
+
+#### 🔴 Priority 4: Analytics & Intelligence
+
+**Status:** Not Started
+**Effort:** High
+**Impact:** High (long-term)
+
+**Features:**
+
+**1. Velocity Tracking**
+- Track story points or task counts per sprint/week
+- Calculate team velocity
+- Capacity planning
+
+**2. Burndown Charts**
+- Visual progress toward sprint goals
+- Ideal vs actual burndown
+- Predict completion date
+
+**3. Prediction Engine**
+- ML model trained on past tasks
+- "Based on history, this will take 3 days"
+- Factors: task type, assignee, complexity
+
+**4. Bottleneck Detection**
+- Identify where tasks get stuck
+- Suggest process improvements
+- "Tasks in 'in_review' status take 2x longer on average"
+
+**5. Auto-Prioritization**
+- Dynamically adjust priority based on:
+  - Deadline proximity
+  - Dependencies
+  - Business value
+  - Risk
+
+**ML Models:**
+- Task duration prediction (regression)
+- Priority recommendation (classification)
+- Bottleneck detection (anomaly detection)
+
+**Implementation:**
+- Collect data: 3-6 months of task history
+- Train models: scikit-learn or XGBoost
+- API endpoints: `/predict/duration`, `/predict/priority`
+- Dashboard: Analytics tab
+
+---
+
+#### 🔴 Priority 5: Slack Integration
+
+**Status:** Not Started
+**Effort:** Medium
+**Impact:** Medium
+
+**Description:**
+Mirror Discord functionality to Slack
+
+**Features:**
+- Task embeds in Slack channels
+- Slash commands (`/task`, `/status`)
+- Reaction-based status updates
+- Thread-based task discussions
+- Slack OAuth for team members
+
+**Slack Workspace Structure:**
+```
+#dev-tasks (simple tasks)
+#dev-specs (detailed specs, threads)
+#dev-report (standup, weekly)
+#admin-tasks
+#admin-report
+...
+```
+
+**Commands:**
+- `/task [description]` - Create task
+- `/status` - View tasks
+- `/submit [task-id]` - Submit work
+
+**Implementation:**
+- Slack SDK for Python
+- Webhook endpoints for events
+- OAuth 2.0 for authentication
+- Mirror `src/integrations/discord.py` structure
+
+---
+
+### Implementation Priority Matrix
+
+| Priority | Feature | Effort | Impact | Status | Start Date |
+|----------|---------|--------|--------|--------|------------|
+| 1 | Task Templates | Low | High | ✅ Done | - |
+| 2 | Discord Reactions | Low | High | ✅ Done | - |
+| 3 | Task Search | Low | Medium | ✅ Done | - |
+| 4 | Bulk Updates | Low | Medium | ✅ Done | - |
+| 5 | Smart Dependencies | Medium | High | ✅ Done | - |
+| 6 | Recurring Tasks | Medium | High | ✅ Done | - |
+| 7 | Time Tracking | Medium | Medium | ✅ Done | - |
+| 8 | **Team Bot Access** | High | **Very High** | 🔴 Planned | Q1 2026 |
+| 9 | PostgreSQL | High | High | ✅ Done | - |
+| 10 | Subtasks Commands | Medium | Medium | ✅ Done | - |
+| 11 | Voice Commands | Medium | Medium | ✅ Done | - |
+| 12 | **Web Dashboard** | High | **Very High** | 🔴 Planned | Q2 2026 |
+| 13 | AI Task Breakdown | Medium | High | ✅ Done | - |
+| 14 | Smart Assignee | Medium | Medium-High | 🔴 Planned | Q2 2026 |
+| 15 | Analytics Engine | High | High | 🔴 Planned | Q3 2026 |
+| 16 | Slack Integration | Medium | Medium | 🔴 Planned | Q3 2026 |
 
 ---
 
 ## Version History
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 2.0.5 | 2026-01-21 | **🚀 ADVANCED AUTOMATION FEATURES:** (1) **Proactive Check-ins:** Bot automatically checks in on tasks with no updates in 4+ hours - sends friendly "How's it going?" message to staff in Discord thread. Runs hourly. (2) **Stricter Acceptance Criteria Validation:** Submission validation now requires staff to EXPLICITLY address each criterion - vague "done" statements rejected. Staff must explain what they did for EACH criterion with proof/details. (3) **Clock-out Reminder:** When staff clocks out, system shows reminder of pending/in-progress tasks they still have. (4) **Pattern Learning:** New `PatternLearner` module learns from past interactions - staff working styles, common issues, successful resolutions, boss preferences. AI uses this context for smarter responses. (5) **Retry Queue:** Failed Discord/API messages automatically queued for retry with exponential backoff. `MessageQueueService` with background worker processes queue every 15 seconds. Dead letter queue for permanently failed messages. (6) **Rate Limiting:** Per-user rate limiting to prevent abuse - 60 req/min per user, 30 AI calls/min, built-in burst capacity. Staff see "Slow down!" message if exceeded. (7) **Audit Dashboard:** New web UI at `/audit` showing queue status, dead letters, rate limit stats, recent tasks. JSON API at `/api/audit/stats`. **New Files:** `src/scheduler/jobs.py` (proactive_checkins job), `src/ai/staff_assistant.py` (strict validation), `src/services/attendance.py` (clock-out reminder), `src/memory/pattern_learning.py` (pattern learner), `src/services/message_queue.py` (retry queue), `src/services/rate_limiter.py` (rate limiting), `src/web/routes.py` (audit dashboard). |
-| 2.0.2 | 2026-01-21 | **🔔 Fixed Deadline Reminder Spam:** Completely rewrote the reminder system to prevent duplicate notifications. **New System:** Reminders sent at specific intervals only (2h, 1h, 30m before deadline) - ONE reminder per task per interval. **Deduplication:** Tracks which tasks have been reminded at each interval, preventing the same reminder being sent multiple times. **No Past-Deadline Reminders:** Skips tasks that are already overdue (overdue alerts handle those separately). **Better Task ID Handling:** Tries multiple column name variations to find the Task ID. **Discord Spam Reduction:** Only posts to Discord at the 1-hour mark, not every reminder. |
-| 2.0.1 | 2026-01-21 | **AI Reformulation for Team Messages:** Messages to team members are now AI-reformulated to be directed AT them (e.g., "ask Mayank what tasks are left" → "Hey Mayank, what tasks do you have left?"). **Better Discord ID Lookup:** Added detailed logging and tries multiple column name variations. |
-| 2.0.0 | 2026-01-20 | **🧠 AI-FIRST INTENT DETECTION (MAJOR REWRITE):** Complete architectural overhaul - the AI is now the brain for ALL intent classification. No more brittle regex patterns that miss edge cases. **New Flow:** (1) Slash commands → direct mapping, (2) Context states (awaiting confirmation) → direct mapping, (3) Everything else → AI classifies with full context and examples. **Benefits:** Handles ANY phrasing naturally, understands context and nuance, no more regex maintenance, self-healing through examples in the prompt. **The AI prompt** includes detailed distinctions (e.g., "ask Mayank what..." = communication vs "Mayank fix the bug" = task creation) and returns structured JSON with intent, confidence, reasoning, and extracted data. This eliminates the constant "pattern didn't match" bugs. |
-| 1.8.3 | 2026-01-20 | **🗣️ Direct Team Communication:** New feature - boss can now directly communicate with team members via Discord WITHOUT creating a task. Say "ask Mayank what tasks are left" or "tell Sarah to update me" and the bot sends a message to their team Discord channel (with @mention if Discord ID is configured). **New Intent:** `ASK_TEAM_MEMBER` detects patterns like "ask [name]", "tell [name] to", "message [name]", "check with [name]", "ping [name]". **Discord Integration:** New `send_direct_message_to_team()` and `ask_team_member_status()` methods route messages to the correct department channel based on team member's role. Previously "ask Mayank what tasks are left" would incorrectly create a TASK instead of actually asking Mayank. |
-| 1.8.2 | 2026-01-20 | **Preserve Task Details:** Fixed AI extraction to preserve ALL details from user's message instead of oversimplifying. If you say "test payment recurring, retrial, what data is passed" - ALL THREE now appear in acceptance criteria. Titles now up to 120 chars to fit more detail. **Better Deadline Parsing:** Fixed "tonight at 10PM" and similar time expressions. Added patterns for "by 5pm", "before 6PM", etc. "After tomorrow" now correctly means day-after-tomorrow. |
-| 1.8.0 | 2026-01-20 | **🏗️ MAJOR ARCHITECTURE REWRITE:** New clean `TaskProcessor` with 4-step flow: (1) **PARSE** - Deterministic splitting, no AI; (2) **EXTRACT** - AI with strict rules to only extract, not generate; (3) **VALIDATE** - Ensure extracted fields match input; (4) **CONFIRM** - Show each task for confirmation. Completely eliminates AI hallucination by separating parsing from AI extraction. The AI can no longer invent "task management system" when you say "add referral code". |
-| 1.7.6 | 2026-01-20 | **Anti-Hallucination System:** Fixed critical bug where AI would generate completely unrelated task content instead of using the user's actual words. Added validation that checks if generated spec matches user's input - if not, falls back to deterministic extraction. **Stricter Prompts:** AI prompts now explicitly state "FORMAT don't GENERATE" and "USE THESE EXACT WORDS". **Assignee Extraction:** `[For Name]` prefix in split tasks now reliably sets the assignee. Example: If you say "add referral code", the title will now be "Add referral code..." not "Implement task management system". |
-| 1.7.5 | 2026-01-20 | **Single-Assignee Multi-Task Support:** Fixed multi-task detection to properly split tasks when sending multiple tasks for the SAME person. **Ordinal Pattern Enhancement:** Now detects "First one", "Second one", "Third one" etc. (not just "First task"). Also handles misspellings like "Forth" for "Fourth". **Preamble Assignee Detection:** Messages starting with "Tasks for Mayank" or "For Sarah" now automatically assign all split tasks to that person. Example: "Tasks for Mayank no questions: First one add referral code, Second one fix errors" → Creates 2 separate tasks both assigned to Mayank. Previously this incorrectly created 1 task with 6 subtasks. |
-| 1.7.2 | 2026-01-20 | **🚀 MANDATORY SELF-ANSWERING:** AI now ALWAYS answers its own questions - NEVER bothers you. The self-answering loop is now mandatory, not optional. AI fills in ALL missing info using best practices: priority (medium default), effort (based on complexity), architecture (industry-standard), scope (core v1 features), technical approach (proven solutions). The `remaining_questions` is ALWAYS empty - AI decides everything itself. |
-| 1.7.1 | 2026-01-20 | **"No Questions" Override:** When you explicitly say "no need to ask questions", "just use what I'm giving you", "don't ask questions", etc., the bot now SKIPS ALL QUESTIONS regardless of what the AI thinks. This is a hard override. **Discord Error Feedback:** If Discord posting fails, you now see "⚠️ Discord posting failed - check bot config" in the response instead of silent failure. |
-| 1.7.0 | 2026-01-20 | **🧠 INTELLIGENT SELF-ANSWERING AI LOOP:** Major upgrade - AI now tries to answer its own questions before bothering you. (1) AI analyzes what info is missing (2) Uses context + best practices to fill gaps itself (3) Only asks user for truly ambiguous decisions. Example: Instead of asking "What priority?", AI infers from message context. Instead of asking "What architecture?", AI picks industry-standard approach. The result: Fewer questions, smarter defaults, faster task creation. |
-| 1.6.6 | 2026-01-20 | **Skip Questions When Details Already Provided:** SPECSHEETS mode was forcing questions even when user gave comprehensive requirements. Now if your message is detailed (30+ words, feature descriptions, etc.), the bot skips questions and generates the PRD directly - even in spec sheet mode. Questions only asked when message is short/vague. |
-| 1.6.5 | 2026-01-20 | **Deadline vs Effort Fix:** AI prompts now clearly distinguish: "tomorrow" = DEADLINE (when to finish), NOT effort. Effort = HOW LONG it takes (2 hours, 1 day). Added explicit ISO format examples for deadline parsing: "tomorrow" → "2026-01-21T23:59:00". Deadlines are properly saved to Google Calendar. |
-| 1.6.4 | 2026-01-20 | **Bug Fixes:** (1) **TypeError Fix:** Fixed `priority.lower()` crash when priority is None in Discord spec sheet posting. (2) **Explicit Multi-Task Detection:** Added Pattern 0 that detects "First task will be...", "Second task is..." phrases - this is a CLEAR signal to split into multiple tasks. (3) **Pronoun Handling:** When user says "him", "her", "them" without naming the person, AI now asks "Who should this task be assigned to?" instead of setting assignee to None silently. |
-| 1.6.3 | 2026-01-19 | **Critical Multi-Task Detection Fix:** ALL splitting patterns now require 2+ DIFFERENT team member names. (1) Pattern 1 (numbered lists): "1. Users can..." no longer splits - only splits if items have different assignees. (2) Pattern 2 (separators): Removed generic "also", "plus" patterns - now ONLY splits on explicit "another task" phrases. (3) Pattern 4 (semicolons): Also requires multiple team names. This prevents feature descriptions with numbered steps, "also" clauses, or semicolons from being incorrectly split into multiple tasks. |
-| 1.6.2 | 2026-01-19 | **Bug Fixes:** (1) **Multi-Task Detection Fix:** "Task 1 of N" no longer triggers incorrectly. Now requires 2+ DIFFERENT team member names to split tasks. Single tasks with repeated mentions stay as one task. (2) **Voice Transcription Context:** "Create that task" and similar phrases now use the previous message content (voice transcription, etc.) as the task description. Stores recent messages for context reference. (3) **Skip Questions When Detailed:** Bot no longer asks clarifying questions when the message is already comprehensive (30+ words, 3+ sentences, or feature-like keywords like "users can", "the system should", etc.). (4) **Image Task Creation Fix:** When sending images with task-related captions ("add a new task", "fix", "spec sheet"), the bot treats it as task creation with reference image instead of analyzing image content as email/report. |
-| 1.6.1 | 2026-01-19 | **Smart AI Conversation for Spec Sheets:** SPECSHEETS mode now asks PRD-focused questions BEFORE generating the document. AI generates 3-5 intelligent questions about: technical approach/architecture, user flows/UX, data models/integrations, scope/priorities, success criteria. Questions are conversational like a senior PM would ask. Bot shows "📋 Spec Sheet Mode" header. Users can /skip to let AI assume, or /done to generate PRD with current info. |
-| 1.6.0 | 2026-01-19 | **Comprehensive PRD Documents:** SPECSHEETS mode now generates FULL specification documents with: (1) 5-paragraph main description (executive summary, business value, technical approach, integrations, success metrics), (2) Each subtask has 1-2 paragraph detailed description with technical approach, components, edge cases, (3) 6-8 detailed acceptance criteria, (4) Technical details section with DB schema, API structure, patterns, performance, security. AI prompt completely rewritten for PRD-level output. |
-| 1.5.9 | 2026-01-19 | **PRD-Style Forum Spec Sheets:** SPECSHEETS tasks now post as proper PRD documents to Discord Forum. Format includes: task metadata, multi-paragraph description, numbered implementation tasks, acceptance criteria checklist, technical considerations, and action buttons. **AI Assistant Conversation:** Preview messages for SPECSHEETS are now more conversational ("I've prepared a comprehensive specification...") rather than robotic. **Forum Thread Title:** Uses 📋 emoji prefix for spec sheets. |
-| 1.5.8 | 2026-01-19 | **SPECSHEETS Handler Fix:** Handler now properly checks `detailed_mode` flag from intent detection. When SPECSHEETS/detailed mode detected: skips multi-task splitting, skips clarifier questions, goes directly to comprehensive spec generation. **Extended Trigger Keywords:** Added `more developed`, `more detailed`, `with details`, and `spec sheet` (without "for") as triggers. Previously the message was incorrectly split into multiple tasks. |
-| 1.5.6 | 2026-01-19 | **SPECSHEETS Intent Detection Fix:** Messages with "SPECSHEETS", "spec sheet for", "detailed spec for" now properly trigger task creation with detailed_mode. **Direct Assignee Detection:** Messages starting with team member names (mayank, sarah, john, etc.) now trigger task creation. Previously these fell through to incorrect intents. |
-| 1.5.5 | 2026-01-19 | **Attendance Sheets Sync Fix:** Clock in/out/break events now properly sync to Google Sheets ⏰ Time Logs sheet. Previously events were only saved to PostgreSQL database. |
-| 1.5.4 | 2026-01-18 | **Time Clock / Attendance System:** Staff check-in/check-out via Discord messages ("in", "out", "break"). **Discord Channels:** Dev attendance (1462451610184843449), Admin attendance (1462451782470078628). **Late Detection:** Automatic late detection with ⏰ reaction, timezone-aware calculations, configurable grace period. **Break Toggle:** Single "break" message toggles break on/off (☕/💪 reactions). **New Sheets:** ⏰ Time Logs for attendance records, 📊 Time Reports for weekly summaries. **Team Sheet Update:** Added Timezone and Work Start columns. **Database Model:** AttendanceRecordDB with full event tracking. **Service Layer:** AttendanceService for business logic with timezone handling. **Repository:** AttendanceRepository with daily/weekly summary methods. **Scheduler Jobs:** sync_attendance (every 15 min), weekly_time_report (Monday 10 AM). **Settings:** New attendance config options (channel IDs, work hours, grace period). |
-| 1.5.3 | 2026-01-18 | **Centralized Utility Modules:** New `src/utils/` package with datetime, team lookup, and validation utilities. **Datetime Utils:** `to_naive_local()`, `parse_deadline()`, `get_local_now()` for consistent timezone handling (fixes PostgreSQL offset-naive/aware datetime errors). **Team Utils:** `get_assignee_info()`, `lookup_team_member()` with 3-tier fallback (DB → Sheets → config). **Validation Utils:** `validate_task_data()` with field validation and warnings before database save. **Task Model Fix:** Added `spec_sheet_url`, `discord_thread_id` optional fields to prevent AttributeError on forum posting. **Improved Error Messages:** More descriptive error messages with error type hints. **ThreadWithMessage Fix:** Updated discord_bot.py to handle discord.py 2.0+ `ThreadWithMessage` object (has `.thread`/`.message` attributes, not tuple). |
-| 1.5.2 | 2026-01-18 | **Web Onboarding Portal:** Staff self-service registration page at `/onboard` with dark minimalist design. 4-step wizard: Basic Info → Discord Setup → Google Integration → Confirmation. Saves to Sheets + PostgreSQL. **Google OAuth2:** User-level authentication for Calendar & Tasks with popup flow. Includes embedded screenshot showing Google's "unverified app" warning with click-through instructions. **Auto Calendar ID:** Form automatically sets Calendar ID to user's email. Existing users backfilled. **Route Fix:** OAuth callback route ordering fixed to prevent "Invalid service" error. New env vars: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`. **Team View:** `/team` endpoint shows all team members. |
-| 1.5.1 | 2026-01-18 | **Admin Department Setup:** Added Admin category Discord channels - Forum `1462370539858432145`, Report `1462370845908402268`, General `1462370950627725362`. **Team Member Minty:** Added (Discord: 834982814910775306, Role: Admin, Email: sutima2543@gmail.com). **Fallback Routing:** Tasks for departments without a tasks channel automatically post to forum. **Post to All Departments:** Added `post_standup_to_all()` for multi-department reports. **Per-User Google Calendar:** Events now created directly on assignee's personal calendar (if shared with service account). Team sheet has Calendar ID column. System looks up from Sheets, falls back to config/team.py. |
-| 1.5.0 | 2026-01-18 | **MAJOR: Channel-Based Discord Integration:** Complete rewrite from webhooks to Bot API with channel IDs. Full permissions for message/thread management. **4 Channels Per Department:** Forum (specs), Tasks (regular tasks), Report (standup), General. **Dev Category Configured:** Forum `1459834094304104653`, Tasks `1461760665873158349`, Report `1461760697334632651`, General `1461760791719182590`. **Smart Content Routing:** Specs→Forum, tasks→Tasks channel, standup→Report, help→General. **Role-Based Department Routing:** Tasks route to matching department's channels based on assignee role. |
-| 1.4.3 | 2026-01-18 | **Role-Based Discord Routing:** Tasks automatically route to department-specific Discord channels based on assignee role (Dev, Admin, Marketing, Design). **Team Sync Commands:** `/syncteam` syncs team from config/team.py to Sheets + DB. `/clearteam` removes mock data. **Team Config:** config/team.py defines team with roles for channel routing. |
-| 1.4.2 | 2026-01-18 | **True Task Deletion:** Clearing tasks now permanently deletes from Google Sheets, Discord (messages + threads), and PostgreSQL database. Previously only marked as "cancelled". Supports single task deletion and bulk deletion with confirmation. |
-| 1.4.1 | 2026-01-18 | **Email Digest in Standup:** Daily standup now sends comprehensive email summary as separate Telegram message (boss only, not Discord). All email digests are now Telegram-only for privacy. Includes AI summary, action items, priority emails, and latest 15 emails with status icons. |
-| 1.4.0 | 2026-01-18 | **Discord Forum Channels:** Tasks posted as organized forum threads with auto-tagging. **Sequential Multi-Task Handling:** Multiple tasks processed one-by-one with yes/skip/no flow. **SPECSHEETS Mode:** Trigger detailed specs with keywords. **Proper @mentions:** Numeric Discord user IDs for mentions. **Background Processing:** Prevents Telegram webhook timeouts. **Thread Creation:** Auto-creates discussion threads on task messages. |
-| 1.3.1 | 2026-01-17 | Image Vision Analysis: DeepSeek VL integration for photo analysis, proof screenshot validation, OCR text extraction. Vision analysis integrated with auto-review and boss notifications. |
-| 1.3.0 | 2026-01-17 | AI Task Breakdown: `/breakdown TASK-ID` analyzes tasks and suggests subtasks with effort estimates |
-| 1.2.1 | 2026-01-17 | Discord Bot Reaction Listener: Full bot integration that listens for emoji reactions and auto-updates task status in PostgreSQL + Sheets |
-| 1.2.0 | 2026-01-17 | Phase 2 features: Recurring Tasks (auto-schedule), Time Tracking (timers + timesheets), Subtasks Commands, Voice Commands (OpenAI Whisper) |
-| 1.1.0 | 2026-01-17 | PostgreSQL database with full relationships, Quick Wins: Task Templates (8 built-in), Search (NL + command), Bulk Updates, Smart Dependencies, Discord Reaction Guide |
-| 1.0.0 | 2026-01-17 | Initial release with full feature set |
+### Latest Versions
+
+| Version | Date | Key Changes |
+|---------|------|-------------|
+| **2.2.0** | 2026-01-23 | **🧠 SMART AI v2.2:** Complexity detection (1-10 score), role-aware routing (Mayank→DEV, Zea→ADMIN), keyword-based role inference, intelligent self-answering. **🔧 COMPREHENSIVE TASK OPS:** 13 new intents for natural language task modifications |
+| **2.0.5** | 2026-01-21 | **🚀 ADVANCED AUTOMATION:** Proactive check-ins, stricter validation, clock-out reminders, pattern learning, message retry queue, rate limiting, audit dashboard |
+| **2.0.2** | 2026-01-21 | Fixed deadline reminder spam with deduplication system |
+| **2.0.1** | 2026-01-21 | AI reformulation for team messages, better Discord ID lookup |
+| **2.0.0** | 2026-01-20 | **🧠 AI-FIRST INTENT:** Complete rewrite - AI classifies ALL natural language, no more regex |
+| **1.8.3** | 2026-01-20 | Direct team communication via Discord (ASK_TEAM_MEMBER intent) |
+| **1.8.2** | 2026-01-20 | Preserve task details, better deadline parsing |
+| **1.8.0** | 2026-01-20 | Major architecture rewrite with TaskProcessor (4-step flow) |
+| **1.7.6** | 2026-01-20 | Anti-hallucination system with validation |
+| **1.7.5** | 2026-01-20 | Single-assignee multi-task support with ordinal patterns |
+| **1.7.2** | 2026-01-20 | Mandatory self-answering AI loop |
+| **1.7.1** | 2026-01-20 | "No questions" override, Discord error feedback |
+| **1.7.0** | 2026-01-20 | Intelligent self-answering AI loop |
+| **1.6.6** | 2026-01-20 | Skip questions when details already provided |
+| **1.5.4** | 2026-01-18 | Time Clock/Attendance system with late detection |
+| **1.5.2** | 2026-01-18 | Web onboarding portal with Google OAuth |
+| **1.5.0** | 2026-01-18 | **MAJOR:** Channel-based Discord with Bot API (not webhooks) |
+| **1.4.0** | 2026-01-18 | Discord forum, sequential multi-task, SPECSHEETS mode |
+| **1.3.1** | 2026-01-17 | Image vision analysis with DeepSeek VL |
+| **1.3.0** | 2026-01-17 | AI task breakdown |
+| **1.2.1** | 2026-01-17 | Discord bot reaction listener |
+| **1.2.0** | 2026-01-17 | Recurring tasks, time tracking, subtasks, voice commands |
+| **1.1.0** | 2026-01-17 | PostgreSQL, templates, search, bulk ops, smart dependencies |
+| **1.0.0** | 2026-01-17 | Initial release |
+
+For complete version history, see lines 2137-2182 in this document.
+
+---
+
+## Quick Start Checklist
+
+**For New Team Members:**
+
+- [ ] Read this FEATURES.md (you are here!)
+- [ ] Read CLAUDE.md for plugin workflows
+- [ ] Check `.env.example` for required env vars
+- [ ] Run `python -m src.main` to start locally
+- [ ] Test with `/help` in Telegram
+- [ ] Visit `/onboard` to register your profile
+- [ ] Check Discord channels are configured
+- [ ] Run `python test_all.py` to verify tests pass
+
+**For New Features:**
+
+- [ ] Check this file to avoid duplication
+- [ ] Update CLAUDE.md if adding new workflows
+- [ ] Write tests in `test_*.py`
+- [ ] Update this FEATURES.md (LAST step!)
+- [ ] Increment version number
+- [ ] Add to Version History section
+
+---
+
+## Documentation Standards
+
+### When Adding Features
+
+**1. Update This File**
+- Add to appropriate section
+- Include code examples
+- Document all parameters
+- Add to Quick Reference if commonly used
+- Update Version History
+
+**2. Code Documentation**
+```python
+def new_feature(param1: str, param2: int) -> dict:
+    """
+    Brief one-line description.
+
+    Detailed explanation of what this does, why it exists,
+    and how it fits into the system.
+
+    Args:
+        param1: Description of param1
+        param2: Description of param2
+
+    Returns:
+        dict: Description of return value
+
+    Raises:
+        ValueError: When param1 is invalid
+
+    Example:
+        >>> result = new_feature("test", 42)
+        >>> print(result)
+        {'success': True}
+
+    Note:
+        Added in v2.1.0
+    """
+```
+
+**3. Test Coverage**
+- Unit tests for core logic
+- Integration tests for workflows
+- Document test cases in docstrings
+
+---
+
+## Support & Troubleshooting
+
+### Common Issues
+
+**Issue:** Telegram bot not responding
+**Solution:** Check `TELEGRAM_BOT_TOKEN` and webhook setup
+
+**Issue:** Google Sheets not syncing
+**Solution:** Verify `GOOGLE_CREDENTIALS_JSON` and Sheet ID
+
+**Issue:** Discord embeds not posting
+**Solution:** Check Discord channel IDs and bot permissions
+
+**Issue:** AI responses are off
+**Solution:** Check `DEEPSEEK_API_KEY` balance and rate limits
+
+**Issue:** Tasks not archiving
+**Solution:** Check scheduler is running (`scheduler/jobs.py`)
+
+### Debug Mode
+
+**Enable verbose logging:**
+```bash
+export LOG_LEVEL=DEBUG
+python -m src.main
+```
+
+**Check logs:**
+```bash
+# Railway
+railway logs -s boss-workflow
+
+# Local
+tail -f logs/boss-workflow.log
+```
+
+---
+
+## Repository Info
+
+**GitHub:** https://github.com/outwareai/boss-workflow
+**Deployment:** Railway (auto-deploy on push to main)
+**License:** MIT
 
 ---
 
 *This document is automatically referenced by Claude Code. Always read this file first when working on the project, and update it last after making changes.*
+
+**Last Major Revision:** 2026-01-21 (v2.0.5)
+**Next Planned Update:** Team Bot Access implementation (Q1 2026)
