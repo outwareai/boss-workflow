@@ -3,14 +3,14 @@
     {
       "name": "simple",
       "passed": true,
-      "complexity": 3,
-      "questions": 0
+      "complexity": null,
+      "questions": null
     },
     {
       "name": "complex",
-      "passed": true,
-      "complexity": 6,
-      "questions": 2
+      "passed": false,
+      "complexity": null,
+      "questions": null
     },
     {
       "name": "routing",
@@ -19,5 +19,5 @@
       "zea": false
     }
   ],
-  "timestamp": "2026-01-23T13:49:15.215082"
+  "timestamp": "2026-01-23T14:09:43.054458"
 }

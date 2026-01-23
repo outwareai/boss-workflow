@@ -10,13 +10,14 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any
 from datetime import datetime
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import asyncio
 
 from config import settings
+from .models.api_validation import SubtaskCreate, DependencyCreate, TaskFilter
 from .bot.telegram_simple import get_telegram_bot_simple
 from .scheduler.jobs import get_scheduler_manager
 from .memory.preferences import get_preferences_manager
@@ -515,14 +516,20 @@ async def db_health():
 
 
 @app.post("/admin/run-migration-simple")
-async def run_migration_simple(secret: str = ""):
+async def run_migration_simple(auth: dict):
     """
     Run Q1 2026 composite indexes migration (hardcoded - guaranteed to work).
+
+    Q1 2026 Security: Moved secret from query param to body, using constant-time comparison.
     """
     try:
-        # Security check
+        import secrets as sec_module
+
+        # Security check - constant-time comparison
         admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
-        if not admin_secret or secret != admin_secret:
+        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
+
+        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
             return {"status": "error", "error": "Unauthorized"}
 
         db = get_database()
@@ -581,15 +588,21 @@ async def run_migration_simple(secret: str = ""):
 
 
 @app.post("/admin/run-migration")
-async def run_migration(secret: str = ""):
+async def run_migration(auth: dict):
     """
     Run database migrations (admin only).
-    Requires ADMIN_SECRET environment variable to match.
+    Requires ADMIN_SECRET environment variable in request body.
+
+    Q1 2026 Security: Moved secret from query param to body, using constant-time comparison.
     """
     try:
-        # Security: Require admin secret
+        import secrets as sec_module
+
+        # Security: Require admin secret - constant-time comparison
         admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
-        if not admin_secret or secret != admin_secret:
+        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
+
+        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
             return {
                 "status": "error",
                 "error": "Unauthorized - Invalid admin secret"
@@ -677,15 +690,21 @@ async def run_migration(secret: str = ""):
 
 
 @app.post("/admin/seed-test-team")
-async def seed_test_team(secret: str = ""):
+async def seed_test_team(auth: dict):
     """
     Seed test team members (Mayank/Zea) for routing tests.
-    Requires ADMIN_SECRET environment variable to match.
+    Requires ADMIN_SECRET environment variable in request body.
+
+    Q1 2026 Security: Moved secret from query param to body, using constant-time comparison.
     """
     try:
-        # Security check
+        import secrets as sec_module
+
+        # Security check - use constant-time comparison to prevent timing attacks
         admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
-        if not admin_secret or secret != admin_secret:
+        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
+
+        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
             return {"status": "error", "error": "Unauthorized"}
 
         from .database.repositories import get_team_repository
@@ -749,6 +768,49 @@ async def seed_test_team(secret: str = ""):
 
     except Exception as e:
         logger.error(f"Error seeding team: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/admin/clear-conversations")
+async def clear_all_conversations(auth: dict):
+    """
+    Clear all active conversations (useful for testing).
+
+    Usage: POST /admin/clear-conversations with {"secret": "your_secret"}
+    """
+    try:
+        import secrets as sec_module
+
+        # Security check
+        admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
+        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
+
+        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
+            return {"status": "error", "error": "Unauthorized"}
+
+        from .memory.context import ConversationContext
+        context = ConversationContext()
+        await context.connect()
+
+        # Get all active conversation keys
+        active_keys = await context._store_scan("active_conversation:*")
+        cleared = []
+
+        for key in active_keys:
+            user_id = key.split(":")[-1]
+            success = await context.clear_active_conversation(user_id)
+            if success:
+                cleared.append(user_id)
+
+        return {
+            "status": "success",
+            "timestamp": __import__('datetime').datetime.now().isoformat(),
+            "cleared_count": len(cleared),
+            "user_ids": cleared
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing conversations: {e}")
         return {"status": "error", "error": str(e)}
 
 
@@ -946,11 +1008,15 @@ async def get_user_preferences(user_id: str):
 # ==================== DATABASE API ENDPOINTS ====================
 
 @app.get("/api/db/tasks")
-async def get_db_tasks(status: str = None, assignee: str = None, limit: int = 50):
+async def get_db_tasks(filters: TaskFilter = Depends()):
     """Get tasks from PostgreSQL database."""
     try:
         from .database.repositories import get_task_repository
         task_repo = get_task_repository()
+
+        status = filters.status.value if filters.status else None
+        assignee = filters.assignee
+        limit = filters.limit
 
         if status:
             tasks = await task_repo.get_by_status(status)
@@ -1026,27 +1092,25 @@ async def get_db_task(task_id: str):
 
 
 @app.post("/api/db/tasks/{task_id}/subtasks")
-async def add_subtask(task_id: str, request: Request):
+async def add_subtask(task_id: str, subtask: SubtaskCreate):
     """Add a subtask to a task."""
     try:
         from .database.repositories import get_task_repository
         task_repo = get_task_repository()
 
-        data = await request.json()
-        title = data.get("title")
-        if not title:
-            raise HTTPException(status_code=400, detail="Subtask title required")
+        title = subtask.title
+        description = subtask.description
 
-        subtask = await task_repo.add_subtask(
+        subtask_obj = await task_repo.add_subtask(
             task_id=task_id,
             title=title,
-            description=data.get("description"),
+            description=description,
         )
 
-        if not subtask:
+        if not subtask_obj:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-        return {"ok": True, "subtask_id": subtask.id}
+        return {"ok": True, "subtask_id": subtask_obj.id}
 
     except HTTPException:
         raise

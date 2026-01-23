@@ -548,9 +548,29 @@ async def main():
         print("\n[TEST-ROUTING] Testing role-based channel routing")
         print("-" * 60)
 
+        # Clear any active conversations before testing
+        print("\n[0/2] Clearing active conversations...")
+        try:
+            import requests
+            clear_response = requests.post(
+                "https://boss-workflow-production.up.railway.app/admin/clear-conversations",
+                json={"secret": "boss-workflow-migration-2026-q1"}
+            )
+            if clear_response.status_code == 200:
+                result = clear_response.json()
+                print(f"  Cleared {result.get('cleared_count', 0)} active conversations")
+            else:
+                print(f"  Warning: Failed to clear conversations (status {clear_response.status_code})")
+        except Exception as e:
+            print(f"  Warning: Error clearing conversations: {e}")
+
+        # Wait a moment for cleanup
+        await asyncio.sleep(2)
+
         # Test 1: Mayank -> DEV channel
         print("\n[1/2] Testing Mayank -> DEV routing")
-        mayank_msg = "Create task for Mayank: Review the API code and fix any issues"
+        # Use working pattern from simple test: "Create task: [description] - assign to [name]"
+        mayank_msg = "Create task: Review the API code and fix any issues - assign to Mayank"
         results1 = await tester.full_test(mayank_msg)
         impl1 = extract_implementation_details(results1.get('railway_logs', []))
         role_found = impl1.get("role_found") or ""
@@ -568,7 +588,8 @@ async def main():
 
         # Test 2: Zea -> ADMIN channel
         print("\n[2/2] Testing Zea -> ADMIN routing")
-        zea_msg = "Create task for Zea: Update the team schedule spreadsheet"
+        # Use working pattern from simple test: "Create task: [description] - assign to [name]"
+        zea_msg = "Create task: Update the team schedule spreadsheet - assign to Zea"
         results2 = await tester.full_test(zea_msg)
         impl2 = extract_implementation_details(results2.get('railway_logs', []))
         role_found = impl2.get("role_found") or ""
@@ -633,8 +654,8 @@ async def main():
 
         # Test 3: Routing
         print("\n[3/3] ROUTING TEST")
-        # Mayank
-        results = await tester.full_test("Create task for Mayank: Review the API code")
+        # Mayank - use working pattern
+        results = await tester.full_test("Create task: Review the API code - assign to Mayank")
         impl = extract_implementation_details(results.get('railway_logs', []))
         role_found = impl.get("role_found") or ""
         channel_routed = impl.get("channel_routed") or ""
@@ -644,8 +665,8 @@ async def main():
 
         await asyncio.sleep(2)
 
-        # Zea
-        results = await tester.full_test("Create task for Zea: Update the team schedule")
+        # Zea - use working pattern
+        results = await tester.full_test("Create task: Update the team schedule - assign to Zea")
         impl = extract_implementation_details(results.get('railway_logs', []))
         role_found = impl.get("role_found") or ""
         channel_routed = impl.get("channel_routed") or ""
