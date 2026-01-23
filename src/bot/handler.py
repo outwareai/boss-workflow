@@ -278,8 +278,8 @@ class UnifiedHandler:
             if any(indicator in msg_lower for indicator in correction_indicators):
                 return await self._handle_task_correction(user_id, active_conv, message, user_name)
 
-            # User just says "no" = cancel
-            elif msg_lower == "no":
+            # User says "no", "cancel", etc. = cancel the task
+            elif msg_lower in ["no", "cancel", "nevermind", "stop", "abort"]:
                 await self.context.clear_active_conversation(user_id)
                 return "Task cancelled. What would you like to do?", None
 

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Simple task with assignee",
+    "passed": false,
+    "errors": [
+      "NO TASK FOUND: Expected task containing 'login'"
+    ]
+  },
+  {
+    "name": "Complex task with questions",
+    "passed": false,
+    "errors": [
+      "NO TASK FOUND: Expected task containing 'notification'"
+    ]
+  }
+]

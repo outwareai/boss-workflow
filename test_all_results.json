@@ -2,9 +2,9 @@
   "tests": [
     {
       "name": "simple",
-      "passed": false,
-      "complexity": 8,
-      "questions": 2
+      "passed": true,
+      "complexity": null,
+      "questions": null
     },
     {
       "name": "complex",
@@ -19,5 +19,5 @@
       "zea": false
     }
   ],
-  "timestamp": "2026-01-23T12:25:20.371138"
+  "timestamp": "2026-01-23T13:23:42.428027"
 }
