@@ -306,6 +306,71 @@ blocking = await task_repo.get_blocking_tasks("TASK-001")
 
 ---
 
+## MANDATORY: Development Workflow
+
+### Step 1: Brainstorm (ALWAYS ASK USER)
+
+When presenting approaches after brainstorming:
+1. Present 2-4 distinct approaches
+2. **Recommend based on BEST solution, not simplest**
+3. Consider: scalability, maintainability, completeness
+4. **ALWAYS ASK USER which approach** before implementing
+
+```
+Example - GOOD:
+"Here are 3 approaches:
+A) Quick fix (simplest)
+B) Moderate refactor
+C) Full redesign (RECOMMENDED - most robust, future-proof)
+
+Which approach would you like?"
+
+Example - BAD:
+"Here are 3 approaches... Proceeding with recommended option."
+← WRONG: Didn't ask user!
+```
+
+### Step 2: Implement with Testing
+
+Use `test_full_loop.py` for real-world testing:
+```bash
+python test_full_loop.py full-test "Your test message"
+python test_full_loop.py respond "yes"
+python test_full_loop.py read-tasks
+python test_full_loop.py read-discord
+```
+
+### Step 3: End-of-Workflow Summary (REQUIRED)
+
+**At the end of EVERY significant task, output a summary like this:**
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║              WORKFLOW COMPLETION SUMMARY                     ║
+╠══════════════════════════════════════════════════════════════╣
+║ TASK: [Brief description of what was requested]              ║
+╠══════════════════════════════════════════════════════════════╣
+║ WHAT WAS IMPLEMENTED:                                        ║
+║ • [Feature 1]: [Brief description]                           ║
+║ • [Feature 2]: [Brief description]                           ║
+║ • [Files changed]: file1.py, file2.py                        ║
+╠══════════════════════════════════════════════════════════════╣
+║ WHAT WAS TESTED:                                             ║
+║ • [Test 1]: [Result - PASSED/FAILED]                         ║
+║ • [Test 2]: [Result - PASSED/FAILED]                         ║
+╠══════════════════════════════════════════════════════════════╣
+║ COMMITS:                                                     ║
+║ • [commit-hash]: [commit message]                            ║
+╠══════════════════════════════════════════════════════════════╣
+║ STATUS: ✅ COMPLETE / ⚠️ PARTIAL / ❌ BLOCKED                 ║
+║ NEXT STEPS: [If any]                                         ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+**This summary is MANDATORY - never skip it!**
+
+---
+
 ## Remember
 
 1. **READ `FEATURES.md` FIRST** - Understand what exists
