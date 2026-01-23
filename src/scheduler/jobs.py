@@ -370,8 +370,10 @@ _🔵 = Unread | ⭐ = Important_"""
                     settings.telegram_boss_chat_id,
                     "📧 **Email Summary**\n\n⚠️ _Could not fetch emails. Check Gmail configuration._"
                 )
-            except:
-                pass
+            except (ValueError, KeyError, AttributeError) as e:
+                logger.warning(f"Error in scheduled job: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error in scheduled job: {e}")
 
     async def _eod_reminder_job(self) -> None:
         """Send end of day reminder."""
@@ -894,8 +896,10 @@ Keep up the great work!"""
                                 if checkin_time > cutoff_time:
                                     logger.debug(f"Skipping {task_id} - recently checked")
                                     continue
-                            except:
-                                pass
+                            except (ValueError, KeyError, AttributeError) as e:
+                                logger.warning(f"Error in scheduled job: {e}")
+                            except Exception as e:
+                                logger.error(f"Unexpected error in scheduled job: {e}")
 
                     # Send friendly check-in via Discord
                     checkin_message = f"""👋 **Friendly Check-in: {task_id}**

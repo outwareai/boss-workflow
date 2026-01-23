@@ -198,7 +198,11 @@ Contact boss directly on Telegram.""",
         if not user:
             try:
                 user = await self.fetch_user(payload.user_id)
-            except:
+            except discord.HTTPException as e:
+                logger.warning(f"Failed to fetch Discord user {payload.user_id}: {e}")
+                user = None
+            except Exception as e:
+                logger.error(f"Unexpected error fetching user: {e}")
                 user = None
 
         user_name = user.display_name if user else f"User {payload.user_id}"
@@ -225,8 +229,10 @@ Contact boss directly on Telegram.""",
                         # Remove it after 2 seconds
                         await asyncio.sleep(2)
                         await message.remove_reaction("👍", self.user)
-                    except:
-                        pass
+                    except discord.HTTPException as e:
+                        logger.warning(f"Failed to add/remove Discord reaction: {e}")
+                    except Exception as e:
+                        logger.error(f"Unexpected error in Discord operation: {e}")
 
             except Exception as e:
                 logger.error(f"Error updating task status: {e}")
@@ -322,8 +328,10 @@ Contact boss directly on Telegram.""",
             logger.error(f"Error in staff AI message handler: {e}", exc_info=True)
             try:
                 await message.add_reaction("⚠️")
-            except:
-                pass
+            except discord.HTTPException as e:
+                logger.warning(f"Failed to add/remove Discord reaction: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error in Discord operation: {e}")
 
     async def _handle_attendance_message(self, message: discord.Message, channel_name: str):
         """Handle attendance commands in attendance channels."""
@@ -377,8 +385,10 @@ Contact boss directly on Telegram.""",
                 logger.error(f"Error processing attendance command: {e}")
                 try:
                     await message.add_reaction(ATTENDANCE_REACTIONS["error"])
-                except:
-                    pass
+                except discord.HTTPException as e:
+                    logger.warning(f"Failed to add/remove Discord reaction: {e}")
+                except Exception as e:
+                    logger.error(f"Unexpected error in Discord operation: {e}")
         else:
             logger.warning("Attendance callback not registered, ignoring attendance command")
 
@@ -452,8 +462,10 @@ Contact boss directly on Telegram.""",
                 logger.error(f"Error processing task submission: {e}")
                 try:
                     await message.add_reaction("⚠️")
-                except:
-                    pass
+                except discord.HTTPException as e:
+                    logger.warning(f"Failed to add/remove Discord reaction: {e}")
+                except Exception as e:
+                    logger.error(f"Unexpected error in Discord operation: {e}")
         else:
             logger.warning("Task submission callback not registered")
 

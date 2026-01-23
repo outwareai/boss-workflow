@@ -370,7 +370,8 @@ class GmailIntegration:
             # Parse date
             try:
                 email_date = parsedate_to_datetime(date_header)
-            except:
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.debug(f"Invalid email date header, using current time: {e}")
                 email_date = datetime.now()
 
             # Parse recipients

@@ -376,8 +376,8 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
     try:
         scheduler = get_scheduler_manager()
         scheduler.stop()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to stop scheduler during shutdown: {e}")
 
     # Stop message queue worker
     try:
@@ -385,25 +385,25 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
         queue = get_message_queue()
         await queue.stop_worker()
         logger.info("Message queue worker stopped")
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to stop message queue worker during shutdown: {e}")
 
     try:
         prefs = get_preferences_manager()
         await prefs.disconnect()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to disconnect preferences manager during shutdown: {e}")
 
     try:
         context = get_conversation_context()
         await context.disconnect()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to disconnect conversation context during shutdown: {e}")
 
     try:
         await close_database()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to close database during shutdown: {e}")
 
     logger.info("Shutdown complete")
 
@@ -543,21 +543,23 @@ async def run_migration(secret: str = ""):
 
         migration_sql = migration_path.read_text(encoding="utf-8")
 
-        # Execute migration
-        async with db.session() as session:
-            # Split into individual statements
-            statements = [s.strip() for s in migration_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        # Split into individual statements
+        statements = [s.strip() for s in migration_sql.split(';') if s.strip() and not s.strip().startswith('--')]
 
-            results = []
+        results = []
+
+        # CREATE INDEX CONCURRENTLY cannot run in a transaction, so use raw connection
+        import asyncpg
+        conn = await asyncpg.connect(db.engine.url.render_as_string(hide_password=False))
+
+        try:
             for statement in statements:
                 if not statement or statement.startswith('--'):
                     continue
 
                 try:
-                    # CREATE INDEX CONCURRENTLY cannot run in a transaction
-                    # So we need to execute with autocommit
-                    await session.execute(__import__('sqlalchemy').text(statement))
-                    await session.commit()
+                    # Execute statement (autocommit mode by default in asyncpg)
+                    await conn.execute(statement)
 
                     # Extract index name
                     if 'idx_' in statement:
@@ -577,7 +579,7 @@ async def run_migration(secret: str = ""):
                         results.append(f"❌ Error: {str(e)[:100]}")
 
             # Verify indexes
-            verify_query = __import__('sqlalchemy').text("""
+            indexes = await conn.fetch("""
                 SELECT schemaname, tablename, indexname
                 FROM pg_indexes
                 WHERE schemaname = 'public'
@@ -585,16 +587,16 @@ async def run_migration(secret: str = ""):
                 ORDER BY tablename, indexname
             """)
 
-            result = await session.execute(verify_query)
-            indexes = result.fetchall()
-
             return {
                 "status": "success",
                 "timestamp": __import__('datetime').datetime.now().isoformat(),
                 "results": results,
                 "indexes_found": len(indexes),
-                "indexes": [{"table": idx[1], "name": idx[2]} for idx in indexes]
+                "indexes": [{"table": idx["tablename"], "name": idx["indexname"]} for idx in indexes]
             }
+
+        finally:
+            await conn.close()
 
     except Exception as e:
         logger.error(f"Error running migration: {e}")
