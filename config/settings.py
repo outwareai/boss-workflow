@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", env="HOST")
     port: int = Field(default=8000, env="PORT")
     webhook_base_url: str = Field(default="", env="WEBHOOK_BASE_URL")
+    admin_secret: str = Field(default="", env="ADMIN_SECRET")
 
     # Telegram
     telegram_bot_token: str = Field(default="", env="TELEGRAM_BOT_TOKEN")

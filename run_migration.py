@@ -13,7 +13,7 @@ async def run_migration():
         return
     
     # Read migration SQL
-    with open("migrations/001_add_composite_indexes.sql", "r") as f:
+    with open("migrations/001_add_composite_indexes.sql", "r", encoding="utf-8") as f:
         migration_sql = f.read()
     
     # Connect to database

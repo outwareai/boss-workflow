@@ -514,6 +514,97 @@ async def db_health():
         }
 
 
+@app.post("/admin/run-migration")
+async def run_migration(secret: str = ""):
+    """
+    Run database migrations (admin only).
+    Requires ADMIN_SECRET environment variable to match.
+    """
+    try:
+        # Security: Require admin secret
+        admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
+        if not admin_secret or secret != admin_secret:
+            return {
+                "status": "error",
+                "error": "Unauthorized - Invalid admin secret"
+            }
+
+        db = get_database()
+
+        # Read migration SQL
+        import pathlib
+        migration_path = pathlib.Path(__file__).parent.parent / "migrations" / "001_add_composite_indexes.sql"
+
+        if not migration_path.exists():
+            return {
+                "status": "error",
+                "error": f"Migration file not found: {migration_path}"
+            }
+
+        migration_sql = migration_path.read_text(encoding="utf-8")
+
+        # Execute migration
+        async with db.session() as session:
+            # Split into individual statements
+            statements = [s.strip() for s in migration_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+
+            results = []
+            for statement in statements:
+                if not statement or statement.startswith('--'):
+                    continue
+
+                try:
+                    # CREATE INDEX CONCURRENTLY cannot run in a transaction
+                    # So we need to execute with autocommit
+                    await session.execute(__import__('sqlalchemy').text(statement))
+                    await session.commit()
+
+                    # Extract index name
+                    if 'idx_' in statement:
+                        index_name = statement.split('idx_')[1].split()[0]
+                        results.append(f"✅ Created index: idx_{index_name}")
+                    else:
+                        results.append("✅ Statement executed")
+
+                except Exception as e:
+                    if 'already exists' in str(e):
+                        if 'idx_' in statement:
+                            index_name = statement.split('idx_')[1].split()[0]
+                            results.append(f"⚠️  Index already exists: idx_{index_name}")
+                        else:
+                            results.append("⚠️  Already exists (skipped)")
+                    else:
+                        results.append(f"❌ Error: {str(e)[:100]}")
+
+            # Verify indexes
+            verify_query = __import__('sqlalchemy').text("""
+                SELECT schemaname, tablename, indexname
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                AND indexname LIKE 'idx_%'
+                ORDER BY tablename, indexname
+            """)
+
+            result = await session.execute(verify_query)
+            indexes = result.fetchall()
+
+            return {
+                "status": "success",
+                "timestamp": __import__('datetime').datetime.now().isoformat(),
+                "results": results,
+                "indexes_found": len(indexes),
+                "indexes": [{"table": idx[1], "name": idx[2]} for idx in indexes]
+            }
+
+    except Exception as e:
+        logger.error(f"Error running migration: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }
+
+
 # Track processed update IDs to prevent duplicate processing from Telegram retries
 _processed_updates: set = set()
 _max_processed_updates = 1000

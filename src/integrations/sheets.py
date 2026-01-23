@@ -701,7 +701,8 @@ class GoogleSheetsIntegration:
                     existing = worksheet.row_values(row_num)
                     if len(existing) >= 7:
                         calendar_id = existing[6]  # Column G
-            except:
+            except (ValueError, AttributeError, IndexError) as e:
+                logger.debug(f"Skipping task with invalid date: {e}")
                 row_num = len(worksheet.get_all_values()) + 1
 
             # Calculate active tasks for this person
@@ -876,8 +877,8 @@ class GoogleSheetsIntegration:
                     created = datetime.strptime(created_str.split()[0], '%Y-%m-%d')
                     completed = datetime.strptime(updated_str.split()[0], '%Y-%m-%d')
                     days_to_complete = str((completed - created).days)
-                except:
-                    pass
+                except (ValueError, AttributeError, IndexError) as e:
+                    logger.debug(f"Skipping task with invalid date: {e}")
 
             archive_row = [
                 task.get('ID', ''),
@@ -931,8 +932,8 @@ class GoogleSheetsIntegration:
                             if updated.date() < cutoff.date():
                                 if await self.archive_task(task.get('ID', '')):
                                     archived_count += 1
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"Failed to archive task: {e}", extra={'task_id': task.get('ID', '')})
 
             logger.info(f"Archived {archived_count} old completed tasks")
             return archived_count
@@ -976,8 +977,8 @@ class GoogleSheetsIntegration:
                         deadline = datetime.strptime(deadline_str.split()[0], '%Y-%m-%d')
                         if deadline.date() < now.date():
                             overdue.append(task)
-                    except:
-                        pass
+                    except (ValueError, AttributeError, IndexError) as e:
+                        logger.debug(f"Skipping task with invalid date: {e}")
 
         return overdue
 
@@ -996,8 +997,8 @@ class GoogleSheetsIntegration:
                         deadline = datetime.strptime(deadline_str.split()[0], '%Y-%m-%d')
                         if now.date() <= deadline.date() <= cutoff.date():
                             due_soon.append(task)
-                    except:
-                        pass
+                    except (ValueError, AttributeError, IndexError) as e:
+                        logger.debug(f"Skipping task with invalid date: {e}")
 
         return due_soon
 
@@ -1088,8 +1089,8 @@ class GoogleSheetsIntegration:
                         filtered.append(task)
                     elif due == "overdue" and deadline.date() < now.date():
                         filtered.append(task)
-                except:
-                    pass
+                except (ValueError, AttributeError, IndexError) as e:
+                    logger.debug(f"Skipping task with invalid date: {e}")
             results = filtered
 
         # Created date filter
@@ -1108,8 +1109,8 @@ class GoogleSheetsIntegration:
                         filtered.append(task)
                     elif created == "month" and (now - timedelta(days=30)).date() <= created_date.date():
                         filtered.append(task)
-                except:
-                    pass
+                except (ValueError, AttributeError, IndexError) as e:
+                    logger.debug(f"Skipping task with invalid date: {e}")
             results = filtered
 
         return results[:limit]
