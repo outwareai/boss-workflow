@@ -720,8 +720,18 @@ async def seed_test_team(secret: str = ""):
                         await team_repo.update(existing.id, {"role": member_data["role"]})
                         results.append(f"✅ Updated {member_data['name']} role to: {member_data['role']}")
                 else:
-                    created = await team_repo.create(member_data)
-                    results.append(f"✅ Created {member_data['name']} with role: {member_data['role']}")
+                    # Unpack dict into create method parameters
+                    created = await team_repo.create(
+                        name=member_data["name"],
+                        role=member_data["role"],
+                        telegram_id=member_data.get("telegram_id"),
+                        discord_id=member_data.get("discord_id"),
+                        skills=member_data.get("skills")
+                    )
+                    if created:
+                        results.append(f"✅ Created {member_data['name']} (ID: {created.id}) with role: {member_data['role']}")
+                    else:
+                        results.append(f"❌ Failed to create {member_data['name']}")
             except Exception as e:
                 results.append(f"❌ Error with {member_data['name']}: {str(e)[:100]}")
 
