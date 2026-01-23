@@ -676,6 +676,72 @@ async def run_migration(secret: str = ""):
         }
 
 
+@app.post("/admin/seed-test-team")
+async def seed_test_team(secret: str = ""):
+    """
+    Seed test team members (Mayank/Zea) for routing tests.
+    Requires ADMIN_SECRET environment variable to match.
+    """
+    try:
+        # Security check
+        admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
+        if not admin_secret or secret != admin_secret:
+            return {"status": "error", "error": "Unauthorized"}
+
+        from .database.repositories import get_team_repository
+        team_repo = get_team_repository()
+
+        test_members = [
+            {
+                "name": "Mayank",
+                "role": "Developer",  # Maps to DEV
+                "telegram_id": "123456789",
+                "discord_id": "987654321",
+                "skills": ["Python", "FastAPI", "PostgreSQL"],
+                "is_active": True
+            },
+            {
+                "name": "Zea",
+                "role": "Admin",  # Maps to ADMIN
+                "telegram_id": "111111111",
+                "discord_id": "222222222",
+                "skills": ["Management", "Coordination"],
+                "is_active": True
+            }
+        ]
+
+        results = []
+        for member_data in test_members:
+            try:
+                existing = await team_repo.find_member(member_data["name"])
+                if existing:
+                    results.append(f"⚠️  {member_data['name']} exists with role: {existing.role}")
+                    if existing.role != member_data["role"]:
+                        await team_repo.update(existing.id, {"role": member_data["role"]})
+                        results.append(f"✅ Updated {member_data['name']} role to: {member_data['role']}")
+                else:
+                    created = await team_repo.create(member_data)
+                    results.append(f"✅ Created {member_data['name']} with role: {member_data['role']}")
+            except Exception as e:
+                results.append(f"❌ Error with {member_data['name']}: {str(e)[:100]}")
+
+        # Verify
+        all_members = await team_repo.get_all()
+        member_list = [{"name": m.name, "role": m.role} for m in all_members]
+
+        return {
+            "status": "success",
+            "timestamp": __import__('datetime').datetime.now().isoformat(),
+            "results": results,
+            "total_members": len(all_members),
+            "members": member_list
+        }
+
+    except Exception as e:
+        logger.error(f"Error seeding team: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 # Track processed update IDs to prevent duplicate processing from Telegram retries
 _processed_updates: set = set()
 _max_processed_updates = 1000
