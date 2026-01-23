@@ -18,6 +18,7 @@ import asyncio
 
 from config import settings
 from ..models.task import Task, TaskStatus, TaskPriority
+from ..utils.retry import with_discord_retry
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +309,7 @@ class DiscordIntegration:
 
         return None
 
+    @with_discord_retry
     async def _api_request(
         self,
         method: str,
@@ -323,6 +325,8 @@ class DiscordIntegration:
             endpoint: API endpoint
             json_data: Request body
             queue_on_failure: If True, queue failed POST requests for retry
+            
+        Q2 2026: Added retry logic with exponential backoff.
 
         Returns:
             Tuple of (status_code, response_data)

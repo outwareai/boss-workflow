@@ -7,6 +7,8 @@ Sheet names match setup_sheets.py with emoji prefixes.
 
 import json
 import logging
+from ..utils.retry import with_google_api_retry
+
 import asyncio
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
@@ -86,12 +88,15 @@ class GoogleSheetsIntegration:
     # Columns: ID, Title, Description, Assignee, Priority, Status, Type,
     #          Deadline, Created, Updated, Effort, Progress, Tags, Created By, Notes, Blocked By
 
+    @with_google_api_retry
     async def add_task(self, task_data: Dict[str, Any]) -> Optional[int]:
         """
         Add a task to the Daily Tasks sheet.
 
         task_data should contain: id, title, description, assignee, priority,
         status, task_type, deadline, created_at, updated_at, effort, tags, created_by
+        
+        Q2 2026: Added retry logic with exponential backoff.
         """
         if not await self.initialize():
             return None
@@ -128,8 +133,13 @@ class GoogleSheetsIntegration:
             logger.error(f"Error adding task: {e}")
             return None
 
+    @with_google_api_retry
     async def update_task(self, task_id: str, updates: Dict[str, Any]) -> bool:
-        """Update a task by ID."""
+        """
+        Update a task by ID.
+        
+        Q2 2026: Added retry logic with exponential backoff.
+        """
         if not await self.initialize():
             return False
 
@@ -276,8 +286,13 @@ class GoogleSheetsIntegration:
             logger.error(f"Error in bulk delete: {e}")
             return (deleted, len(task_ids) - deleted)
 
+    @with_google_api_retry
     async def get_all_tasks(self) -> List[Dict[str, Any]]:
-        """Get all tasks from Daily Tasks sheet."""
+        """
+        Get all tasks from Daily Tasks sheet.
+        
+        Q2 2026: Added retry logic with exponential backoff.
+        """
         if not await self.initialize():
             return []
 
@@ -360,8 +375,13 @@ class GoogleSheetsIntegration:
     #          Avg Days to Complete, Overdue Tasks, On-Time Rate,
     #          Key Highlights, Blockers & Issues
 
+    @with_google_api_retry
     async def generate_weekly_report(self, week_start: datetime = None) -> Dict[str, Any]:
-        """Generate and save a weekly report."""
+        """
+        Generate and save a weekly report.
+        
+        Q2 2026: Added retry logic with exponential backoff.
+        """
         if not await self.initialize():
             return {}
 
@@ -781,6 +801,7 @@ class GoogleSheetsIntegration:
             logger.error(f"Error clearing Team sheet: {e}")
             return False
 
+    @with_google_api_retry
     async def sync_team_from_config(self) -> Tuple[int, int]:
         """
         Sync team members from config/team.py to the Team sheet.
@@ -790,6 +811,8 @@ class GoogleSheetsIntegration:
 
         Returns:
             Tuple of (synced_count, failed_count)
+            
+        Q2 2026: Added retry logic with exponential backoff.
         """
         if not await self.initialize():
             return (0, 0)

@@ -8,6 +8,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config import settings
 from .prompts import PromptTemplates
+from ..utils.retry import with_deepseek_retry
 
 logger = logging.getLogger(__name__)
 
