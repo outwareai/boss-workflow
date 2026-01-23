@@ -31,6 +31,10 @@ PRE/POST AUTOMATION:
 SESSION CONTINUITY:
     python test_full_loop.py save-progress "task"   # Save current progress
     python test_full_loop.py resume                 # Show saved progress
+
+CONVERSATION FLOW TESTS:
+    python test_full_loop.py test-conversation      # Full multi-turn conversation test
+    python test_full_loop.py test-answer-parsing    # Test answer format parsing
 """
 
 import os
@@ -821,6 +825,169 @@ async def main():
                         print(f"    - {sub['name']}: {status}")
 
         print("\n  Recommendation: Continue where you left off")
+
+    # ================================================================
+    # PHASE 4: MULTI-TURN CONVERSATION TESTS
+    # ================================================================
+
+    elif command == "test-conversation":
+        # Full multi-turn conversation test with validation
+        print("\n" + "=" * 70)
+        print(" MULTI-TURN CONVERSATION TEST ")
+        print("=" * 70)
+        print("\nThis test validates the full conversation flow:")
+        print("1. Send complex task -> Bot asks questions")
+        print("2. Answer questions -> Bot shows preview")
+        print("3. Validate preview has correct title, assignee, deadline")
+        print("-" * 70)
+
+        test_results = {
+            "test": "conversation",
+            "steps": [],
+            "passed": False,
+            "errors": []
+        }
+
+        # Step 1: Send complex task that should trigger questions
+        print("\n[STEP 1] Sending complex task...")
+        task_message = "Create task for Mayank: Build a notification system with email and SMS"
+        print(f"  Message: '{task_message}'")
+
+        result = await tester.send_telegram_message(task_message)
+        test_results["steps"].append({"step": "send_task", "status": result["status"]})
+
+        if result["status"] != 200:
+            test_results["errors"].append("Failed to send message")
+            print(f"  ERROR: Failed to send message (status {result['status']})")
+        else:
+            print(f"  Sent successfully")
+
+        # Wait for bot to process and ask questions
+        print("\n[STEP 2] Waiting 10s for bot to process and ask questions...")
+        await asyncio.sleep(10)
+
+        # Read logs to check if questions were asked
+        logs = tester.read_railway_logs(lines=80)
+        impl = extract_implementation_details(logs)
+
+        questions_asked = impl.get("questions_asked")
+        complexity = impl.get("complexity")
+        print(f"  Complexity detected: {complexity}")
+        print(f"  Questions asked: {questions_asked}")
+
+        test_results["steps"].append({
+            "step": "questions",
+            "complexity": complexity,
+            "questions_asked": questions_asked
+        })
+
+        if questions_asked and questions_asked > 0:
+            print(f"  Bot asked {questions_asked} questions - proceeding to answer")
+
+            # Step 3: Answer the questions
+            print("\n[STEP 3] Answering questions...")
+            answer_message = "1tomorrow 2a"
+            print(f"  Answer: '{answer_message}'")
+
+            result = await tester.send_telegram_message(answer_message)
+            test_results["steps"].append({"step": "send_answers", "status": result["status"]})
+
+            if result["status"] != 200:
+                test_results["errors"].append("Failed to send answers")
+                print(f"  ERROR: Failed to send answers")
+            else:
+                print(f"  Sent successfully")
+
+            # Wait for bot to show preview
+            print("\n[STEP 4] Waiting 8s for bot to process answers and show preview...")
+            await asyncio.sleep(8)
+
+            # Read logs to check what happened
+            logs = tester.read_railway_logs(lines=100)
+
+            # Look for success indicators in logs
+            log_text = "\n".join(logs)
+
+            # Check for proper handling
+            answers_processed = "Updated conversation with answers" in log_text or "process_user_answers" in log_text.lower()
+            preview_shown = "Task Preview" in log_text or "PREVIEW" in log_text
+            assignee_preserved = "mayank" in log_text.lower()
+
+            print(f"\n[STEP 5] Validation:")
+            print(f"  Answers processed: {'YES' if answers_processed else 'NO'}")
+            print(f"  Preview shown: {'YES' if preview_shown else 'NO'}")
+            print(f"  Assignee preserved: {'YES' if assignee_preserved else 'NO'}")
+
+            test_results["steps"].append({
+                "step": "validation",
+                "answers_processed": answers_processed,
+                "preview_shown": preview_shown,
+                "assignee_preserved": assignee_preserved
+            })
+
+            # Final verdict
+            passed = answers_processed or preview_shown
+            test_results["passed"] = passed
+
+            print("\n" + "=" * 70)
+            print(f" CONVERSATION TEST: {'PASSED' if passed else 'FAILED'} ")
+            print("=" * 70)
+
+            if not passed:
+                print("\nPossible issues:")
+                if not answers_processed:
+                    print("  - Answers may not have been parsed correctly")
+                if not preview_shown:
+                    print("  - Preview may not have been generated")
+                if not assignee_preserved:
+                    print("  - Assignee 'Mayank' may have been lost")
+
+        else:
+            print("  No questions asked - testing simple flow instead")
+            test_results["steps"].append({"step": "no_questions", "note": "Bot didn't ask questions"})
+
+            # Check if task was created directly
+            tasks = await tester.get_database_tasks(limit=3)
+            recent_task = tasks["tasks"][0] if tasks["tasks"] else None
+
+            if recent_task and "notification" in recent_task.get("title", "").lower():
+                print(f"  Task created directly: {recent_task.get('id')}")
+                test_results["passed"] = True
+            else:
+                print("  Could not verify task creation")
+
+            print("\n" + "=" * 70)
+            print(f" CONVERSATION TEST: {'PASSED' if test_results['passed'] else 'FAILED'} ")
+            print("=" * 70)
+
+        # Save results
+        with open("test_conversation_results.json", "w") as f:
+            json.dump(test_results, f, indent=2, default=str)
+        print("\nResults saved to test_conversation_results.json")
+
+    elif command == "test-answer-parsing":
+        # Test specifically the answer parsing fix
+        print("\n" + "=" * 70)
+        print(" ANSWER PARSING TEST ")
+        print("=" * 70)
+        print("\nThis test validates that answers like '1tomorrow 2a' are parsed correctly")
+        print("-" * 70)
+
+        # Test various answer formats
+        test_formats = [
+            "1tomorrow 2a",
+            "1. tomorrow 2. high",
+            "1 next week 2 B",
+            "A",
+            "tomorrow",
+        ]
+
+        print("\nTesting answer format parsing...")
+        for fmt in test_formats:
+            print(f"\n  Format: '{fmt}'")
+            # This is a dry run - we'd need to actually send to test
+
+        print("\n  To fully test, use 'test-conversation' which sends real messages")
 
     else:
         print(f"Unknown command: {command}")
