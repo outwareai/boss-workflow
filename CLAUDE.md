@@ -434,6 +434,41 @@ blocking = await task_repo.get_blocking_tasks("TASK-001")
 
 ## ULTIMATE WORKFLOW: Automatic Agent Orchestration
 
+### Overview
+
+The workflow has TWO modes:
+
+1. **Interactive Mode** - Claude works step-by-step, asks questions, gets approval
+2. **Autonomous Mode** - `/ralph-loop` wraps everything, iterates until done
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  AUTONOMOUS MODE: /ralph-loop "task description"                            │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                                                                       │  │
+│  │   ┌─────────────────────────────────────────────────────────────┐    │  │
+│  │   │  INTERACTIVE MODE (auto-detect + orchestrate)               │    │  │
+│  │   │  - Brainstorm → Plan → Implement → Test → Review            │    │  │
+│  │   └─────────────────────────────────────────────────────────────┘    │  │
+│  │                              │                                        │  │
+│  │                    Tests pass? ──No──→ Fix and retry (loop)          │  │
+│  │                              │                                        │  │
+│  │                             Yes                                       │  │
+│  │                              ↓                                        │  │
+│  │                    <promise>FULFILLED</promise>                       │  │
+│  │                                                                       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│  Keeps iterating until promise met - fully autonomous                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### When to Use Which Mode
+
+| Mode | Use When | Example |
+|------|----------|---------|
+| **Interactive** | Need user input, unclear requirements | "Add some kind of notification" |
+| **Autonomous** (`/ralph-loop`) | Clear goal, just needs execution | "Fix all test failures" |
+
 ### How It Works
 
 Claude AUTOMATICALLY detects task type and uses the right orchestration - no manual `/commands` needed.
@@ -705,14 +740,49 @@ railway logs -s boss-workflow | tail -30  # Live logs
 
 ---
 
+### Autonomous Mode: Ralph-Loop
+
+For fully autonomous execution, wrap the task in `/ralph-loop`:
+
+```
+/ralph-loop "Add email notifications to the task system"
+
+<promise>
+- Email notifications implemented
+- Tests passing
+- Deployed to Railway
+- Verified working via test_conversation.py
+</promise>
+```
+
+**What happens:**
+1. Claude executes the ULTIMATE WORKFLOW (brainstorm → plan → implement → test)
+2. If tests fail → automatically fix and retry
+3. Keeps looping until ALL promise conditions met
+4. Only stops when promise fulfilled OR hits blocker needing user input
+
+**Best for:**
+- Clear, well-defined tasks
+- Bug fixes ("fix all failing tests")
+- Implementations with clear specs
+- Refactoring with known goals
+
+**Not for:**
+- Unclear requirements (need user input)
+- Design decisions (need user choice)
+- Exploratory work (need direction)
+
+---
+
 ### Key Rules
 
-1. **Always ask user** before implementing (after brainstorming)
+1. **Always ask user** before implementing (after brainstorming) - unless in ralph-loop
 2. **Deploy + test after EACH task**, not just at the end
 3. **Don't proceed** if tests fail - fix first
 4. **Use parallel agents** when tasks are independent
 5. **Use sequential agents** when tasks depend on each other
 6. **Summary is mandatory** - never skip it
+7. **Ralph-loop** for autonomous execution with clear goals
 
 ---
 
