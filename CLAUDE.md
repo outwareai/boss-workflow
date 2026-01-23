@@ -333,14 +333,47 @@ Example - BAD:
 ### Step 2: Implement with Testing
 
 Use `test_full_loop.py` for real-world testing:
+
+**Basic Commands:**
 ```bash
-python test_full_loop.py full-test "Your test message"
-python test_full_loop.py respond "yes"
-python test_full_loop.py read-tasks
-python test_full_loop.py read-discord
+python test_full_loop.py send "message"         # Send to bot
+python test_full_loop.py respond "yes"          # Answer confirmation
+python test_full_loop.py read-telegram          # See bot responses
+python test_full_loop.py read-discord           # See Discord output
+python test_full_loop.py read-tasks             # See database tasks
+python test_full_loop.py full-test "message"    # Complete test cycle
 ```
 
-### Step 3: End-of-Workflow Summary (REQUIRED)
+**Specialized Tests (v2.3):**
+```bash
+python test_full_loop.py test-simple            # Test simple task (no questions)
+python test_full_loop.py test-complex           # Test complex task (with questions)
+python test_full_loop.py test-routing           # Test Mayank→DEV, Zea→ADMIN routing
+python test_full_loop.py test-all               # Run all 3 tests in sequence
+```
+
+**Pre/Post Deployment:**
+```bash
+python test_full_loop.py verify-deploy          # Check Railway health after deploy
+python test_full_loop.py check-logs             # Quick check for errors in logs
+```
+
+**Session Continuity:**
+```bash
+python test_full_loop.py save-progress "task"   # Save current progress
+python test_full_loop.py resume                 # Show saved progress
+```
+
+### Step 3: Deploy and Verify
+
+After implementation:
+1. Commit and push: `git add . && git commit -m "feat: description" && git push`
+2. Wait for Railway auto-deploy (or manual: `railway redeploy -s boss-workflow --yes`)
+3. Verify deployment: `python test_full_loop.py verify-deploy`
+4. Run tests: `python test_full_loop.py test-all`
+5. Check logs if issues: `python test_full_loop.py check-logs`
+
+### Step 4: End-of-Workflow Summary (REQUIRED)
 
 **At the end of EVERY significant task, provide a clear summary covering:**
 
@@ -401,4 +434,4 @@ git push
 
 ---
 
-*Last updated: 2026-01-17* (Added PostgreSQL database layer)
+*Last updated: 2026-01-23* (v2.3 Enhanced test framework with test-simple, test-complex, test-routing, test-all, verify-deploy, check-logs, save-progress, resume)

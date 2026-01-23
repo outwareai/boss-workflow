@@ -10,12 +10,27 @@ This script enables Claude Code to:
 5. Evaluate quality
 6. Loop until perfect (use with /ralph-loop)
 
-Usage:
-    python test_full_loop.py send "Create task for John to fix login"
-    python test_full_loop.py respond "yes"
-    python test_full_loop.py read-telegram
-    python test_full_loop.py read-discord
-    python test_full_loop.py full-test "Task for John no questions: Fix login bug"
+BASIC COMMANDS:
+    python test_full_loop.py send "message"         # Send to bot
+    python test_full_loop.py respond "yes"          # Answer confirmation
+    python test_full_loop.py read-telegram          # See bot responses
+    python test_full_loop.py read-discord           # See Discord output
+    python test_full_loop.py read-tasks             # See database tasks
+    python test_full_loop.py full-test "message"    # Complete test cycle
+
+SPECIALIZED TESTS:
+    python test_full_loop.py test-simple            # Test simple task (no questions)
+    python test_full_loop.py test-complex           # Test complex task (with questions)
+    python test_full_loop.py test-routing           # Test Mayank→DEV, Zea→ADMIN routing
+    python test_full_loop.py test-all               # Run all 3 tests in sequence
+
+PRE/POST AUTOMATION:
+    python test_full_loop.py verify-deploy          # Check Railway health after deploy
+    python test_full_loop.py check-logs             # Quick check for errors in logs
+
+SESSION CONTINUITY:
+    python test_full_loop.py save-progress "task"   # Save current progress
+    python test_full_loop.py resume                 # Show saved progress
 """
 
 import os
@@ -474,6 +489,308 @@ async def main():
             print("Bot activity:")
             for r in responses[-3:]:
                 print(f"  {r['log'][:100]}")
+
+    # ================================================================
+    # PHASE 1: SPECIALIZED TESTS
+    # ================================================================
+
+    elif command == "test-simple":
+        # Test simple task - should skip questions (complexity 1-3)
+        print("\n[TEST-SIMPLE] Testing simple task flow (should skip questions)")
+        print("-" * 60)
+        test_message = "Tell Mayank to fix the login typo"
+        print(f"Sending: '{test_message}'")
+        results = await tester.full_test(test_message)
+        impl = extract_implementation_details(results.get('railway_logs', []))
+
+        print("\n--- SIMPLE TASK TEST RESULT ---")
+        passed = impl.get("complexity", 10) <= 3 and impl.get("questions_asked", 99) == 0
+        print(f"Complexity: {impl.get('complexity')} (expected: 1-3)")
+        print(f"Questions: {impl.get('questions_asked')} (expected: 0)")
+        print(f"Result: {'PASSED' if passed else 'FAILED'}")
+
+        with open("test_simple_results.json", "w") as f:
+            json.dump({"test": "simple", "passed": passed, "details": impl, "results": results}, f, indent=2, default=str)
+
+    elif command == "test-complex":
+        # Test complex task - should ask questions (complexity 7+)
+        print("\n[TEST-COMPLEX] Testing complex task flow (should ask questions)")
+        print("-" * 60)
+        test_message = "Build a notification system with email, SMS, and push notifications for user alerts"
+        print(f"Sending: '{test_message}'")
+        results = await tester.full_test(test_message, wait_seconds=10)
+        impl = extract_implementation_details(results.get('railway_logs', []))
+
+        print("\n--- COMPLEX TASK TEST RESULT ---")
+        passed = impl.get("complexity", 0) >= 7 and impl.get("questions_asked", 0) >= 1
+        print(f"Complexity: {impl.get('complexity')} (expected: 7+)")
+        print(f"Questions: {impl.get('questions_asked')} (expected: 1+)")
+        print(f"Result: {'PASSED' if passed else 'FAILED'}")
+
+        with open("test_complex_results.json", "w") as f:
+            json.dump({"test": "complex", "passed": passed, "details": impl, "results": results}, f, indent=2, default=str)
+
+    elif command == "test-routing":
+        # Test role-based channel routing
+        print("\n[TEST-ROUTING] Testing role-based channel routing")
+        print("-" * 60)
+
+        # Test 1: Mayank -> DEV channel
+        print("\n[1/2] Testing Mayank -> DEV routing")
+        mayank_msg = "Tell Mayank to review the API code"
+        results1 = await tester.full_test(mayank_msg)
+        impl1 = extract_implementation_details(results1.get('railway_logs', []))
+        mayank_passed = impl1.get("channel_routed") == "DEV" or impl1.get("role_found", "").upper() == "DEV"
+
+        print(f"  Role Found: {impl1.get('role_found')}")
+        print(f"  Channel: {impl1.get('channel_routed')}")
+        print(f"  Result: {'PASSED' if mayank_passed else 'FAILED'}")
+
+        # Wait between tests
+        await asyncio.sleep(3)
+
+        # Test 2: Zea -> ADMIN channel
+        print("\n[2/2] Testing Zea -> ADMIN routing")
+        zea_msg = "Tell Zea to update the team schedule"
+        results2 = await tester.full_test(zea_msg)
+        impl2 = extract_implementation_details(results2.get('railway_logs', []))
+        zea_passed = impl2.get("channel_routed") == "ADMIN" or impl2.get("role_found", "").upper() == "ADMIN"
+
+        print(f"  Role Found: {impl2.get('role_found')}")
+        print(f"  Channel: {impl2.get('channel_routed')}")
+        print(f"  Result: {'PASSED' if zea_passed else 'FAILED'}")
+
+        print("\n--- ROUTING TEST SUMMARY ---")
+        overall_passed = mayank_passed and zea_passed
+        print(f"Mayank->DEV: {'PASSED' if mayank_passed else 'FAILED'}")
+        print(f"Zea->ADMIN: {'PASSED' if zea_passed else 'FAILED'}")
+        print(f"Overall: {'PASSED' if overall_passed else 'FAILED'}")
+
+        with open("test_routing_results.json", "w") as f:
+            json.dump({
+                "test": "routing",
+                "passed": overall_passed,
+                "mayank": {"passed": mayank_passed, "details": impl1},
+                "zea": {"passed": zea_passed, "details": impl2}
+            }, f, indent=2, default=str)
+
+    elif command == "test-all":
+        # Run all specialized tests in sequence
+        print("\n" + "=" * 70)
+        print(" RUNNING ALL TESTS ")
+        print("=" * 70)
+
+        results_summary = {"tests": [], "timestamp": datetime.utcnow().isoformat()}
+
+        # Test 1: Simple
+        print("\n[1/3] SIMPLE TASK TEST")
+        test_msg = "Tell Mayank to fix the login typo"
+        results = await tester.full_test(test_msg)
+        impl = extract_implementation_details(results.get('railway_logs', []))
+        passed = impl.get("complexity", 10) <= 3 and impl.get("questions_asked", 99) == 0
+        results_summary["tests"].append({"name": "simple", "passed": passed, "complexity": impl.get("complexity"), "questions": impl.get("questions_asked")})
+        print(f"  Result: {'PASSED' if passed else 'FAILED'} (complexity={impl.get('complexity')}, questions={impl.get('questions_asked')})")
+
+        await asyncio.sleep(3)
+
+        # Test 2: Complex
+        print("\n[2/3] COMPLEX TASK TEST")
+        test_msg = "Build a notification system with email, SMS, and push for alerts"
+        results = await tester.full_test(test_msg, wait_seconds=10)
+        impl = extract_implementation_details(results.get('railway_logs', []))
+        passed = impl.get("complexity", 0) >= 7 and impl.get("questions_asked", 0) >= 1
+        results_summary["tests"].append({"name": "complex", "passed": passed, "complexity": impl.get("complexity"), "questions": impl.get("questions_asked")})
+        print(f"  Result: {'PASSED' if passed else 'FAILED'} (complexity={impl.get('complexity')}, questions={impl.get('questions_asked')})")
+
+        await asyncio.sleep(3)
+
+        # Test 3: Routing
+        print("\n[3/3] ROUTING TEST")
+        # Mayank
+        results = await tester.full_test("Tell Mayank to review code")
+        impl = extract_implementation_details(results.get('railway_logs', []))
+        mayank_ok = impl.get("channel_routed") == "DEV" or impl.get("role_found", "").upper() == "DEV"
+
+        await asyncio.sleep(2)
+
+        # Zea
+        results = await tester.full_test("Tell Zea to update schedule")
+        impl = extract_implementation_details(results.get('railway_logs', []))
+        zea_ok = impl.get("channel_routed") == "ADMIN" or impl.get("role_found", "").upper() == "ADMIN"
+
+        routing_passed = mayank_ok and zea_ok
+        results_summary["tests"].append({"name": "routing", "passed": routing_passed, "mayank": mayank_ok, "zea": zea_ok})
+        print(f"  Result: {'PASSED' if routing_passed else 'FAILED'} (mayank={mayank_ok}, zea={zea_ok})")
+
+        # Final Summary
+        print("\n" + "=" * 70)
+        print(" TEST SUMMARY ")
+        print("=" * 70)
+        all_passed = all(t["passed"] for t in results_summary["tests"])
+        for t in results_summary["tests"]:
+            status = "PASSED" if t["passed"] else "FAILED"
+            print(f"  {t['name'].upper():12} : {status}")
+        print("-" * 70)
+        print(f"  {'OVERALL':12} : {'ALL PASSED' if all_passed else 'SOME FAILED'}")
+        print("=" * 70)
+
+        with open("test_all_results.json", "w") as f:
+            json.dump(results_summary, f, indent=2, default=str)
+
+    # ================================================================
+    # PHASE 2: PRE/POST AUTOMATION
+    # ================================================================
+
+    elif command == "verify-deploy":
+        # Check Railway deployment health
+        print("\n[VERIFY-DEPLOY] Checking Railway deployment health...")
+        print("-" * 60)
+
+        checks = []
+
+        # Check 1: Health endpoint
+        print("[1/3] Checking /health endpoint...")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{RAILWAY_URL}/health", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    health_ok = resp.status == 200
+                    health_data = await resp.json() if health_ok else {}
+                    checks.append({"check": "health", "passed": health_ok, "status": resp.status})
+                    print(f"  Status: {resp.status} {'OK' if health_ok else 'FAILED'}")
+        except Exception as e:
+            checks.append({"check": "health", "passed": False, "error": str(e)})
+            print(f"  Error: {e}")
+
+        # Check 2: API endpoint
+        print("[2/3] Checking /api/db/stats endpoint...")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{RAILWAY_URL}/api/db/stats", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    api_ok = resp.status == 200
+                    checks.append({"check": "api", "passed": api_ok, "status": resp.status})
+                    print(f"  Status: {resp.status} {'OK' if api_ok else 'FAILED'}")
+        except Exception as e:
+            checks.append({"check": "api", "passed": False, "error": str(e)})
+            print(f"  Error: {e}")
+
+        # Check 3: Recent errors in logs
+        print("[3/3] Checking logs for errors...")
+        logs = tester.read_railway_logs(lines=50)
+        error_logs = [l for l in logs if "error" in l.lower() or "exception" in l.lower()]
+        logs_ok = len(error_logs) < 5  # Allow some errors
+        checks.append({"check": "logs", "passed": logs_ok, "error_count": len(error_logs)})
+        print(f"  Errors found: {len(error_logs)} ({'OK' if logs_ok else 'WARNING'})")
+
+        # Summary
+        print("\n--- DEPLOY VERIFICATION ---")
+        all_ok = all(c["passed"] for c in checks)
+        for c in checks:
+            status = "OK" if c["passed"] else "FAILED"
+            print(f"  {c['check'].upper():10} : {status}")
+        print(f"\n  DEPLOYMENT: {'HEALTHY' if all_ok else 'ISSUES DETECTED'}")
+
+    elif command == "check-logs":
+        # Quick check for errors in logs
+        print("\n[CHECK-LOGS] Scanning Railway logs for issues...")
+        print("-" * 60)
+
+        logs = tester.read_railway_logs(lines=100)
+
+        # Categorize log entries
+        errors = [l for l in logs if "error" in l.lower() and "no error" not in l.lower()]
+        warnings = [l for l in logs if "warn" in l.lower()]
+        exceptions = [l for l in logs if "exception" in l.lower() or "traceback" in l.lower()]
+
+        print(f"\nLog Analysis (last 100 lines):")
+        print(f"  Errors: {len(errors)}")
+        print(f"  Warnings: {len(warnings)}")
+        print(f"  Exceptions: {len(exceptions)}")
+
+        if errors:
+            print("\n--- Recent Errors ---")
+            for e in errors[-5:]:
+                print(f"  {e[:100]}")
+
+        if exceptions:
+            print("\n--- Exceptions ---")
+            for e in exceptions[-3:]:
+                print(f"  {e[:100]}")
+
+        # Overall assessment
+        print("\n--- ASSESSMENT ---")
+        if len(errors) == 0 and len(exceptions) == 0:
+            print("  Status: CLEAN - No issues found")
+        elif len(errors) < 3 and len(exceptions) == 0:
+            print("  Status: MINOR - Few errors, likely OK")
+        else:
+            print("  Status: ATTENTION - Review logs manually")
+
+    # ================================================================
+    # PHASE 3: SESSION CONTINUITY
+    # ================================================================
+
+    elif command == "save-progress":
+        # Save current progress to a file
+        task_desc = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else "No description"
+        progress_file = "session_progress.json"
+
+        progress = {
+            "saved_at": datetime.utcnow().isoformat(),
+            "task": task_desc,
+            "last_tests": [],
+            "notes": []
+        }
+
+        # Load existing test results if available
+        for test_file in ["test_results.json", "test_simple_results.json", "test_complex_results.json", "test_routing_results.json", "test_all_results.json"]:
+            if os.path.exists(test_file):
+                try:
+                    with open(test_file) as f:
+                        data = json.load(f)
+                        progress["last_tests"].append({"file": test_file, "data": data})
+                except:
+                    pass
+
+        # Save
+        with open(progress_file, "w") as f:
+            json.dump(progress, f, indent=2, default=str)
+
+        print(f"\n[SAVE-PROGRESS] Session progress saved")
+        print(f"  Task: {task_desc}")
+        print(f"  Tests saved: {len(progress['last_tests'])}")
+        print(f"  File: {progress_file}")
+
+    elif command == "resume":
+        # Show saved progress
+        progress_file = "session_progress.json"
+
+        if not os.path.exists(progress_file):
+            print("\n[RESUME] No saved progress found")
+            print("  Use 'save-progress \"task description\"' to save your progress")
+            return
+
+        with open(progress_file) as f:
+            progress = json.load(f)
+
+        print("\n[RESUME] Previous Session Progress")
+        print("-" * 60)
+        print(f"  Saved: {progress.get('saved_at', 'Unknown')}")
+        print(f"  Task: {progress.get('task', 'No description')}")
+
+        if progress.get("last_tests"):
+            print(f"\n  Last Test Results:")
+            for t in progress["last_tests"]:
+                test_data = t.get("data", {})
+                if "test" in test_data:
+                    status = "PASSED" if test_data.get("passed") else "FAILED"
+                    print(f"    - {test_data['test']}: {status}")
+                elif "tests" in test_data:
+                    # test-all results
+                    for sub in test_data["tests"]:
+                        status = "PASSED" if sub.get("passed") else "FAILED"
+                        print(f"    - {sub['name']}: {status}")
+
+        print("\n  Recommendation: Continue where you left off")
 
     else:
         print(f"Unknown command: {command}")
