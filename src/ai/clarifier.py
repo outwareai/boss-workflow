@@ -1215,3 +1215,138 @@ Make questions conversational and intelligent, like a senior developer or produc
         for q in conversation.questions_asked:
             if q.answer is None:
                 q.skipped = True
+
+    async def extract_modification_details(
+        self,
+        message: str,
+        current_task: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Extract task modification details from a message.
+
+        Uses AI to intelligently determine what should be changed.
+        """
+        import json
+
+        prompt = f"""Extract task modification details from this message:
+
+MESSAGE: "{message}"
+
+CURRENT TASK:
+Title: {current_task.get('title', 'N/A')}
+Description: {current_task.get('description', 'N/A')}
+
+What should be changed? Return JSON:
+{{
+    "new_title": "new title if changing (null if not changing)",
+    "new_description": "new description if changing (null if not changing)",
+    "change_type": "title/description/both"
+}}
+
+If the message says "change title to X", extract X as new_title.
+If the message says "update description to Y", extract Y as new_description.
+Return null for fields that aren't being changed.
+"""
+
+        try:
+            response = await self.ai.client.chat.completions.create(
+                model=self.ai.model,
+                messages=[
+                    {"role": "system", "content": "Extract task modification details. Return ONLY valid JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=300
+            )
+
+            content = response.choices[0].message.content.strip()
+
+            # Clean up response if it has markdown
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+
+            result = json.loads(content)
+
+            # Remove null values
+            result = {k: v for k, v in result.items() if v is not None and v != "null"}
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error extracting modification details: {e}")
+            return {}
+
+    async def parse_deadline(self, message: str) -> Optional[str]:
+        """
+        Parse deadline from natural language.
+
+        Examples:
+        - "tomorrow" → next day's date
+        - "next Friday" → upcoming Friday's date
+        - "in 3 days" → date 3 days from now
+        - "Friday" → upcoming Friday
+        """
+        import json
+        from datetime import datetime, timedelta
+
+        today = datetime.now()
+
+        # Calculate example dates for the prompt
+        tomorrow = today + timedelta(days=1)
+        in_3_days = today + timedelta(days=3)
+
+        # Find next Friday
+        days_until_friday = (4 - today.weekday()) % 7
+        if days_until_friday == 0:
+            days_until_friday = 7
+        next_friday = today + timedelta(days=days_until_friday)
+
+        prompt = f"""Extract deadline from this message: "{message}"
+
+Today is {today.strftime('%A, %Y-%m-%d')}.
+
+Return the deadline in YYYY-MM-DD format. Examples:
+- "tomorrow" → {tomorrow.strftime('%Y-%m-%d')}
+- "next Friday" → {next_friday.strftime('%Y-%m-%d')}
+- "in 3 days" → {in_3_days.strftime('%Y-%m-%d')}
+- "Friday" → {next_friday.strftime('%Y-%m-%d')}
+- "2026-02-15" → 2026-02-15
+- "Feb 15" → 2026-02-15
+
+If no deadline is mentioned, return null.
+Return ONLY the date in YYYY-MM-DD format or null. No other text.
+"""
+
+        try:
+            response = await self.ai.client.chat.completions.create(
+                model=self.ai.model,
+                messages=[
+                    {"role": "system", "content": "Parse dates from natural language. Return ONLY the date or null."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=50
+            )
+
+            result = response.choices[0].message.content.strip()
+
+            # Clean up response
+            result = result.replace('"', '').replace("'", "")
+
+            if result.lower() == "null" or not result:
+                return None
+
+            # Validate it's a proper date format
+            try:
+                datetime.strptime(result, "%Y-%m-%d")
+                return result
+            except ValueError:
+                logger.warning(f"AI returned invalid date format: {result}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error parsing deadline: {e}")
+            return None

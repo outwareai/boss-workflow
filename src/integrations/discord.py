@@ -1293,6 +1293,66 @@ class DiscordIntegration:
         """
         return await self.post_general_message(content, role_category=role_category)
 
+    async def post_task_update(
+        self,
+        task_id: str,
+        updates: Dict[str, str],
+        updated_by: str,
+        update_type: str,
+        role_category: RoleCategory = RoleCategory.DEV
+    ) -> bool:
+        """
+        Post task update notification to Discord with rich formatting.
+
+        Args:
+            task_id: The task ID being updated
+            updates: Dict of field -> value changes (e.g. {"priority": "high -> urgent"})
+            updated_by: Who made the update
+            update_type: Type of update (modification, reassignment, etc.)
+            role_category: Which role category's channel to post to
+
+        Returns:
+            True if posted successfully
+        """
+        # Update type to emoji mapping
+        update_emoji = {
+            "modification": "✏️",
+            "reassignment": "👤",
+            "priority_change": "⚡",
+            "deadline_change": "📅",
+            "status_change": "🔄",
+            "tags_added": "🏷️",
+            "tags_removed": "🏷️",
+            "subtask_added": "➕",
+            "subtask_completed": "✅",
+            "dependency_added": "🔗",
+            "dependency_removed": "🔓",
+        }
+
+        emoji = update_emoji.get(update_type, "📝")
+
+        # Format changes as embed fields
+        changes_text = "\n".join([f"**{k}:** {v}" for k, v in updates.items()])
+
+        embed = {
+            "title": f"{emoji} Task Updated: {task_id}",
+            "description": changes_text,
+            "color": 3447003,  # Blue
+            "footer": {
+                "text": f"Updated by {updated_by}"
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Post to tasks channel
+        tasks_channel_id = self._get_channel_id(ChannelType.TASKS, role_category)
+        if not tasks_channel_id:
+            logger.warning(f"No tasks channel configured for {role_category}")
+            return False
+
+        message_id = await self.send_message(tasks_channel_id, embed=embed)
+        return message_id is not None
+
     async def post_help(self, role_category: RoleCategory = RoleCategory.DEV) -> bool:
         """Post a help message with reaction guide and available commands."""
         general_channel_id = self._get_channel_id(ChannelType.GENERAL, role_category)

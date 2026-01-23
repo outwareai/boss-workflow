@@ -3104,28 +3104,17 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if not task:
             return f"❌ Task {task_id} not found.", None
 
-        # Try to extract what to change from message
-        new_title = None
-        new_description = None
-
-        # Simple pattern matching for common phrases
-        if "change title" in message.lower() or "rename" in message.lower():
-            # Extract new title after "to"
-            match = re.search(r'to\s+["\']?(.+?)["\']?\s*$', message, re.IGNORECASE)
-            if match:
-                new_title = match.group(1).strip('"\' ')
-
-        if "update description" in message.lower() or "change description" in message.lower():
-            # Extract new description after "to"
-            match = re.search(r'to\s+["\']?(.+?)["\']?\s*$', message, re.IGNORECASE)
-            if match:
-                new_description = match.group(1).strip('"\' ')
+        # Use AI to extract what to change
+        modification = await self.clarifier.extract_modification_details(
+            message=message,
+            current_task=task
+        )
 
         updates = {}
-        if new_title:
-            updates["title"] = new_title
-        if new_description:
-            updates["description"] = new_description
+        if modification.get("new_title"):
+            updates["title"] = modification["new_title"]
+        if modification.get("new_description"):
+            updates["description"] = modification["new_description"]
 
         if not updates:
             return f"What would you like to change about {task_id}? (e.g., 'change title to \"New Title\"')", None
@@ -3138,8 +3127,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
 
             # Post to Discord
             changes_text = ", ".join([f"{k} updated" for k in updates.keys()])
-            await self.discord.post_simple_message(
-                f"✏️ Task Updated: {task_id}\n{changes_text}\nUpdated by {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={k: "updated" for k in updates.keys()},
+                updated_by=user_name,
+                update_type="modification"
             )
 
             return f"✅ Updated {task_id}: {changes_text}", None
@@ -3252,22 +3244,9 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if not task:
             return f"❌ Task {task_id} not found.", None
 
-        # If deadline not extracted, try to parse from message
+        # If deadline not extracted, use AI to parse from message
         if not new_deadline:
-            # Simple date extraction patterns
-            from datetime import datetime, timedelta
-
-            if "tomorrow" in message.lower():
-                new_deadline = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-            elif "next week" in message.lower():
-                new_deadline = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-            elif "friday" in message.lower():
-                # Find next Friday
-                today = datetime.now()
-                days_ahead = 4 - today.weekday()  # Friday is 4
-                if days_ahead <= 0:
-                    days_ahead += 7
-                new_deadline = (today + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+            new_deadline = await self.clarifier.parse_deadline(message)
 
         if not new_deadline:
             return f"What's the new deadline for {task_id}? (e.g., 'tomorrow', 'next Friday', '2026-02-01')", None
@@ -3280,8 +3259,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if success:
             await self.sheets.update_task(task_id, updates)
 
-            await self.discord.post_simple_message(
-                f"📅 Deadline Changed: {task_id}\n{old_deadline} → {new_deadline}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"deadline": f"{old_deadline} → {new_deadline}"},
+                updated_by=user_name,
+                update_type="deadline_change"
             )
 
             return f"✅ Updated {task_id} deadline: {new_deadline}", None

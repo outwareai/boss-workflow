@@ -382,12 +382,15 @@ The bot now understands comprehensive task modifications through conversational 
 | | "break TASK-002 into multiple tasks" |
 
 **How It Works:**
-1. **AI-Powered:** DeepSeek AI detects intent and extracts task details
-2. **Context-Aware:** Can reference "this task" in ongoing conversations
-3. **Flexible Phrasing:** Natural language works - no rigid syntax
-4. **Auto-Sync:** Changes sync to PostgreSQL, Google Sheets, and Discord
-5. **Audit Trail:** All changes logged with user and timestamp
-6. **Discord Notifications:** Team sees updates in real-time
+1. **AI-Powered Extraction:** DeepSeek AI intelligently extracts modifications and parses natural language dates
+   - `clarifier.extract_modification_details()` - Understands title/description changes
+   - `clarifier.parse_deadline()` - Parses "tomorrow", "next Friday", "in 3 days", etc.
+2. **Intent Detection:** Automatic classification of 13 task operation types
+3. **Context-Aware:** Can reference "this task" in ongoing conversations
+4. **Flexible Phrasing:** Natural language works - no rigid syntax
+5. **Auto-Sync:** Changes sync to PostgreSQL, Google Sheets, and Discord
+6. **Audit Trail:** All changes logged with user and timestamp
+7. **Rich Discord Notifications:** Structured embeds with emoji indicators per update type
 
 **Valid Task Statuses:**
 - `pending` - Not started
@@ -411,9 +414,11 @@ The bot now understands comprehensive task modifications through conversational 
 - `low` 🟢 - When time permits
 
 **Implementation Details:**
-- **Intent Detection:** `src/ai/intent.py` (13 new intents)
-- **Handlers:** `src/bot/handler.py` (13 new handler methods)
-- **Repository:** `src/database/repositories/tasks.py`
+- **Intent Detection:** `src/ai/intent.py` (13 new intents + pattern pre-detection)
+- **Handlers:** `src/bot/handler.py` (13 handler methods with AI-powered extraction)
+- **AI Helpers:** `src/ai/clarifier.py` (extract_modification_details, parse_deadline)
+- **Repository:** `src/database/repositories/tasks.py` (add_subtask, complete_subtask, add/remove_dependency)
+- **Discord Notifications:** `src/integrations/discord.py` (post_task_update with embeds)
 - **Discord:** `src/integrations/discord.py` (post_simple_message)
 - **Sheets Sync:** `src/integrations/sheets.py`
 

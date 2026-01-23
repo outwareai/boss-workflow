@@ -1,0 +1,71 @@
+{
+  "input": "Build a complete analytics dashboard with real-time charts, user tracking, and data export functionality",
+  "timestamp": "2026-01-23T10:45:45.241936",
+  "steps": [
+    {
+      "step": "baseline",
+      "tasks": 5
+    },
+    {
+      "step": "send",
+      "status": 200
+    },
+    {
+      "step": "logs",
+      "responses": 0
+    },
+    {
+      "step": "discord",
+      "messages": 0
+    },
+    {
+      "step": "tasks",
+      "created": false
+    }
+  ],
+  "tasks_before": 5,
+  "webhook_response": {
+    "status": 200,
+    "response": {
+      "ok": true
+    },
+    "message_sent": "Build a complete analytics dashboard with real-time charts, user tracking, and data export functionality"
+  },
+  "railway_logs": [
+    "Error reading logs: [WinError 2] The system cannot find the file specified"
+  ],
+  "bot_responses": [],
+  "discord_messages": [],
+  "discord_threads": [],
+  "tasks_after": 5,
+  "new_tasks": [
+    {
+      "id": "TASK-20260123-C3B",
+      "title": "Build a complete notification system with email, SMS, push notifications, and real-time websocket integration for the entire platform",
+      "status": "pending",
+      "priority": "medium",
+      "assignee": null,
+      "deadline": null,
+      "created_at": "2026-01-23T10:29:53.115934"
+    },
+    {
+      "id": "TASK-20260123-D2B",
+      "title": "Schedule team meeting for Monday",
+      "status": "pending",
+      "priority": "medium",
+      "assignee": "Zea",
+      "deadline": null,
+      "created_at": "2026-01-23T10:28:02.976022"
+    },
+    {
+      "id": "TASK-20260123-6CB",
+      "title": "Fix login typo",
+      "status": "pending",
+      "priority": "medium",
+      "assignee": "Mayank",
+      "deadline": null,
+      "created_at": "2026-01-23T10:26:37.958899"
+    }
+  ],
+  "task_created": false
+}
