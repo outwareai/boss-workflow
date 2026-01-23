@@ -287,6 +287,12 @@ class UnifiedHandler:
             elif msg_lower in ["yes", "y", "ok", "confirm", "create", "looks good", "lgtm", "good", "perfect"]:
                 return await self._finalize_task(active_conv, user_id)
 
+            # FALLBACK: Any other message in PREVIEW stage is likely a correction attempt
+            # Don't let it fall through to intent detection (which might classify as new task)
+            else:
+                logger.info(f"PREVIEW stage fallback: treating '{message[:30]}...' as correction")
+                return await self._handle_task_correction(user_id, active_conv, message, user_name)
+
         # Store recent message for "create that task" type references
         # Only store substantive messages (not simple confirmations)
         simple_responses = ["yes", "y", "no", "n", "ok", "confirm", "cancel", "stop", "skip",
