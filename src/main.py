@@ -799,9 +799,8 @@ async def clear_all_conversations(auth: dict):
         if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
             return {"status": "error", "error": "Unauthorized"}
 
-        from .memory.context import ConversationContext
-        context = ConversationContext()
-        await context.connect()
+        # Use the singleton context instance (already connected)
+        context = get_conversation_context()
 
         # Get all active conversation keys
         active_keys = await context._store_scan("active_conversation:*")
