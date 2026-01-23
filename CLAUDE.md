@@ -432,109 +432,287 @@ blocking = await task_repo.get_blocking_tasks("TASK-001")
 
 ---
 
-## MANDATORY: Development Workflow
+## ULTIMATE WORKFLOW: Automatic Agent Orchestration
 
-### Step 1: Brainstorm (ALWAYS ASK USER)
+### How It Works
 
-When presenting approaches after brainstorming:
-1. Present 2-4 distinct approaches
-2. **Recommend based on BEST solution, not simplest**
-3. Consider: scalability, maintainability, completeness
-4. **ALWAYS ASK USER which approach** before implementing
+Claude AUTOMATICALLY detects task type and uses the right orchestration - no manual `/commands` needed.
 
 ```
-Example - GOOD:
-"Here are 3 approaches:
-A) Quick fix (simplest)
-B) Moderate refactor
-C) Full redesign (RECOMMENDED - most robust, future-proof)
-
-Which approach would you like?"
-
-Example - BAD:
-"Here are 3 approaches... Proceeding with recommended option."
-← WRONG: Didn't ask user!
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         TASK RECEIVED                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 0: AUTO-DETECT TASK TYPE                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Simple fix (1-2 lines)?      ──→ QUICK PATH (direct fix + deploy)          │
+│  Bug with unclear cause?      ──→ /systematic-debugging first               │
+│  New feature?                 ──→ /feature-dev (full 7-phase)               │
+│  Have a plan to execute?      ──→ /subagent-driven-development              │
+│  Multiple independent parts?  ──→ /dispatching-parallel-agents              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Step 2: Implement with Testing
+---
 
-Use `test_full_loop.py` for real-world testing:
+### QUICK PATH (Simple Fixes)
 
-**Basic Commands:**
+**Auto-triggered when:** 1-2 line fix, typo, obvious bug
+
+```
+Fix → Commit → Push → Wait 30s → Verify health → Done
+```
+
+No brainstorming, no agents, just fix and verify.
+
+---
+
+### STANDARD PATH (Most Tasks)
+
+**Auto-triggered when:** Feature, refactor, multi-file change
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 1: UNDERSTAND                                                        │
+│  /brainstorming automatically triggered                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Generate 2-4 approaches                                                  │
+│  • Recommend BEST (not simplest)                                            │
+│  • ASK USER which approach ← MANDATORY                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 2: PLAN                                                              │
+│  /writing-plans automatically triggered                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Create detailed implementation plan                                      │
+│  • Break into discrete tasks                                                │
+│  • Identify files to change                                                 │
+│  • Set checkpoints                                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 3: IMPLEMENT (Auto-choose orchestration)                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─ IF 2+ independent tasks ─────────────────────────────────────────────┐  │
+│  │  /dispatching-parallel-agents                                         │  │
+│  │                                                                       │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                   │  │
+│  │  │  Agent 1    │  │  Agent 2    │  │  Agent 3    │  ← RUN PARALLEL   │  │
+│  │  │  Task A     │  │  Task B     │  │  Task C     │                   │  │
+│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                   │  │
+│  │         └────────────────┴────────────────┘                          │  │
+│  │                          │                                            │  │
+│  │                   Integrate results                                   │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ┌─ IF sequential dependencies ──────────────────────────────────────────┐  │
+│  │  /subagent-driven-development                                         │  │
+│  │                                                                       │  │
+│  │  For EACH task in plan:                                               │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
+│  │  │ 1. Implementer Agent → writes code                              │ │  │
+│  │  │ 2. Spec Reviewer Agent → checks requirements met                │ │  │
+│  │  │ 3. Quality Reviewer Agent → checks code quality                 │ │  │
+│  │  │ 4. AUTO-DEPLOY + TEST ← after each task, not just at end!       │ │  │
+│  │  └─────────────────────────────────────────────────────────────────┘ │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 4: VERIFY (After EACH agent task)                                    │
+│  /verification-before-completion automatically triggered                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Commit changes: git add -A && git commit -m "feat: ..."                  │
+│  • Push: git push origin master                                             │
+│  • Wait 30s for Railway deploy                                              │
+│  • Test: python test_conversation.py --verbose                              │
+│  • Check logs: railway logs -s boss-workflow | tail -30                     │
+│  • IF FAIL → fix and repeat (don't proceed to next task)                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 5: REVIEW (After all tasks complete)                                 │
+│  /requesting-code-review automatically triggered                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  5 Reviewer Agents (parallel):                                              │
+│  • Security reviewer                                                        │
+│  • Performance reviewer                                                     │
+│  • Code style reviewer                                                      │
+│  • Architecture reviewer                                                    │
+│  • Test coverage reviewer                                                   │
+│                                                                             │
+│  → Address any issues found                                                 │
+│  → Re-deploy and test after fixes                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 6: COMPLETE                                                          │
+│  /finishing-a-development-branch automatically triggered                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Update FEATURES.md                                                       │
+│  • Final commit                                                             │
+│  • End-of-workflow summary (see below)                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### DEBUGGING PATH
+
+**Auto-triggered when:** Bug report, test failure, unexpected behavior
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  /systematic-debugging automatically triggered                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  1. Reproduce the issue                                                     │
+│  2. Gather evidence (logs, state, errors)                                   │
+│  3. Form hypothesis                                                         │
+│  4. Test hypothesis                                                         │
+│  5. Fix root cause (not symptoms)                                           │
+│  6. Verify fix works                                                        │
+│  7. Add regression test                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+            THEN → QUICK PATH (deploy fix)
+```
+
+---
+
+### FEATURE-DEV PATH (Major Features)
+
+**Auto-triggered when:** "Build X", "Add new Y system", major new functionality
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  /feature-dev automatically triggered (7 phases, up to 9 agents)            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Phase 1: Discovery                                                         │
+│     └→ Clarify requirements with user                                       │
+│                                                                             │
+│  Phase 2: Codebase Exploration                                              │
+│     └→ 2-3 Explorer Agents (parallel) find patterns, similar code           │
+│                                                                             │
+│  Phase 3: Clarifying Questions                                              │
+│     └→ Ask user about edge cases, scope, preferences                        │
+│                                                                             │
+│  Phase 4: Architecture Design                                               │
+│     └→ 2-3 Architect Agents (parallel) propose different approaches         │
+│     └→ Present options, get user choice                                     │
+│                                                                             │
+│  Phase 5: Implementation                                                    │
+│     └→ Build the feature following chosen architecture                      │
+│     └→ Deploy + test after each component                                   │
+│                                                                             │
+│  Phase 6: Quality Review                                                    │
+│     └→ 3 Reviewer Agents (parallel) check quality                           │
+│     └→ Fix issues, re-test                                                  │
+│                                                                             │
+│  Phase 7: Summary                                                           │
+│     └→ Document what was built                                              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Auto-Detection Rules
+
+| Task Pattern | Auto-Triggers |
+|--------------|---------------|
+| "fix typo", "change X to Y" | QUICK PATH |
+| "bug", "broken", "not working", "error" | DEBUGGING PATH |
+| "build", "create", "add new", "implement" | FEATURE-DEV PATH |
+| Multi-part task, plan exists | STANDARD PATH with parallel/subagents |
+| Unclear scope | /brainstorming first |
+
+---
+
+### Test Commands Reference
+
 ```bash
-python test_full_loop.py send "message"         # Send to bot
-python test_full_loop.py respond "yes"          # Answer confirmation
-python test_full_loop.py read-telegram          # See bot responses
-python test_full_loop.py read-discord           # See Discord output
-python test_full_loop.py read-tasks             # See database tasks
-python test_full_loop.py full-test "message"    # Complete test cycle
+# Real conversation test (recommended)
+python test_conversation.py --verbose
+
+# Quick validation
+python test_full_loop.py test-all
+
+# Individual tests
+python test_full_loop.py test-simple      # Simple task flow
+python test_full_loop.py test-complex     # Complex task with questions
+python test_full_loop.py test-routing     # Role-based routing
+
+# Deployment verification
+python test_full_loop.py verify-deploy    # Health check
+python test_full_loop.py check-logs       # Error scan
+railway logs -s boss-workflow | tail -30  # Live logs
 ```
 
-**Specialized Tests (v2.3):**
-```bash
-python test_full_loop.py test-simple            # Test simple task (no questions)
-python test_full_loop.py test-complex           # Test complex task (with questions)
-python test_full_loop.py test-routing           # Test Mayank→DEV, Zea→ADMIN routing
-python test_full_loop.py test-all               # Run all 3 tests in sequence
-```
+---
 
-**Pre/Post Deployment:**
-```bash
-python test_full_loop.py verify-deploy          # Check Railway health after deploy
-python test_full_loop.py check-logs             # Quick check for errors in logs
-```
+### End-of-Workflow Summary (REQUIRED)
 
-**Session Continuity:**
-```bash
-python test_full_loop.py save-progress "task"   # Save current progress
-python test_full_loop.py resume                 # Show saved progress
-```
+**At the end of EVERY task, provide:**
 
-### Step 3: Deploy and Verify
-
-After implementation:
-1. Commit and push: `git add . && git commit -m "feat: description" && git push`
-2. Wait for Railway auto-deploy (or manual: `railway redeploy -s boss-workflow --yes`)
-3. Verify deployment: `python test_full_loop.py verify-deploy`
-4. Run tests: `python test_full_loop.py test-all`
-5. Check logs if issues: `python test_full_loop.py check-logs`
-
-### Step 4: End-of-Workflow Summary (REQUIRED)
-
-**At the end of EVERY significant task, provide a clear summary covering:**
-
-1. **What was implemented** - Describe each feature/change made and which files were modified
-
-2. **What was tested** - List the tests run and their results (passed/failed)
-
-3. **Commits made** - List commit hashes and messages
-
-4. **Status** - Is the task complete, partial, or blocked?
-
-5. **Next steps** - If anything remains to be done
+1. **What was implemented** - Features/changes and files modified
+2. **Agents used** - Which orchestration path, how many agents
+3. **What was tested** - Tests run and results
+4. **Commits made** - Hashes and messages
+5. **Status** - Complete, partial, or blocked
+6. **Next steps** - If anything remains
 
 **Example:**
 
-> **Task Complete: v2.2 Smart AI Upgrade**
+> **Task Complete: Notification System**
 >
 > **Implemented:**
-> I added complexity detection to `clarifier.py` that scores tasks 1-10 based on keywords like "fix" (simple) vs "build system" (complex). Simple tasks now skip questions entirely, while complex tasks ask 1-2 fallback questions even if AI self-answered. Also added role-based routing in `discord.py` so Mayank's tasks go to DEV channel and Zea's go to ADMIN channel.
+> Built email + SMS notification system across 4 files: `notifications.py` (core), `email_sender.py`, `sms_sender.py`, `handler.py` (integration).
+>
+> **Agents Used:**
+> - FEATURE-DEV PATH (7 phases)
+> - 2 Explorer agents (found existing email patterns)
+> - 2 Architect agents (chose async queue approach)
+> - 3 Reviewer agents (security, performance, style)
+> - Total: 7 agents
 >
 > **Tested:**
-> Ran 3 tests with `test_full_loop.py`:
-> - Simple task "fix login typo" - PASSED (complexity=1, no questions)
-> - Admin task for Zea - PASSED (routed to ADMIN channel)
-> - Complex task "build notification system" - PASSED (complexity=9, asked 2 questions)
+> - test_conversation.py: PASSED (notification triggers correctly)
+> - test_full_loop.py test-all: 3/3 PASSED
+> - Manual Telegram test: PASSED
 >
 > **Commits:**
-> - `4faed9b`: feat(ai): v2.2 Smart AI - complexity detection and role-aware routing
-> - `2fe6513`: docs(features): document v2.2 features
+> - `abc1234`: feat(notify): Add notification service core
+> - `def5678`: feat(notify): Add email and SMS senders
+> - `ghi9012`: feat(notify): Integrate with handler
 >
 > **Status:** Complete
 >
-> **Next steps:** None - ready for production use
+> **Next steps:** None
 
-**This summary is MANDATORY - never skip it!**
+---
+
+### Key Rules
+
+1. **Always ask user** before implementing (after brainstorming)
+2. **Deploy + test after EACH task**, not just at the end
+3. **Don't proceed** if tests fail - fix first
+4. **Use parallel agents** when tasks are independent
+5. **Use sequential agents** when tasks depend on each other
+6. **Summary is mandatory** - never skip it
 
 ---
 
