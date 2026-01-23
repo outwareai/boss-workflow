@@ -7,7 +7,7 @@ FastAPI application with webhook endpoints and background scheduler.
 import logging
 import sys
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Depends
