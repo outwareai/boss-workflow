@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import json
+import asyncio
 
 import httpx
 from google.oauth2.credentials import Credentials as UserCredentials
@@ -78,7 +79,10 @@ class GoogleTasksIntegration:
         """Get existing tasklist or create new one."""
         try:
             # List all tasklists
-            results = self.service.tasklists().list().execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(self.service.tasklists().list().execute),
+                timeout=30.0
+            )
             tasklists = results.get('items', [])
 
             # Find existing
@@ -87,9 +91,10 @@ class GoogleTasksIntegration:
                     return tl.get('id')
 
             # Create new
-            new_list = self.service.tasklists().insert(
-                body={'title': name}
-            ).execute()
+            new_list = await asyncio.wait_for(
+                asyncio.to_thread(self.service.tasklists().insert(body={'title': name}).execute),
+                timeout=30.0
+            )
 
             logger.info(f"Created tasklist: {name}")
             return new_list.get('id')
@@ -124,10 +129,10 @@ class GoogleTasksIntegration:
                 task_body['due'] = task.deadline.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
             # Create task
-            result = self.service.tasks().insert(
-                tasklist=self.tasklist_id,
-                body=task_body
-            ).execute()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(self.service.tasks().insert(tasklist=self.tasklist_id, body=task_body).execute),
+                timeout=30.0
+            )
 
             google_task_id = result.get('id')
             logger.info(f"Created Google Task: {task.id} -> {google_task_id}")
@@ -167,11 +172,10 @@ class GoogleTasksIntegration:
         try:
             status = 'completed' if completed else 'needsAction'
 
-            self.service.tasks().patch(
-                tasklist=self.tasklist_id,
-                task=google_task_id,
-                body={'status': status}
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(self.service.tasks().patch(tasklist=self.tasklist_id, task=google_task_id, body={'status': status}).execute),
+                timeout=30.0
+            )
 
             logger.info(f"Updated Google Task {google_task_id} status: {status}")
             return True
@@ -186,10 +190,10 @@ class GoogleTasksIntegration:
             return False
 
         try:
-            self.service.tasks().delete(
-                tasklist=self.tasklist_id,
-                task=google_task_id
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(self.service.tasks().delete(tasklist=self.tasklist_id, task=google_task_id).execute),
+                timeout=30.0
+            )
 
             logger.info(f"Deleted Google Task: {google_task_id}")
             return True
@@ -204,10 +208,10 @@ class GoogleTasksIntegration:
             return []
 
         try:
-            results = self.service.tasks().list(
-                tasklist=self.tasklist_id,
-                showCompleted=False
-            ).execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(self.service.tasks().list(tasklist=self.tasklist_id, showCompleted=False).execute),
+                timeout=30.0
+            )
 
             return results.get('items', [])
 
@@ -233,7 +237,10 @@ class GoogleTasksIntegration:
             if since:
                 params['completedMin'] = since.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
-            results = self.service.tasks().list(**params).execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(self.service.tasks().list(**params).execute),
+                timeout=30.0
+            )
 
             # Filter to only completed
             return [
@@ -376,7 +383,10 @@ class GoogleTasksIntegration:
         """Get or create a tasklist for the user."""
         try:
             # List all tasklists
-            results = service.tasklists().list().execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(service.tasklists().list().execute),
+                timeout=30.0
+            )
             tasklists = results.get('items', [])
 
             # Find existing
@@ -385,9 +395,10 @@ class GoogleTasksIntegration:
                     return tl.get('id')
 
             # Create new
-            new_list = service.tasklists().insert(
-                body={'title': list_name}
-            ).execute()
+            new_list = await asyncio.wait_for(
+                asyncio.to_thread(service.tasklists().insert(body={'title': list_name}).execute),
+                timeout=30.0
+            )
 
             logger.info(f"Created tasklist '{list_name}' for user")
             return new_list.get('id')
@@ -435,10 +446,10 @@ class GoogleTasksIntegration:
                 task_body['due'] = task.deadline.strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
             # Create task
-            result = service.tasks().insert(
-                tasklist=tasklist_id,
-                body=task_body
-            ).execute()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(service.tasks().insert(tasklist=tasklist_id, body=task_body).execute),
+                timeout=30.0
+            )
 
             google_task_id = result.get('id')
             logger.info(f"Created Google Task for {user_email}: {task.id} -> {google_task_id}")

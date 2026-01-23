@@ -4,6 +4,7 @@ Google Calendar integration for task deadlines and reminders.
 Creates calendar events for tasks with deadlines and sends reminders.
 """
 
+import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional, List
@@ -107,10 +108,13 @@ class GoogleCalendarIntegration:
             event = self._build_event_body(task)
 
             # Create the event on assignee's calendar
-            result = self.service.events().insert(
-                calendarId=target_calendar,
-                body=event
-            ).execute()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(self.service.events().insert(
+                    calendarId=target_calendar,
+                    body=event
+                ).execute),
+                timeout=30.0
+            )
 
             event_id = result.get('id')
             logger.info(f"Created calendar event {event_id} for task {task.id} on calendar {target_calendar}")
@@ -155,11 +159,14 @@ class GoogleCalendarIntegration:
 
             event = self._build_event_body(task)
 
-            self.service.events().update(
-                calendarId=target_calendar,
-                eventId=task.google_calendar_event_id,
-                body=event
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(self.service.events().update(
+                    calendarId=target_calendar,
+                    eventId=task.google_calendar_event_id,
+                    body=event
+                ).execute),
+                timeout=30.0
+            )
 
             logger.info(f"Updated calendar event for task {task.id}")
             return True
@@ -181,10 +188,13 @@ class GoogleCalendarIntegration:
             return False
 
         try:
-            self.service.events().delete(
-                calendarId=self.calendar_id,
-                eventId=event_id
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(self.service.events().delete(
+                    calendarId=self.calendar_id,
+                    eventId=event_id
+                ).execute),
+                timeout=30.0
+            )
 
             logger.info(f"Deleted calendar event {event_id}")
             return True
@@ -208,14 +218,17 @@ class GoogleCalendarIntegration:
             now = datetime.utcnow()
             time_max = now + timedelta(hours=hours)
 
-            events_result = self.service.events().list(
-                calendarId=self.calendar_id,
-                timeMin=now.isoformat() + 'Z',
-                timeMax=time_max.isoformat() + 'Z',
-                singleEvents=True,
-                orderBy='startTime',
-                q='[TASK]'  # Filter by task events
-            ).execute()
+            events_result = await asyncio.wait_for(
+                asyncio.to_thread(self.service.events().list(
+                    calendarId=self.calendar_id,
+                    timeMin=now.isoformat() + 'Z',
+                    timeMax=time_max.isoformat() + 'Z',
+                    singleEvents=True,
+                    orderBy='startTime',
+                    q='[TASK]'  # Filter by task events
+                ).execute),
+                timeout=30.0
+            )
 
             events = events_result.get('items', [])
 
@@ -267,10 +280,13 @@ class GoogleCalendarIntegration:
                 },
             }
 
-            result = self.service.events().insert(
-                calendarId=self.calendar_id,
-                body=event
-            ).execute()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(self.service.events().insert(
+                    calendarId=self.calendar_id,
+                    body=event
+                ).execute),
+                timeout=30.0
+            )
 
             return result.get('id')
 
@@ -290,13 +306,16 @@ class GoogleCalendarIntegration:
             day_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
             day_end = day_start + timedelta(days=1)
 
-            events_result = self.service.events().list(
-                calendarId=self.calendar_id,
-                timeMin=day_start.isoformat() + 'Z',
-                timeMax=day_end.isoformat() + 'Z',
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            events_result = await asyncio.wait_for(
+                asyncio.to_thread(self.service.events().list(
+                    calendarId=self.calendar_id,
+                    timeMin=day_start.isoformat() + 'Z',
+                    timeMax=day_end.isoformat() + 'Z',
+                    singleEvents=True,
+                    orderBy='startTime'
+                ).execute),
+                timeout=30.0
+            )
 
             return events_result.get('items', [])
 

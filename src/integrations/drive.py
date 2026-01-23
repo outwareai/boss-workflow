@@ -7,6 +7,7 @@ Organizes by task/project for easy access.
 
 import logging
 import io
+import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
@@ -90,11 +91,16 @@ class GoogleDriveIntegration:
                 query += f" and '{parent_id}' in parents"
             query += " and trashed=false"
 
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name)'
-            ).execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.files().list(
+                        q=query,
+                        spaces='drive',
+                        fields='files(id, name)'
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             files = results.get('files', [])
             if files:
@@ -108,10 +114,15 @@ class GoogleDriveIntegration:
             if parent_id:
                 file_metadata['parents'] = [parent_id]
 
-            folder = self.service.files().create(
-                body=file_metadata,
-                fields='id'
-            ).execute()
+            folder = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.files().create(
+                        body=file_metadata,
+                        fields='id'
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             logger.info(f"Created folder: {name}")
             return folder.get('id')
@@ -171,11 +182,16 @@ class GoogleDriveIntegration:
 
             # Upload
             media = MediaFileUpload(str(path), mimetype=mime_type, resumable=True)
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id, webViewLink, webContentLink'
-            ).execute()
+            file = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.files().create(
+                        body=file_metadata,
+                        media_body=media,
+                        fields='id, webViewLink, webContentLink'
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             logger.info(f"Uploaded file: {path.name} -> {file.get('id')}")
 
@@ -231,11 +247,16 @@ class GoogleDriveIntegration:
                 mimetype=mime_type,
                 resumable=True
             )
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id, webViewLink, webContentLink'
-            ).execute()
+            file = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.files().create(
+                        body=file_metadata,
+                        media_body=media,
+                        fields='id, webViewLink, webContentLink'
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             logger.info(f"Uploaded bytes as: {filename} -> {file.get('id')}")
 
@@ -273,11 +294,16 @@ class GoogleDriveIntegration:
                 'emailAddress': email
             }
 
-            self.service.permissions().create(
-                fileId=file_id,
-                body=permission,
-                sendNotificationEmail=False
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.permissions().create(
+                        fileId=file_id,
+                        body=permission,
+                        sendNotificationEmail=False
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             logger.info(f"Shared file {file_id} with {email}")
             return True
@@ -300,16 +326,26 @@ class GoogleDriveIntegration:
                 'role': 'reader'
             }
 
-            self.service.permissions().create(
-                fileId=file_id,
-                body=permission
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.permissions().create(
+                        fileId=file_id,
+                        body=permission
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             # Get the web link
-            file = self.service.files().get(
-                fileId=file_id,
-                fields='webViewLink'
-            ).execute()
+            file = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.files().get(
+                        fileId=file_id,
+                        fields='webViewLink'
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             return file.get('webViewLink')
 
@@ -333,11 +369,16 @@ class GoogleDriveIntegration:
                 return []
 
             # List files in folder
-            results = self.service.files().list(
-                q=f"'{folder_id}' in parents and trashed=false",
-                spaces='drive',
-                fields='files(id, name, mimeType, webViewLink, createdTime, size)'
-            ).execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.files().list(
+                        q=f"'{folder_id}' in parents and trashed=false",
+                        spaces='drive',
+                        fields='files(id, name, mimeType, webViewLink, createdTime, size)'
+                    ).execute()
+                ),
+                timeout=30.0
+            )
 
             return results.get('files', [])
 
@@ -351,7 +392,12 @@ class GoogleDriveIntegration:
             return False
 
         try:
-            self.service.files().delete(fileId=file_id).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self.service.files().delete(fileId=file_id).execute()
+                ),
+                timeout=30.0
+            )
             logger.info(f"Deleted file: {file_id}")
             return True
 

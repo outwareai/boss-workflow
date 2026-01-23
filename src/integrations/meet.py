@@ -5,6 +5,7 @@ Creates instant meeting links for task discussions,
 blocked task resolution, or team syncs.
 """
 
+import asyncio
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
@@ -123,12 +124,17 @@ class GoogleMeetIntegration:
                 event['attendees'] = [{'email': email} for email in attendees]
 
             # Create event with conference
-            result = self.service.events().insert(
-                calendarId='primary',
-                body=event,
-                conferenceDataVersion=1,
-                sendUpdates='all' if attendees else 'none'
-            ).execute()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.service.events().insert(
+                        calendarId='primary',
+                        body=event,
+                        conferenceDataVersion=1,
+                        sendUpdates='all' if attendees else 'none'
+                    ).execute
+                ),
+                timeout=30.0
+            )
 
             # Extract Meet link
             meet_link = None
@@ -212,12 +218,17 @@ class GoogleMeetIntegration:
             if attendees:
                 event['attendees'] = [{'email': email} for email in attendees]
 
-            result = self.service.events().insert(
-                calendarId='primary',
-                body=event,
-                conferenceDataVersion=1,
-                sendUpdates='all' if attendees else 'none'
-            ).execute()
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.service.events().insert(
+                        calendarId='primary',
+                        body=event,
+                        conferenceDataVersion=1,
+                        sendUpdates='all' if attendees else 'none'
+                    ).execute
+                ),
+                timeout=30.0
+            )
 
             # Extract Meet link
             meet_link = None
@@ -284,10 +295,15 @@ class GoogleMeetIntegration:
             return False
 
         try:
-            self.service.events().delete(
-                calendarId='primary',
-                eventId=event_id
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.service.events().delete(
+                        calendarId='primary',
+                        eventId=event_id
+                    ).execute
+                ),
+                timeout=30.0
+            )
 
             logger.info(f"Deleted meeting: {event_id}")
             return True

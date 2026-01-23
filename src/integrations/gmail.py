@@ -12,6 +12,7 @@ Supports:
 import logging
 import base64
 import os
+import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -308,11 +309,16 @@ class GmailIntegration:
                 query += " is:unread"
 
             # Fetch message IDs
-            results = self.service.users().messages().list(
-                userId='me',
-                q=query,
-                maxResults=max_results
-            ).execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.service.users().messages().list(
+                        userId='me',
+                        q=query,
+                        maxResults=max_results
+                    ).execute
+                ),
+                timeout=30.0
+            )
 
             messages = results.get('messages', [])
             if not messages:
@@ -344,11 +350,16 @@ class GmailIntegration:
     async def _get_email_details(self, message_id: str) -> Optional[EmailMessage]:
         """Get full details of a single email."""
         try:
-            msg = self.service.users().messages().get(
-                userId='me',
-                id=message_id,
-                format='full'
-            ).execute()
+            msg = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.service.users().messages().get(
+                        userId='me',
+                        id=message_id,
+                        format='full'
+                    ).execute
+                ),
+                timeout=30.0
+            )
 
             # Parse headers
             headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
@@ -451,11 +462,16 @@ class GmailIntegration:
             return 0
 
         try:
-            results = self.service.users().messages().list(
-                userId='me',
-                q='is:unread',
-                maxResults=1
-            ).execute()
+            results = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.service.users().messages().list(
+                        userId='me',
+                        q='is:unread',
+                        maxResults=1
+                    ).execute
+                ),
+                timeout=30.0
+            )
 
             return results.get('resultSizeEstimate', 0)
 
