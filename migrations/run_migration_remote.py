@@ -7,12 +7,21 @@ import os
 
 async def run():
     database_url = os.getenv("DATABASE_URL")
-    
+
     # Remove SQLAlchemy-specific parts from URL
     database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-    
+
+    # Find migration SQL file (works in both local and Railway environments)
+    import pathlib
+    script_dir = pathlib.Path(__file__).parent
+    migration_path = script_dir / "001_add_composite_indexes.sql"
+
+    if not migration_path.exists():
+        # Try /app path for Railway
+        migration_path = pathlib.Path("/app/migrations/001_add_composite_indexes.sql")
+
     # Read migration SQL
-    with open("/app/migrations/001_add_composite_indexes.sql", "r", encoding="utf-8") as f:
+    with open(migration_path, "r", encoding="utf-8") as f:
         migration_sql = f.read()
     
     # Split into statements
