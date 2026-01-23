@@ -58,6 +58,19 @@ DEFAULT_TEAM_MEMBERS: List[Dict[str, Any]] = [
         "max_break": 60,
         "grace_period": 15,
     },
+    {
+        "name": "Zea",
+        "discord_id": "222222222",
+        "email": "zea@example.com",
+        "role": "Admin",
+        "timezone": "Asia/Bangkok",
+        "work_start": "09:00",
+        "work_end": "18:00",
+        "hours_per_day": 8,
+        "hours_per_week": 40,
+        "max_break": 60,
+        "grace_period": 15,
+    },
     # Add more team members as needed:
     # {
     #     "name": "Sarah",

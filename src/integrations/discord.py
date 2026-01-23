@@ -705,7 +705,7 @@ class DiscordIntegration:
             assignee_role = await self.get_assignee_role(task.assignee)
             if assignee_role:
                 role_category = self._get_role_category(assignee_role)
-                logger.info(f"Routing task {task.id} to {role_category.value} channels (assignee: {task.assignee})")
+                logger.info(f"Found role '{assignee_role}' for assignee {task.assignee}")
             else:
                 # v2.2: No role found for assignee, try keyword inference
                 role_category = self._infer_role_from_task_content(task.title, task.description or "")
@@ -714,6 +714,9 @@ class DiscordIntegration:
             # v2.2: No assignee, infer from task content
             role_category = self._infer_role_from_task_content(task.title, task.description or "")
             logger.info(f"v2.2: No assignee, inferred {role_category.value} from task keywords")
+
+        # Log explicit routing decision (for test parsing)
+        logger.info(f"Routing task {task.id} to {role_category.value} channel (assignee: {task.assignee or 'none'})")
 
         # Build the embed
         embed = task.to_discord_embed_dict()
