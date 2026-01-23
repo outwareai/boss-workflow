@@ -94,13 +94,30 @@ TEAM MEMBERS:
 
 {f"CONVERSATION HISTORY:{chr(10)}{conversation_history}" if conversation_history else ""}
 
-CRITICAL RULES:
+CRITICAL RULES (v2.2 SMART MODE):
 1. If an assignee is mentioned (name like "Mayank", "John", etc.), EXTRACT IT - don't ask about it
 2. If a deadline is mentioned ("by tomorrow", "today", "next week"), EXTRACT IT - don't ask about it
 3. If priority signals exist ("urgent", "ASAP", "when you can"), INFER IT - don't ask about it
 4. DEFAULT priority to "medium" if not specified - don't ask unless truly ambiguous
 5. ONLY ask questions if something is TRULY UNCLEAR, not just unspecified
 6. If PRONOUNS used ("him", "her", "them", "he", "she", "they") without a name, you MUST ask who - set assignee to null and add a question
+
+🧠 v2.2 SMART ROLE INFERENCE (when no assignee specified):
+If no assignee is explicitly named, SUGGEST based on task keywords:
+- Code/Bug/API/Database/Deploy/Test tasks → suggest "developer" role
+- Meeting/Schedule/Report/Process/Document tasks → suggest "admin" role
+- Campaign/Social/Content/Email/Influencer tasks → suggest "marketing" role
+- Design/Mockup/UI/Logo/Graphic tasks → suggest "design" role
+
+Add to response: "suggested_role": "developer|admin|marketing|design" when inferring
+
+🎯 v2.2 COMPLEXITY ASSESSMENT:
+Rate task complexity in your response:
+- "simple": Fix typo, update text, small change (1-2 line description)
+- "medium": Add feature, refactor, integrate (clear scope)
+- "complex": Build system, redesign architecture, major migration (needs planning)
+
+Add to response: "complexity": "simple|medium|complex"
 
 ⚠️ PRONOUN HANDLING:
 If the message uses pronouns like "him", "her", "them", "he", "she", "they" WITHOUT explicitly naming the person:
@@ -138,7 +155,9 @@ Respond with JSON:
     }},
     "can_proceed_without_questions": true,
     "urgency_signals": ["any urgency indicators found"],
-    "suggested_questions": []
+    "suggested_questions": [],
+    "complexity": "simple|medium|complex",
+    "suggested_role": "developer|admin|marketing|design (only if no assignee)"
 }}
 
 REMEMBER: The boss is busy. Only ask questions if ABSOLUTELY necessary. Default to proceeding."""

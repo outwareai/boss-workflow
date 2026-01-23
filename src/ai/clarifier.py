@@ -39,6 +39,123 @@ class TaskClarifier:
         # Maximum questions to ask in one round
         self.max_questions_per_round = 3
 
+        # v2.2: Role-based defaults for smarter self-answering
+        self.role_defaults = {
+            "developer": {
+                "task_type": "feature",
+                "priority": "medium",
+                "effort": "4h",
+                "tags": ["dev", "code"],
+            },
+            "admin": {
+                "task_type": "task",
+                "priority": "medium",
+                "effort": "2h",
+                "tags": ["admin", "process"],
+            },
+            "marketing": {
+                "task_type": "task",
+                "priority": "medium",
+                "effort": "3h",
+                "tags": ["marketing", "content"],
+            },
+            "design": {
+                "task_type": "design",
+                "priority": "medium",
+                "effort": "6h",
+                "tags": ["design", "ui"],
+            }
+        }
+
+    def _calculate_task_complexity(self, message: str, analysis: Dict[str, Any]) -> int:
+        """
+        v2.2: Calculate task complexity score (1-10).
+
+        1-3: Simple (fix typo, small change) → No questions
+        4-6: Medium (feature, refactor) → 1-2 critical questions only
+        7-10: Complex (new system, integration) → Full clarification
+        """
+        score = 3  # Base score
+        message_lower = message.lower()
+
+        # Increase for complexity signals
+        complex_keywords = ['system', 'architecture', 'integration', 'design', 'build', 'create', 'implement']
+        if any(word in message_lower for word in complex_keywords):
+            score += 2
+
+        scope_keywords = ['multiple', 'several', 'complex', 'comprehensive', 'complete', 'full']
+        if any(word in message_lower for word in scope_keywords):
+            score += 2
+
+        # Long messages indicate more complexity
+        if len(message) > 300:
+            score += 2
+        elif len(message) > 150:
+            score += 1
+
+        # Multiple items/subtasks
+        if 'subtask' in message_lower or message.count(',') > 4:
+            score += 2
+        elif message.count(',') > 2:
+            score += 1
+
+        # Technical terms
+        tech_keywords = ['api', 'database', 'migration', 'authentication', 'payment', 'notification']
+        if any(word in message_lower for word in tech_keywords):
+            score += 1
+
+        # Decrease for simplicity signals
+        simple_keywords = ['fix', 'typo', 'small', 'quick', 'simple', 'minor', 'update', 'change']
+        if any(word in message_lower for word in simple_keywords):
+            score -= 2
+
+        skip_keywords = ['no questions', 'just do', 'straightforward', 'no need to ask', 'dont ask']
+        if any(phrase in message_lower for phrase in skip_keywords):
+            score -= 3
+
+        # If "no questions" is explicitly said, force simple
+        if 'no question' in message_lower:
+            score = min(score, 3)
+
+        # Clamp to 1-10
+        return max(1, min(10, score))
+
+    def _get_role_defaults(self, assignee: str) -> Dict[str, Any]:
+        """v2.2: Get smart defaults based on assignee's role."""
+        # Try to look up role from team data
+        role = self._lookup_assignee_role(assignee)
+        if not role:
+            return self.role_defaults["developer"]  # Default
+
+        role_lower = role.lower()
+        if any(k in role_lower for k in ["dev", "engineer", "backend", "frontend", "programmer"]):
+            return self.role_defaults["developer"]
+        elif any(k in role_lower for k in ["admin", "manager", "lead", "director", "coordinator"]):
+            return self.role_defaults["admin"]
+        elif any(k in role_lower for k in ["market", "content", "social", "growth", "seo"]):
+            return self.role_defaults["marketing"]
+        elif any(k in role_lower for k in ["design", "ui", "ux", "graphic", "creative"]):
+            return self.role_defaults["design"]
+
+        return self.role_defaults["developer"]
+
+    def _lookup_assignee_role(self, assignee: str) -> Optional[str]:
+        """Look up assignee's role from team configuration."""
+        if not assignee:
+            return None
+
+        try:
+            # Try to get from team config
+            from ..config.team import TEAM_MEMBERS
+            assignee_lower = assignee.lower()
+            for member in TEAM_MEMBERS:
+                if member.get("name", "").lower() == assignee_lower:
+                    return member.get("role", "")
+        except Exception:
+            pass
+
+        return None
+
     def detect_and_apply_template(
         self,
         conversation: ConversationState,
@@ -281,11 +398,43 @@ Only include tasks that are clearly related. Return empty array if no dependenci
                 normalized_questions.append(q)
         analysis["suggested_questions"] = normalized_questions
 
-        # MANDATORY: AI should ALWAYS self-answer and proceed without bothering user
-        # Only ask user in TRULY exceptional cases (which should be almost never)
-        can_proceed = True
-        analysis["suggested_questions"] = []
-        logger.info("Self-answering is MANDATORY - proceeding without user questions")
+        # v2.2: SMART COMPLEXITY-BASED QUESTION LOGIC
+        # Simple tasks → No questions (self-answer)
+        # Medium tasks → 1-2 critical questions only
+        # Complex tasks → Full clarification
+        complexity = self._calculate_task_complexity(
+            conversation.original_message,
+            analysis
+        )
+        analysis["complexity"] = complexity
+        analysis["complexity_level"] = "simple" if complexity <= 3 else "medium" if complexity <= 6 else "complex"
+
+        if complexity <= 3:
+            # Simple task - self-answer everything, no questions
+            can_proceed = True
+            analysis["suggested_questions"] = []
+            logger.info(f"Simple task (complexity={complexity}) - skipping all questions")
+        elif complexity <= 6:
+            # Medium task - ask only critical questions (max 2)
+            critical_questions = self._filter_critical_questions(normalized_questions)[:2]
+            if critical_questions:
+                can_proceed = False
+                analysis["suggested_questions"] = critical_questions
+                logger.info(f"Medium task (complexity={complexity}) - asking {len(critical_questions)} critical questions")
+            else:
+                can_proceed = True
+                analysis["suggested_questions"] = []
+                logger.info(f"Medium task (complexity={complexity}) - no critical questions, proceeding")
+        else:
+            # Complex task - full clarification (max 4 questions)
+            if normalized_questions:
+                can_proceed = False
+                analysis["suggested_questions"] = normalized_questions[:4]
+                logger.info(f"Complex task (complexity={complexity}) - asking {len(analysis['suggested_questions'])} questions")
+            else:
+                can_proceed = True
+                analysis["suggested_questions"] = []
+                logger.info(f"Complex task (complexity={complexity}) - no questions available, proceeding")
 
         # Apply preference overrides (only for non-detailed mode)
         if not detailed_mode:

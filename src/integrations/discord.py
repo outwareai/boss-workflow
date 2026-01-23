@@ -123,6 +123,87 @@ class DiscordIntegration:
 
         return RoleCategory.DEV  # Default to dev
 
+    # v2.2: Task keyword to role mapping for smart routing
+    TASK_KEYWORD_ROLES = {
+        # Dev keywords
+        "bug": RoleCategory.DEV,
+        "fix": RoleCategory.DEV,
+        "code": RoleCategory.DEV,
+        "api": RoleCategory.DEV,
+        "database": RoleCategory.DEV,
+        "deploy": RoleCategory.DEV,
+        "refactor": RoleCategory.DEV,
+        "test": RoleCategory.DEV,
+        "implement": RoleCategory.DEV,
+        "debug": RoleCategory.DEV,
+        "backend": RoleCategory.DEV,
+        "frontend": RoleCategory.DEV,
+        "server": RoleCategory.DEV,
+        "integration": RoleCategory.DEV,
+        # Admin keywords
+        "meeting": RoleCategory.ADMIN,
+        "schedule": RoleCategory.ADMIN,
+        "report": RoleCategory.ADMIN,
+        "document": RoleCategory.ADMIN,
+        "process": RoleCategory.ADMIN,
+        "review": RoleCategory.ADMIN,
+        "approve": RoleCategory.ADMIN,
+        "coordinate": RoleCategory.ADMIN,
+        "organize": RoleCategory.ADMIN,
+        "plan": RoleCategory.ADMIN,
+        # Marketing keywords
+        "campaign": RoleCategory.MARKETING,
+        "social": RoleCategory.MARKETING,
+        "content": RoleCategory.MARKETING,
+        "email": RoleCategory.MARKETING,
+        "influencer": RoleCategory.MARKETING,
+        "seo": RoleCategory.MARKETING,
+        "ads": RoleCategory.MARKETING,
+        "post": RoleCategory.MARKETING,
+        "brand": RoleCategory.MARKETING,
+        "outreach": RoleCategory.MARKETING,
+        # Design keywords
+        "design": RoleCategory.DESIGN,
+        "mockup": RoleCategory.DESIGN,
+        "ui": RoleCategory.DESIGN,
+        "ux": RoleCategory.DESIGN,
+        "logo": RoleCategory.DESIGN,
+        "graphic": RoleCategory.DESIGN,
+        "wireframe": RoleCategory.DESIGN,
+        "prototype": RoleCategory.DESIGN,
+        "visual": RoleCategory.DESIGN,
+    }
+
+    def _infer_role_from_task_content(self, task_title: str, task_description: str = "") -> RoleCategory:
+        """
+        v2.2: Infer the appropriate role category from task content.
+
+        Used when no assignee is specified to route to the right channel.
+        """
+        text = f"{task_title} {task_description}".lower()
+
+        # Count keyword matches for each category
+        role_scores = {
+            RoleCategory.DEV: 0,
+            RoleCategory.ADMIN: 0,
+            RoleCategory.MARKETING: 0,
+            RoleCategory.DESIGN: 0,
+        }
+
+        for keyword, category in self.TASK_KEYWORD_ROLES.items():
+            if keyword in text:
+                role_scores[category] += 1
+
+        # Find category with highest score
+        max_score = max(role_scores.values())
+        if max_score > 0:
+            for category, score in role_scores.items():
+                if score == max_score:
+                    logger.info(f"v2.2: Inferred role {category.value} from task keywords (score: {score})")
+                    return category
+
+        return RoleCategory.DEV  # Default to dev
+
     def _get_channel_id(self, channel_type: ChannelType, role_category: RoleCategory = RoleCategory.DEV) -> Optional[str]:
         """
         Get the channel ID for a given type and role category.
@@ -618,7 +699,7 @@ class DiscordIntegration:
         """
         logger.info(f"post_task called for {task.id}, assignee: {task.assignee}, channel hint: {channel}")
 
-        # Determine role category for routing
+        # Determine role category for routing (v2.2: enhanced with keyword inference)
         role_category = RoleCategory.DEV
         if task.assignee:
             assignee_role = await self.get_assignee_role(task.assignee)
@@ -626,7 +707,13 @@ class DiscordIntegration:
                 role_category = self._get_role_category(assignee_role)
                 logger.info(f"Routing task {task.id} to {role_category.value} channels (assignee: {task.assignee})")
             else:
-                logger.info(f"No role found for {task.assignee}, using default DEV category")
+                # v2.2: No role found for assignee, try keyword inference
+                role_category = self._infer_role_from_task_content(task.title, task.description or "")
+                logger.info(f"v2.2: No role for {task.assignee}, inferred {role_category.value} from task keywords")
+        else:
+            # v2.2: No assignee, infer from task content
+            role_category = self._infer_role_from_task_content(task.title, task.description or "")
+            logger.info(f"v2.2: No assignee, inferred {role_category.value} from task keywords")
 
         # Build the embed
         embed = task.to_discord_embed_dict()
