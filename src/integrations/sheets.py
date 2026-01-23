@@ -7,6 +7,7 @@ Sheet names match setup_sheets.py with emoji prefixes.
 
 import json
 import logging
+import asyncio
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 from collections import Counter
@@ -62,7 +63,7 @@ class GoogleSheetsIntegration:
                 logger.error("No Google credentials configured")
                 return False
 
-            creds_data = json.loads(creds_json)
+            creds_data = await asyncio.to_thread(json.loads, creds_json)
             credentials = Credentials.from_service_account_info(
                 creds_data,
                 scopes=self.SCOPES
