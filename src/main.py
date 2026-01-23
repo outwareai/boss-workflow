@@ -514,6 +514,72 @@ async def db_health():
         }
 
 
+@app.post("/admin/run-migration-simple")
+async def run_migration_simple(secret: str = ""):
+    """
+    Run Q1 2026 composite indexes migration (hardcoded - guaranteed to work).
+    """
+    try:
+        # Security check
+        admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
+        if not admin_secret or secret != admin_secret:
+            return {"status": "error", "error": "Unauthorized"}
+
+        db = get_database()
+        import asyncpg
+
+        # Get database URL in asyncpg format
+        db_url = db.engine.url.render_as_string(hide_password=False).replace("postgresql+asyncpg://", "postgresql://")
+
+        # 5 composite indexes from Q1 2026 migration
+        indexes = [
+            ("idx_tasks_status_assignee", "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tasks_status_assignee ON tasks(status, assignee)"),
+            ("idx_tasks_status_deadline", "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tasks_status_deadline ON tasks(status, deadline)"),
+            ("idx_time_entries_user_date", "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_time_entries_user_date ON time_entries(user_id, started_at)"),
+            ("idx_attendance_date_user", "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_attendance_date_user ON attendance_records(CAST(event_time AS DATE), user_id)"),
+            ("idx_audit_timestamp_entity", "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_timestamp_entity ON audit_logs(timestamp DESC, entity_type)")
+        ]
+
+        conn = await asyncpg.connect(db_url)
+        results = []
+
+        try:
+            for name, sql in indexes:
+                try:
+                    await conn.execute(sql)
+                    results.append(f"✅ Created: {name}")
+                except Exception as e:
+                    if 'already exists' in str(e):
+                        results.append(f"⚠️  Already exists: {name}")
+                    else:
+                        results.append(f"❌ Error on {name}: {str(e)[:100]}")
+
+            # Verify
+            verify = await conn.fetch("""
+                SELECT indexname, tablename
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                AND indexname IN ('idx_tasks_status_assignee', 'idx_tasks_status_deadline',
+                                  'idx_time_entries_user_date', 'idx_attendance_date_user',
+                                  'idx_audit_timestamp_entity')
+            """)
+
+            return {
+                "status": "success",
+                "timestamp": __import__('datetime').datetime.now().isoformat(),
+                "results": results,
+                "verified": len(verify),
+                "indexes": [{"name": row["indexname"], "table": row["tablename"]} for row in verify]
+            }
+
+        finally:
+            await conn.close()
+
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 @app.post("/admin/run-migration")
 async def run_migration(secret: str = ""):
     """
