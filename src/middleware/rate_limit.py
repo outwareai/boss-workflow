@@ -33,7 +33,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.last_cleanup = time.time()
 
     async def dispatch(self, request: Request, call_next):
-        """Apply rate limiting based on endpoint and IP."""
+        """
+        Apply rate limiting based on endpoint and IP.
+        
+        Q2 2026: Added audit logging for rate limit violations.
+        """
 
         # Determine rate limit based on path
         limits = self._get_limits(request.url.path)
@@ -57,6 +61,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 f"Rate limit exceeded for {client_ip} on {request.url.path}",
                 extra={"ip": client_ip, "path": request.url.path, "retry_after": retry_after}
             )
+            
+            # Q2 2026: Audit log rate limit violations
+            from ..utils.audit_logger import audit_rate_limit_violation
+            audit_rate_limit_violation(client_ip, request.url.path, max_requests)
+            
             raise HTTPException(
                 status_code=429,
                 detail={

@@ -112,11 +112,33 @@ class TaskRepository:
             return result.scalar_one_or_none()
 
     async def delete(self, task_id: str) -> bool:
-        """Delete a task."""
+        """
+        Delete a task.
+        
+        Q2 2026: Added audit logging for task deletion.
+        """
         async with self.db.session() as session:
+            # Get task info before deletion
+            result = await session.execute(
+                select(TaskDB).where(TaskDB.task_id == task_id)
+            )
+            task = result.scalar_one_or_none()
+            
             await session.execute(
                 delete(TaskDB).where(TaskDB.task_id == task_id)
             )
+            
+            if task:
+                # Q2 2026: Audit log task deletion
+                from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
+                await log_audit_event(
+                    action=AuditAction.TASK_DELETE,
+                    entity_type="task",
+                    entity_id=task_id,
+                    details={"title": task.title, "assignee": task.assignee},
+                    level=AuditLevel.WARNING
+                )
+            
             return True
 
     async def change_status(

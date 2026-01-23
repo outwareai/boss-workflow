@@ -1188,6 +1188,75 @@ async def get_task_audit(task_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/db/audit")
+async def query_audit_logs(
+    action: Optional[str] = None,
+    user_id: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    level: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """
+    Query audit logs with filters.
+    
+    Q2 2026: New endpoint for comprehensive audit trail querying.
+    
+    Args:
+        action: Filter by action type (e.g., "task_delete", "oauth_token_access")
+        user_id: Filter by user who performed action
+        entity_type: Filter by entity type (e.g., "task", "team_member")
+        level: Filter by severity (info, warning, critical)
+        limit: Max results (default 100)
+        offset: Pagination offset
+    
+    Returns:
+        List of audit log entries with pagination
+    """
+    try:
+        from .database.repositories import get_audit_repository
+        audit_repo = get_audit_repository()
+
+        # Build filters
+        filters = {}
+        if action:
+            filters["action"] = action
+        if user_id:
+            filters["user_id"] = user_id
+        if entity_type:
+            filters["entity_type"] = entity_type
+        if level:
+            filters["level"] = level
+
+        # Query audit logs
+        logs = await audit_repo.query(filters=filters, limit=limit, offset=offset)
+        total = await audit_repo.count(filters=filters)
+
+        return {
+            "logs": [
+                {
+                    "id": log.id,
+                    "action": log.action,
+                    "user_id": log.user_id,
+                    "entity_type": log.entity_type,
+                    "entity_id": log.entity_id,
+                    "details": log.details,
+                    "level": log.level,
+                    "ip_address": log.ip_address,
+                    "timestamp": log.timestamp.isoformat(),
+                }
+                for log in logs
+            ],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    except Exception as e:
+        logger.error(f"Error querying audit logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/db/projects")
 async def get_projects():
     """Get all projects with stats."""

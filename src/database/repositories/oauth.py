@@ -94,6 +94,8 @@ class OAuthTokenRepository:
         Get OAuth token for a user/service combination.
 
         Returns dict with refresh_token, access_token, expires_at, scopes.
+        
+        Q2 2026: Added audit logging for OAuth token access.
         """
         try:
             async with self.db.session() as session:
@@ -108,6 +110,17 @@ class OAuthTokenRepository:
 
                 if not token:
                     return None
+
+                # Q2 2026: Audit log OAuth token access
+                from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
+                await log_audit_event(
+                    action=AuditAction.OAUTH_TOKEN_ACCESS,
+                    user_id=email,
+                    entity_type="oauth_token",
+                    entity_id=f"{email}:{service}",
+                    details={"service": service},
+                    level=AuditLevel.INFO
+                )
 
                 return {
                     "email": token.email,
@@ -134,7 +147,11 @@ class OAuthTokenRepository:
         access_token: str,
         expires_in: Optional[int] = None
     ) -> bool:
-        """Update the access token after a refresh."""
+        """
+        Update the access token after a refresh.
+        
+        Q2 2026: Added audit logging for OAuth token refresh.
+        """
         try:
             async with self.db.session() as session:
                 stmt = select(OAuthTokenDB).where(
@@ -155,6 +172,18 @@ class OAuthTokenRepository:
                 token.updated_at = datetime.utcnow()
 
                 await session.commit()
+                
+                # Q2 2026: Audit log OAuth token refresh
+                from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
+                await log_audit_event(
+                    action=AuditAction.OAUTH_TOKEN_REFRESH,
+                    user_id=email,
+                    entity_type="oauth_token",
+                    entity_id=f"{email}:{service}",
+                    details={"service": service, "expires_in": expires_in},
+                    level=AuditLevel.INFO
+                )
+                
                 return True
 
         except Exception as e:

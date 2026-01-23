@@ -365,6 +365,104 @@ class AuditRepository:
             return list(result.scalars().all())
 
 
+    async def create(
+        self,
+        action: str,
+        user_id: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        level: str = "info",
+        ip_address: Optional[str] = None,
+        timestamp: Optional[datetime] = None,
+    ) -> AuditLogDB:
+        """
+        Create a comprehensive audit log entry (Q2 2026).
+        
+        Different from log() which is task-specific. This is for all auditable actions.
+        """
+        async with self.db.session() as session:
+            entry = AuditLogDB(
+                action=action,
+                changed_by=user_id or "system",  # Map to existing field
+                entity_type=entity_type or "system",
+                entity_id=entity_id,
+                reason=str(details) if details else None,  # Store details as JSON string
+                timestamp=timestamp or datetime.now(),
+            )
+            session.add(entry)
+            await session.flush()
+            return entry
+
+    async def query(
+        self,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[AuditLogDB]:
+        """
+        Query audit logs with flexible filters (Q2 2026).
+        
+        Args:
+            filters: Dict of field names to values
+            limit: Max results
+            offset: Pagination offset
+        
+        Returns:
+            List of matching audit log entries
+        """
+        async with self.db.session() as session:
+            query = select(AuditLogDB)
+            
+            if filters:
+                conditions = []
+                if "action" in filters:
+                    conditions.append(AuditLogDB.action == filters["action"])
+                if "user_id" in filters:
+                    conditions.append(AuditLogDB.changed_by == filters["user_id"])
+                if "entity_type" in filters:
+                    conditions.append(AuditLogDB.entity_type == filters["entity_type"])
+                # Note: level is not in current schema, ignoring for now
+                
+                if conditions:
+                    query = query.where(and_(*conditions))
+            
+            query = query.order_by(AuditLogDB.timestamp.desc()).limit(limit).offset(offset)
+            
+            result = await session.execute(query)
+            return list(result.scalars().all())
+
+    async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
+        """
+        Count audit logs matching filters (Q2 2026).
+        
+        Args:
+            filters: Dict of field names to values
+        
+        Returns:
+            Count of matching entries
+        """
+        from sqlalchemy import func
+        
+        async with self.db.session() as session:
+            query = select(func.count(AuditLogDB.id))
+            
+            if filters:
+                conditions = []
+                if "action" in filters:
+                    conditions.append(AuditLogDB.action == filters["action"])
+                if "user_id" in filters:
+                    conditions.append(AuditLogDB.changed_by == filters["user_id"])
+                if "entity_type" in filters:
+                    conditions.append(AuditLogDB.entity_type == filters["entity_type"])
+                
+                if conditions:
+                    query = query.where(and_(*conditions))
+            
+            result = await session.execute(query)
+            return result.scalar() or 0
+
+
 # Import or_ for search
 from sqlalchemy import or_
 

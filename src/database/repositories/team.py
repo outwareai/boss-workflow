@@ -36,7 +36,11 @@ class TeamRepository:
         email: Optional[str] = None,
         skills: Optional[List[str]] = None,
     ) -> Optional[TeamMemberDB]:
-        """Create a new team member."""
+        """
+        Create a new team member.
+        
+        Q2 2026: Added audit logging for team member creation.
+        """
         async with self.db.session() as session:
             try:
                 member = TeamMemberDB(
@@ -54,6 +58,17 @@ class TeamRepository:
                 await session.flush()
 
                 logger.info(f"Created team member: {name}")
+                
+                # Q2 2026: Audit log team member creation
+                from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
+                await log_audit_event(
+                    action=AuditAction.TEAM_MEMBER_CREATE,
+                    entity_type="team_member",
+                    entity_id=str(member.id),
+                    details={"name": name, "role": role, "email": email},
+                    level=AuditLevel.INFO
+                )
+                
                 return member
 
             except Exception as e:
@@ -125,7 +140,11 @@ class TeamRepository:
         member_id: int,
         updates: Dict[str, Any]
     ) -> Optional[TeamMemberDB]:
-        """Update a team member."""
+        """
+        Update a team member.
+        
+        Q2 2026: Added audit logging for team member updates.
+        """
         async with self.db.session() as session:
             updates["updated_at"] = datetime.now()
 
@@ -138,14 +157,49 @@ class TeamRepository:
             result = await session.execute(
                 select(TeamMemberDB).where(TeamMemberDB.id == member_id)
             )
-            return result.scalar_one_or_none()
+            member = result.scalar_one_or_none()
+            
+            if member:
+                # Q2 2026: Audit log team member update
+                from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
+                await log_audit_event(
+                    action=AuditAction.TEAM_MEMBER_UPDATE,
+                    entity_type="team_member",
+                    entity_id=str(member_id),
+                    details={"name": member.name, "updates": list(updates.keys())},
+                    level=AuditLevel.INFO
+                )
+            
+            return member
 
     async def delete(self, member_id: int) -> bool:
-        """Delete a team member."""
+        """
+        Delete a team member.
+        
+        Q2 2026: Added audit logging for team member deletion.
+        """
         async with self.db.session() as session:
+            # Get member info before deletion
+            result = await session.execute(
+                select(TeamMemberDB).where(TeamMemberDB.id == member_id)
+            )
+            member = result.scalar_one_or_none()
+            
             await session.execute(
                 delete(TeamMemberDB).where(TeamMemberDB.id == member_id)
             )
+            
+            if member:
+                # Q2 2026: Audit log team member deletion
+                from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
+                await log_audit_event(
+                    action=AuditAction.TEAM_MEMBER_DELETE,
+                    entity_type="team_member",
+                    entity_id=str(member_id),
+                    details={"name": member.name, "role": member.role},
+                    level=AuditLevel.WARNING
+                )
+            
             return True
 
     async def deactivate(self, member_id: int) -> Optional[TeamMemberDB]:
