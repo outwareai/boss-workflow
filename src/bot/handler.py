@@ -3177,8 +3177,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             await self.sheets.update_task(task_id, updates)
 
             # Notify on Discord
-            await self.discord.post_simple_message(
-                f"👤 Task Reassigned: {task_id}\n{old_assignee} → {new_assignee}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"assignee": f"{old_assignee} → {new_assignee}"},
+                updated_by=user_name,
+                update_type="reassignment"
             )
 
             return f"✅ Reassigned {task_id} from {old_assignee} to {new_assignee}", None
@@ -3219,10 +3222,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
                 "low": "🟢"
             }
 
-            await self.discord.post_simple_message(
-                f"⚡ Priority Changed: {task_id}\n"
-                f"{priority_emoji.get(old_priority, '')} {old_priority} → {priority_emoji.get(new_priority, '')} {new_priority}\n"
-                f"By {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"priority": f"{priority_emoji.get(old_priority, '')} {old_priority} → {priority_emoji.get(new_priority, '')} {new_priority}"},
+                updated_by=user_name,
+                update_type="priority_change"
             )
 
             return f"✅ Changed {task_id} priority: {old_priority} → {new_priority}", None
@@ -3303,8 +3307,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if success:
             await self.sheets.update_task(task_id, updates)
 
-            await self.discord.post_simple_message(
-                f"🔄 Status Changed: {task_id}\n{old_status} → {new_status}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"status": f"{old_status} → {new_status}"},
+                updated_by=user_name,
+                update_type="status_change"
             )
 
             return f"✅ Changed {task_id} status: {old_status} → {new_status}", None
@@ -3341,8 +3348,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if success:
             await self.sheets.update_task(task_id, updates)
 
-            await self.discord.post_simple_message(
-                f"🏷️ Tags Added: {task_id}\nAdded: {', '.join(new_tags)}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"tags": f"Added: {', '.join(new_tags)}"},
+                updated_by=user_name,
+                update_type="tags_added"
             )
 
             return f"✅ Added tags to {task_id}: {', '.join(new_tags)}", None
@@ -3379,8 +3389,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if success:
             await self.sheets.update_task(task_id, updates)
 
-            await self.discord.post_simple_message(
-                f"🏷️ Tags Removed: {task_id}\nRemoved: {', '.join(tags_to_remove)}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"tags": f"Removed: {', '.join(tags_to_remove)}"},
+                updated_by=user_name,
+                update_type="tags_removed"
             )
 
             return f"✅ Removed tags from {task_id}: {', '.join(tags_to_remove)}", None
@@ -3420,8 +3433,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         )
 
         if subtask:
-            await self.discord.post_simple_message(
-                f"➕ Subtask Added: {task_id}\n{subtask_title}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"subtask": f"Added: {subtask_title}"},
+                updated_by=user_name,
+                update_type="subtask_added"
             )
 
             return f"✅ Added subtask to {task_id}: {subtask_title}", None
@@ -3445,8 +3461,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         success = await self.task_repo.complete_subtask_by_order(task_id, subtask_number, user_name)
 
         if success:
-            await self.discord.post_simple_message(
-                f"✅ Subtask Completed: {task_id}\nSubtask #{subtask_number}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=task_id,
+                updates={"subtask": f"Completed subtask #{subtask_number}"},
+                updated_by=user_name,
+                update_type="subtask_completed"
             )
 
             return f"✅ Marked subtask #{subtask_number} complete on {task_id}", None
@@ -3469,8 +3488,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         dependency = await self.task_repo.add_dependency(dependent_task, dependency_task)
 
         if dependency is not None:
-            await self.discord.post_simple_message(
-                f"🔗 Dependency Added\n{dependent_task} now depends on {dependency_task}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=dependent_task,
+                updates={"dependency": f"Now depends on {dependency_task}"},
+                updated_by=user_name,
+                update_type="dependency_added"
             )
 
             return f"✅ {dependent_task} now depends on {dependency_task}", None
@@ -3493,8 +3515,11 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         success = await self.task_repo.remove_dependency(dependent_task, dependency_task)
 
         if success:
-            await self.discord.post_simple_message(
-                f"🔓 Dependency Removed\n{dependent_task} no longer depends on {dependency_task}\nBy {user_name}"
+            await self.discord.post_task_update(
+                task_id=dependent_task,
+                updates={"dependency": f"Removed dependency on {dependency_task}"},
+                updated_by=user_name,
+                update_type="dependency_removed"
             )
 
             return f"✅ Removed dependency: {dependent_task} no longer depends on {dependency_task}", None
@@ -3552,8 +3577,12 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
                 "deadline": new_task.deadline.strftime('%Y-%m-%d') if new_task.deadline else "",
             })
 
-            await self.discord.post_simple_message(
-                f"📋 Task Duplicated\n{task_id} → {new_task.task_id}\nBy {user_name}"
+            # Notify about duplication (posting about the new task)
+            await self.discord.post_task_update(
+                task_id=new_task.task_id,
+                updates={"duplicated_from": f"{task_id}"},
+                updated_by=user_name,
+                update_type="modification"
             )
 
             return f"✅ Duplicated {task_id} as {new_task.task_id}", None
