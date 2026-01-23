@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 import asyncio
 
 from config import settings
-from .models.api_validation import SubtaskCreate, DependencyCreate, TaskFilter
+from .models.api_validation import SubtaskCreate, DependencyCreate, TaskFilter, AdminAuthRequest
 from .bot.telegram_simple import get_telegram_bot_simple
 from .scheduler.jobs import get_scheduler_manager
 from .memory.preferences import get_preferences_manager
@@ -783,9 +783,12 @@ async def seed_test_team(auth: dict):
 
 
 @app.post("/admin/clear-conversations")
-async def clear_all_conversations(auth: dict):
+async def clear_all_conversations(auth: AdminAuthRequest):
     """
     Clear all active conversations (useful for testing).
+
+    Q1 2026: Clears all active conversation state from Redis/memory.
+    Useful for test cleanup and debugging conversation issues.
 
     Usage: POST /admin/clear-conversations with {"secret": "your_secret"}
     """
@@ -793,11 +796,8 @@ async def clear_all_conversations(auth: dict):
         import secrets as sec_module
 
         # Security check
-        admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
-        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
-
-        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
-            return {"status": "error", "error": "Unauthorized"}
+        if not settings.admin_secret or not sec_module.compare_digest(auth.secret, settings.admin_secret):
+            raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Use the singleton context instance (already connected)
         context = get_conversation_context()
