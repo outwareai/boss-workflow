@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio==0.21.1
+          pip install pytest pytest-asyncio==0.21.1 email-validator
 
       - name: Run unit tests
         run: pytest tests/unit/ -v --tb=short

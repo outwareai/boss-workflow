@@ -3,6 +3,7 @@ fastapi==0.128.0  # Updated from 0.109.0 - Security patches, dependency caching,
 uvicorn[standard]==0.27.0
 pydantic==2.10.5  # Updated from 2.5.3 - Pydantic v2 improvements
 pydantic-settings==2.1.0
+email-validator==2.1.0  # Required for Pydantic EmailStr validation
 
 # Telegram Bot
 python-telegram-bot==22.5  # Updated from 20.7 - Bot API 8.3, Business accounts, message reactions
