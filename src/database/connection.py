@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncEngine,
 )
-from sqlalchemy.pool import NullPool
 
 from config import settings
 from .models import Base
@@ -47,11 +46,22 @@ class Database:
             elif database_url.startswith("postgresql://"):
                 database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-            # Create async engine
+            # Create async engine with optimized connection pooling
+            # For production workloads (10 persistent + 20 burst connections)
             self.engine = create_async_engine(
                 database_url,
                 echo=settings.debug,
-                poolclass=NullPool,  # Better for serverless/Railway
+                pool_size=10,              # 10 persistent connections
+                max_overflow=20,           # +20 burst connections (30 total)
+                pool_pre_ping=True,        # Validate before use (prevent stale)
+                pool_recycle=3600,         # Recycle every hour (DB restarts)
+                pool_timeout=30,           # 30s wait for connection
+                connect_args={
+                    "server_settings": {
+                        "application_name": "boss-workflow",
+                        "jit": "off"       # Disable JIT for faster simple queries
+                    }
+                },
             )
 
             # Create session factory

@@ -369,26 +369,24 @@ class TimeTrackingRepository:
             start_dt = datetime.combine(start_date, datetime.min.time())
             end_dt = datetime.combine(end_date, datetime.max.time())
 
-            # Get entries
+            # Get entries with task info in single query (FIX: Prevent N+1)
             result = await session.execute(
-                select(TimeEntryDB).where(
+                select(TimeEntryDB, TaskDB)
+                .join(TaskDB, TimeEntryDB.task_id == TaskDB.id, isouter=True)  # LEFT JOIN for safety
+                .where(
                     TimeEntryDB.user_id == user_id,
                     TimeEntryDB.started_at >= start_dt,
                     TimeEntryDB.started_at <= end_dt,
                     TimeEntryDB.is_running == False
-                ).order_by(TimeEntryDB.started_at)
+                )
+                .order_by(TimeEntryDB.started_at)
             )
-            entries = list(result.scalars().all())
+            rows = result.all()
 
             # Group by task
             tasks: Dict[int, Dict] = {}
-            for entry in entries:
+            for entry, task in rows:
                 if entry.task_id not in tasks:
-                    # Get task info
-                    task_result = await session.execute(
-                        select(TaskDB).where(TaskDB.id == entry.task_id)
-                    )
-                    task = task_result.scalar_one_or_none()
                     tasks[entry.task_id] = {
                         "task_id": task.task_id if task else "Unknown",
                         "title": task.title if task else "Unknown",

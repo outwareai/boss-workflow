@@ -76,6 +76,7 @@ class TaskRepository:
                     selectinload(TaskDB.dependencies_out),
                     selectinload(TaskDB.dependencies_in),
                     selectinload(TaskDB.project),
+                    selectinload(TaskDB.audit_logs),  # FIX: Prevent N+1 on audit queries
                 )
                 .where(TaskDB.task_id == task_id)
             )

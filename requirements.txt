@@ -1,11 +1,11 @@
 # Core Framework
-fastapi==0.109.0
+fastapi==0.128.0  # Updated from 0.109.0 - Security patches, dependency caching, Python 3.14 support
 uvicorn[standard]==0.27.0
-pydantic==2.5.3
+pydantic==2.10.5  # Updated from 2.5.3 - Pydantic v2 improvements
 pydantic-settings==2.1.0
 
 # Telegram Bot
-python-telegram-bot==20.7
+python-telegram-bot==22.5  # Updated from 20.7 - Bot API 8.3, Business accounts, message reactions
 
 # Discord
 discord.py==2.3.2
@@ -19,15 +19,15 @@ google-auth-oauthlib==1.2.0
 google-api-python-client==2.111.0
 
 # AI Integration (OpenAI-compatible for DeepSeek)
-openai==1.6.1
+openai==1.66.0  # Updated from 1.6.1 - Latest features, improved async support
 
 # Database
 asyncpg==0.29.0
-sqlalchemy[asyncio]==2.0.25
+sqlalchemy[asyncio]==2.0.46  # Updated from 2.0.25 - Async improvements, batch RETURNING, cursor handling
 alembic==1.13.1
 
 # Redis for caching and conversation state
-redis==5.0.1
+redis==5.2.0  # Updated from 5.0.1 - Performance improvements (not 7.x - breaking changes)
 aioredis==2.0.1
 
 # Scheduler

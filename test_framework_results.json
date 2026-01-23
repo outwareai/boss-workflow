@@ -1,0 +1,176 @@
+[
+  {
+    "test_id": "conv-001",
+    "test_name": "Simple task creates directly",
+    "status": "TestStatus.PASSED",
+    "errors": [],
+    "expected": {
+      "title_contains": "login",
+      "title_not_contains": "1tomorrow",
+      "assignee": "Mayank",
+      "priority": null,
+      "has_deadline": null,
+      "description_contains": null
+    },
+    "actual": {
+      "id": "TASK-20260123-6CB",
+      "title": "Fix login typo",
+      "status": "pending",
+      "priority": "medium",
+      "assignee": "Mayank",
+      "deadline": null,
+      "created_at": "2026-01-23T10:26:37.958899"
+    },
+    "duration_seconds": 11.794325,
+    "logs": [
+      "Step 1: send",
+      "  Sent: 'Create task for Mayank: Fix the login typo...' -> 200",
+      "Step 2: wait",
+      "  Waiting 10s...",
+      "Step 3: validate_task",
+      "  Task found: TASK-20260123-6CB",
+      "    Title: Fix login typo",
+      "    Assignee: Mayank"
+    ]
+  },
+  {
+    "test_id": "conv-002",
+    "test_name": "Answer parsing preserves task context",
+    "status": "TestStatus.FAILED",
+    "errors": [
+      "Assignee should be 'Mayank' but got 'None'"
+    ],
+    "expected": {
+      "title_contains": "notification",
+      "title_not_contains": "1tomorrow",
+      "assignee": "Mayank",
+      "priority": null,
+      "has_deadline": null,
+      "description_contains": null
+    },
+    "actual": {
+      "id": "TASK-20260123-C3B",
+      "title": "Build a complete notification system with email, SMS, push notifications, and real-time websocket integration for the entire platform",
+      "status": "pending",
+      "priority": "medium",
+      "assignee": null,
+      "deadline": null,
+      "created_at": "2026-01-23T10:29:53.115934"
+    },
+    "duration_seconds": 24.366973,
+    "logs": [
+      "Step 1: send",
+      "  Sent: 'Create task for Mayank: Build notification system ...' -> 200",
+      "Step 2: wait",
+      "  Waiting 12s...",
+      "Step 3: send",
+      "  Sent: '1tomorrow 2a...' -> 200",
+      "Step 4: wait",
+      "  Waiting 10s...",
+      "Step 5: validate_task",
+      "  Task found: TASK-20260123-C3B",
+      "    Title: Build a complete notification system with email, SMS, push notifications, and real-time websocket integration for the entire platform",
+      "    Assignee: None"
+    ]
+  },
+  {
+    "test_id": "conv-003",
+    "test_name": "Correction updates existing task",
+    "status": "TestStatus.FAILED",
+    "errors": [
+      "No task found"
+    ],
+    "expected": {
+      "title_contains": "API",
+      "title_not_contains": "correction",
+      "assignee": null,
+      "priority": null,
+      "has_deadline": null,
+      "description_contains": null
+    },
+    "actual": {},
+    "duration_seconds": 17.054784,
+    "logs": [
+      "Step 1: send",
+      "  Sent: 'Create task: Review the API code...' -> 200",
+      "Step 2: wait",
+      "  Waiting 10s...",
+      "Step 3: send",
+      "  Sent: 'yes...' -> 200",
+      "Step 4: wait",
+      "  Waiting 5s...",
+      "Step 5: validate_task",
+      "  No matching task found!"
+    ]
+  },
+  {
+    "test_id": "val-001",
+    "test_name": "Task title matches input",
+    "status": "TestStatus.PASSED",
+    "errors": [],
+    "expected": {
+      "title_contains": "schedule",
+      "title_not_contains": null,
+      "assignee": "Zea",
+      "priority": null,
+      "has_deadline": null,
+      "description_contains": null
+    },
+    "actual": {
+      "id": "TASK-20260123-D2B",
+      "title": "Schedule team meeting for Monday",
+      "status": "pending",
+      "priority": "medium",
+      "assignee": "Zea",
+      "deadline": null,
+      "created_at": "2026-01-23T10:28:02.976022"
+    },
+    "duration_seconds": 13.584156,
+    "logs": [
+      "Step 1: send",
+      "  Sent: 'Create task for Zea: Update team schedule spreadsh...' -> 200",
+      "Step 2: wait",
+      "  Waiting 12s...",
+      "Step 3: validate_task",
+      "  Task found: TASK-20260123-D2B",
+      "    Title: Schedule team meeting for Monday",
+      "    Assignee: Zea"
+    ]
+  },
+  {
+    "test_id": "val-002",
+    "test_name": "Assignee extracted correctly",
+    "status": "TestStatus.FAILED",
+    "errors": [
+      "Assignee should be 'Mayank' but got 'None'"
+    ],
+    "expected": {
+      "title_contains": null,
+      "title_not_contains": null,
+      "assignee": "Mayank",
+      "priority": null,
+      "has_deadline": null,
+      "description_contains": null
+    },
+    "actual": {
+      "id": "TASK-20260123-C3B",
+      "title": "Build a complete notification system with email, SMS, push notifications, and real-time websocket integration for the entire platform",
+      "status": "pending",
+      "priority": "medium",
+      "assignee": null,
+      "deadline": null,
+      "created_at": "2026-01-23T10:29:53.115934"
+    },
+    "duration_seconds": 11.459785,
+    "logs": [
+      "Step 1: send",
+      "  Sent: 'Create task for Mayank: Debug the login flow...' -> 200",
+      "Step 2: wait",
+      "  Waiting 10s...",
+      "Step 3: validate_task",
+      "  Task found: TASK-20260123-C3B",
+      "    Title: Build a complete notification system with email, SMS, push notifications, and real-time websocket integration for the entire platform",
+      "    Assignee: None"
+    ]
+  }
+]

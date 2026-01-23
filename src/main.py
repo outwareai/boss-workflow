@@ -472,6 +472,48 @@ async def health_check():
     }
 
 
+@app.get("/health/db")
+async def db_health():
+    """Database connection pool health check."""
+    try:
+        db = get_database()
+
+        # Check if database is initialized
+        if not db._initialized:
+            return {
+                "status": "not_initialized",
+                "error": "Database not yet initialized"
+            }
+
+        # Get pool statistics
+        engine = db.engine
+        if engine:
+            pool = engine.pool
+            return {
+                "status": "healthy",
+                "timestamp": __import__('datetime').datetime.now().isoformat(),
+                "pool_size": pool.size(),
+                "checked_in": pool.checkedin(),
+                "checked_out": pool.checkedout(),
+                "overflow": pool.overflow(),
+                "total_connections": pool.size() + pool.overflow(),
+                "max_connections": pool.size() + pool._max_overflow,
+            }
+        else:
+            return {
+                "status": "error",
+                "error": "Engine not available"
+            }
+
+    except Exception as e:
+        logger.error(f"Error checking database health: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }
+
+
 # Track processed update IDs to prevent duplicate processing from Telegram retries
 _processed_updates: set = set()
 _max_processed_updates = 1000

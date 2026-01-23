@@ -1,0 +1,20 @@
+{
+  "test": "conversation",
+  "steps": [
+    {
+      "step": "send_task",
+      "status": 200
+    },
+    {
+      "step": "questions",
+      "complexity": null,
+      "questions_asked": null
+    },
+    {
+      "step": "no_questions",
+      "note": "Bot didn't ask questions"
+    }
+  ],
+  "passed": true,
+  "errors": []
+}
