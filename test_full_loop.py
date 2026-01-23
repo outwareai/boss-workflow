@@ -95,11 +95,13 @@ class BossWorkflowTester:
     def read_railway_logs(self, lines: int = 50, filter_text: str = None) -> list:
         """Read Railway logs to see bot responses."""
         try:
+            # Use shell=True on Windows to find railway in PATH
             result = subprocess.run(
-                ["railway", "logs", "-s", "boss-workflow"],
+                "railway logs -s boss-workflow",
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                shell=True
             )
             logs = result.stdout.strip().split('\n')
 
@@ -234,6 +236,8 @@ class BossWorkflowTester:
 
 def extract_implementation_details(logs: list) -> dict:
     """Extract v2.2 implementation details from Railway logs."""
+    import re  # Move import to top of function
+
     details = {
         "complexity": None,
         "complexity_level": None,
@@ -251,7 +255,6 @@ def extract_implementation_details(logs: list) -> dict:
 
         # Complexity detection
         if "complexity=" in log_lower:
-            import re
             match = re.search(r'complexity=(\d+)', log_lower)
             if match:
                 details["complexity"] = int(match.group(1))
