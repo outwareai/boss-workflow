@@ -426,6 +426,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add rate limiting middleware (Q1 2026 Security)
+try:
+    from .middleware.rate_limit import RateLimitMiddleware
+    from .memory.preferences import get_redis_client
+
+    redis_client = get_redis_client()
+    app.add_middleware(RateLimitMiddleware, redis_client=redis_client)
+    logger.info("Rate limiting middleware enabled")
+except Exception as e:
+    logger.warning(f"Rate limiting middleware disabled: {e}")
+
 # Register web routes (onboarding, OAuth, team management)
 from .web.routes import router as web_router
 app.include_router(web_router)
@@ -1120,29 +1131,25 @@ async def add_subtask(task_id: str, subtask: SubtaskCreate):
 
 
 @app.post("/api/db/tasks/{task_id}/dependencies")
-async def add_dependency(task_id: str, request: Request):
+async def add_dependency(task_id: str, dependency: DependencyCreate):
     """Add a dependency between tasks."""
     try:
         from .database.repositories import get_task_repository
         task_repo = get_task_repository()
 
-        data = await request.json()
-        depends_on = data.get("depends_on")
-        dep_type = data.get("type", "depends_on")
+        depends_on = dependency.depends_on
+        dep_type = dependency.type.value
 
-        if not depends_on:
-            raise HTTPException(status_code=400, detail="depends_on task ID required")
-
-        dependency = await task_repo.add_dependency(
+        dependency_obj = await task_repo.add_dependency(
             task_id=task_id,
             depends_on_task_id=depends_on,
             dependency_type=dep_type,
         )
 
-        if not dependency:
+        if not dependency_obj:
             raise HTTPException(status_code=400, detail="Could not create dependency (circular or task not found)")
 
-        return {"ok": True, "dependency_id": dependency.id}
+        return {"ok": True, "dependency_id": dependency_obj.id}
 
     except HTTPException:
         raise
