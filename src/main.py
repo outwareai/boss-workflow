@@ -870,28 +870,33 @@ async def telegram_webhook(request: Request):
 
         # Deduplicate - Telegram resends if we're slow (>60s)
         if update_id in _processed_updates:
-            logger.info(f"Skipping duplicate update {update_id}")
+            logger.info(f"[WEBHOOK] Skipping duplicate update {update_id}")
             return {"ok": True}
 
         # Mark as processed immediately
         _processed_updates.add(update_id)
+        logger.info(f"[WEBHOOK] Processing new update {update_id}, total processed: {len(_processed_updates)}")
 
         # Cleanup old update IDs to prevent memory leak
         if len(_processed_updates) > _max_processed_updates:
             sorted_ids = sorted(_processed_updates)
             for old_id in sorted_ids[:len(sorted_ids)//2]:
                 _processed_updates.discard(old_id)
+            logger.debug(f"[WEBHOOK] Cleaned up old update IDs, new total: {len(_processed_updates)}")
 
         # Process in background - don't await, return immediately
         async def process_in_background():
             try:
+                logger.info(f"[WEBHOOK-BG] Starting background processing for update {update_id}")
                 telegram_bot = get_telegram_bot_simple()
                 await telegram_bot.process_webhook(update_data)
+                logger.info(f"[WEBHOOK-BG] Completed background processing for update {update_id}")
             except Exception as e:
-                logger.error(f"Background processing error for update {update_id}: {e}")
+                logger.error(f"[WEBHOOK-BG] Background processing error for update {update_id}: {e}", exc_info=True)
 
         # Fire and forget - process in background
         asyncio.create_task(process_in_background())
+        logger.debug(f"[WEBHOOK] Background task created for update {update_id}, returning OK")
 
         # Return immediately to prevent Telegram timeout
         return {"ok": True}
