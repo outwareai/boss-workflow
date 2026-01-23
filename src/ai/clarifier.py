@@ -427,14 +427,23 @@ Only include tasks that are clearly related. Return empty array if no dependenci
                 logger.info(f"Medium task (complexity={complexity}) - no critical questions, proceeding")
         else:
             # Complex task - full clarification (max 4 questions)
+            # v2.2.1: ALWAYS ask at least 1-2 questions for complex tasks
+            # even if AI self-answered everything
             if normalized_questions:
                 can_proceed = False
                 analysis["suggested_questions"] = normalized_questions[:4]
                 logger.info(f"Complex task (complexity={complexity}) - asking {len(analysis['suggested_questions'])} questions")
             else:
-                can_proceed = True
-                analysis["suggested_questions"] = []
-                logger.info(f"Complex task (complexity={complexity}) - no questions available, proceeding")
+                # Generate fallback questions for complex tasks
+                fallback_questions = self._generate_complex_task_questions(analysis, conversation)
+                if fallback_questions:
+                    can_proceed = False
+                    analysis["suggested_questions"] = fallback_questions
+                    logger.info(f"Complex task (complexity={complexity}) - asking {len(fallback_questions)} fallback questions")
+                else:
+                    can_proceed = True
+                    analysis["suggested_questions"] = []
+                    logger.info(f"Complex task (complexity={complexity}) - no questions available, proceeding")
 
         # Apply preference overrides (only for non-detailed mode)
         if not detailed_mode:
@@ -519,6 +528,56 @@ Only include tasks that are clearly related. Return empty array if no dependenci
         """Filter to only the most critical questions for urgent tasks."""
         critical_fields = ["assignee", "deadline"]  # Priority is implied by urgency
         return [q for q in questions if q.get("field") in critical_fields][:2]
+
+    def _generate_complex_task_questions(
+        self,
+        analysis: Dict[str, Any],
+        conversation: "ConversationState"
+    ) -> List[Dict[str, Any]]:
+        """
+        v2.2.1: Generate fallback questions for complex tasks.
+
+        Even if AI self-answered everything, complex tasks benefit from
+        user input on key decisions. This ensures the user has a chance
+        to specify constraints, preferences, or corrections.
+        """
+        questions = []
+        understood = analysis.get("understood", {})
+
+        # Check what's already filled in
+        has_assignee = bool(understood.get("assignee"))
+        has_deadline = bool(understood.get("deadline"))
+        has_priority = bool(understood.get("priority"))
+
+        # For complex tasks, always ask about assignee if not specified
+        if not has_assignee:
+            questions.append({
+                "question": "Who should lead this? (or leave unassigned for team discussion)",
+                "field": "assignee",
+                "options": ["Assign to developer", "Leave unassigned", "Let me specify"],
+                "critical": True
+            })
+
+        # For complex tasks, confirm timeline even if AI guessed
+        if not has_deadline or analysis.get("complexity", 0) >= 8:
+            questions.append({
+                "question": "Any deadline or timeline constraints?",
+                "field": "deadline",
+                "options": ["This week", "Next week", "Flexible / No deadline", "Let me specify"],
+                "critical": True
+            })
+
+        # For very complex tasks (8+), ask about technical constraints
+        if analysis.get("complexity", 0) >= 8:
+            questions.append({
+                "question": "Any technical constraints or preferences I should know about?",
+                "field": "constraints",
+                "options": ["No specific constraints", "Let me specify"],
+                "critical": False
+            })
+
+        # Limit to 2 questions for complex tasks
+        return questions[:2]
 
     def _is_comprehensive_message(self, message: str) -> bool:
         """

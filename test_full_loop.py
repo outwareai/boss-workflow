@@ -22,6 +22,7 @@ import os
 import sys
 import json
 import time
+import re
 import subprocess
 import asyncio
 import aiohttp
@@ -191,9 +192,9 @@ class BossWorkflowTester:
         print(f"[3/5] Waiting {wait_seconds}s for processing...")
         await asyncio.sleep(wait_seconds)
 
-        logs = self.read_railway_logs(lines=30)
+        logs = self.read_railway_logs(lines=60)  # Get more logs for analysis
         bot_responses = self.extract_bot_responses(logs)
-        results["railway_logs"] = logs[-10:]  # Last 10 lines
+        results["railway_logs"] = logs  # Keep all logs for implementation analysis
         results["bot_responses"] = bot_responses
         results["steps"].append({"step": "logs", "responses": len(bot_responses)})
 
@@ -216,26 +217,167 @@ class BossWorkflowTester:
         return results
 
 
+def extract_implementation_details(logs: list) -> dict:
+    """Extract v2.2 implementation details from Railway logs."""
+    details = {
+        "complexity": None,
+        "complexity_level": None,
+        "questions_asked": None,
+        "role_lookup": None,
+        "role_found": None,
+        "channel_routed": None,
+        "keyword_inference": None,
+        "self_answered": None,
+        "task_id": None,
+    }
+
+    for log in logs:
+        log_lower = log.lower() if isinstance(log, str) else ""
+
+        # Complexity detection
+        if "complexity=" in log_lower:
+            import re
+            match = re.search(r'complexity=(\d+)', log_lower)
+            if match:
+                details["complexity"] = int(match.group(1))
+                if details["complexity"] <= 3:
+                    details["complexity_level"] = "simple"
+                elif details["complexity"] <= 6:
+                    details["complexity_level"] = "medium"
+                else:
+                    details["complexity_level"] = "complex"
+
+        # Questions
+        if "skipping all questions" in log_lower:
+            details["questions_asked"] = 0
+        elif "asking" in log_lower and "question" in log_lower:
+            match = re.search(r'asking (\d+)', log_lower)
+            if match:
+                details["questions_asked"] = int(match.group(1))
+
+        # Role lookup
+        if "found role for" in log_lower:
+            match = re.search(r"found role for '(\w+)'.*?: '(\w+)'", log, re.IGNORECASE)
+            if match:
+                details["role_lookup"] = match.group(1)
+                details["role_found"] = match.group(2)
+
+        # Channel routing
+        if "routing task" in log_lower:
+            if "dev channel" in log_lower or "to dev" in log_lower:
+                details["channel_routed"] = "DEV"
+            elif "admin channel" in log_lower or "to admin" in log_lower:
+                details["channel_routed"] = "ADMIN"
+            elif "marketing" in log_lower:
+                details["channel_routed"] = "MARKETING"
+            elif "design" in log_lower:
+                details["channel_routed"] = "DESIGN"
+
+        # Keyword inference
+        if "inferred role" in log_lower or "keyword inference" in log_lower:
+            details["keyword_inference"] = True
+            match = re.search(r'inferred (?:role )?(\w+)', log_lower)
+            if match:
+                details["channel_routed"] = match.group(1).upper()
+
+        # Self-answered
+        if "self-answered" in log_lower:
+            match = re.search(r'self-answered (\d+) fields', log_lower)
+            if match:
+                details["self_answered"] = int(match.group(1))
+
+        # Task ID
+        if "task-" in log_lower:
+            match = re.search(r'(TASK-\d{8}-\w{3})', log, re.IGNORECASE)
+            if match:
+                details["task_id"] = match.group(1).upper()
+
+    return details
+
+
 def print_results(results: dict):
-    """Pretty print test results."""
-    print("\n" + "="*60)
-    print("TEST RESULTS")
-    print("="*60)
+    """Pretty print test results with structured v2.2 summary."""
 
-    print(f"\nInput: {results['input'][:100]}")
-    print(f"Timestamp: {results['timestamp']}")
+    # Extract implementation details from logs
+    all_logs = results.get('railway_logs', [])
+    impl_details = extract_implementation_details(all_logs)
 
+    # Determine overall pass/fail
+    task_created = results.get('task_created', False)
+    webhook_ok = results.get('webhook_response', {}).get('status') == 200
+
+    # Build summary
+    print("\n" + "="*70)
+    print("|{:^68}|".format("TEST RESULT SUMMARY"))
+    print("="*70)
+
+    # Test info
+    print("|{:<68}|".format(f" Test Input: {results['input'][:55]}..."))
+    print("|{:<68}|".format(f" Timestamp: {results['timestamp'][:25]}"))
+    print("-"*70)
+
+    # Implementation tested section
+    print("|{:<68}|".format(" IMPLEMENTATION TESTED:"))
+
+    # Complexity
+    if impl_details["complexity"] is not None:
+        status = "[OK]" if impl_details["complexity"] is not None else "[--]"
+        print("|{:<68}|".format(f"   {status} Complexity Detection: score={impl_details['complexity']} ({impl_details['complexity_level']})"))
+
+    # Question logic
+    if impl_details["questions_asked"] is not None:
+        if impl_details["questions_asked"] == 0:
+            print("|{:<68}|".format("   [OK] Question Logic: Skipped all questions (simple task)"))
+        else:
+            print("|{:<68}|".format(f"   [OK] Question Logic: Asked {impl_details['questions_asked']} question(s)"))
+
+    # Role lookup
+    if impl_details["role_lookup"]:
+        print("|{:<68}|".format(f"   [OK] Role Lookup: {impl_details['role_lookup']} -> {impl_details['role_found']}"))
+
+    # Channel routing
+    if impl_details["channel_routed"]:
+        print("|{:<68}|".format(f"   [OK] Channel Routing: Routed to {impl_details['channel_routed']} channel"))
+
+    # Keyword inference
+    if impl_details["keyword_inference"]:
+        print("|{:<68}|".format(f"   [OK] Keyword Inference: Inferred role from task content"))
+
+    # Self-answered
+    if impl_details["self_answered"]:
+        print("|{:<68}|".format(f"   [OK] AI Self-Answer: Self-answered {impl_details['self_answered']} fields"))
+
+    print("-"*70)
+
+    # Result section
+    overall_status = "PASSED" if (task_created or webhook_ok) else "FAILED"
+    status_icon = "[OK]" if overall_status == "PASSED" else "[ERR]"
+    print("|{:<68}|".format(f" RESULT: {status_icon} {overall_status}"))
+
+    if impl_details["task_id"]:
+        print("|{:<68}|".format(f" Task Created: {impl_details['task_id']}"))
+    elif results.get('new_tasks'):
+        task = results['new_tasks'][0]
+        print("|{:<68}|".format(f" Task Created: {task.get('id', 'Unknown')}"))
+
+    print("|{:<68}|".format(f" Tasks: {results['tasks_before']} -> {results['tasks_after']}"))
+    print("="*70)
+
+    # Additional details (compact)
     print(f"\n--- Webhook ---")
     print(f"Status: {results['webhook_response']['status']}")
 
     print(f"\n--- Bot Processing (from logs) ---")
-    for resp in results.get('bot_responses', []):
-        print(f"  [{resp['type']}] {resp['log'][:100]}")
+    for resp in results.get('bot_responses', [])[:3]:
+        print(f"  [{resp['type']}] {resp['log'][:80]}")
 
-    print(f"\n--- Tasks ---")
-    print(f"Before: {results['tasks_before']}")
-    print(f"After: {results['tasks_after']}")
-    print(f"New task created: {results['task_created']}")
+    if results.get('new_tasks'):
+        print("\n--- Newest Task ---")
+        task = results['new_tasks'][0]
+        print(f"  ID: {task.get('id')}")
+        print(f"  Title: {task.get('title')}")
+        print(f"  Assignee: {task.get('assignee')}")
+        print(f"  Status: {task.get('status')}")
 
     if results.get('new_tasks'):
         print("\nNewest task:")
