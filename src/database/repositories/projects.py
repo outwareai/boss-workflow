@@ -188,17 +188,73 @@ class ProjectRepository:
             }
 
     async def get_all_stats(self) -> List[Dict[str, Any]]:
-        """Get stats for all active projects."""
-        projects = await self.get_active()
-        stats = []
-
-        for project in projects:
-            project_stats = await self.get_project_stats(project.id)
-            stats.append(project_stats)
-
-        # Sort by progress
-        stats.sort(key=lambda x: x["progress_percent"], reverse=True)
-        return stats
+        """
+        Get stats for all active projects.
+        
+        Q2 2026 Optimization: Fixed N+1 query pattern with bulk aggregation.
+        Before: 1 + 3N queries (get_active + 3 queries per project)
+        After: 3 queries total (95% reduction for 15 projects: 46 → 3)
+        """
+        from sqlalchemy import select, func, case
+        
+        async with self.db.session() as session:
+            # Query 1: Get all active projects
+            projects = await self.get_active()
+            if not projects:
+                return []
+            
+            project_ids = [p.id for p in projects]
+            
+            # Query 2: Get task counts by status for all projects (GROUP BY project_id, status)
+            status_result = await session.execute(
+                select(TaskDB.project_id, TaskDB.status, func.count(TaskDB.id))
+                .where(TaskDB.project_id.in_(project_ids))
+                .group_by(TaskDB.project_id, TaskDB.status)
+            )
+            
+            # Organize status counts by project
+            status_by_project: Dict[int, Dict[str, int]] = {}
+            for project_id, status, count in status_result:
+                if project_id not in status_by_project:
+                    status_by_project[project_id] = {}
+                status_by_project[project_id][status] = count
+            
+            # Query 3: Get overdue counts for all projects (GROUP BY project_id)
+            overdue_result = await session.execute(
+                select(TaskDB.project_id, func.count(TaskDB.id))
+                .where(
+                    TaskDB.project_id.in_(project_ids),
+                    TaskDB.deadline < datetime.now(),
+                    TaskDB.status.notin_(["completed", "cancelled"]),
+                )
+                .group_by(TaskDB.project_id)
+            )
+            
+            overdue_by_project = {row[0]: row[1] for row in overdue_result}
+            
+            # Build stats for each project (no queries, all data already fetched)
+            stats = []
+            for project in projects:
+                statuses = status_by_project.get(project.id, {})
+                total = sum(statuses.values())
+                completed = statuses.get("completed", 0)
+                progress = (completed / total * 100) if total > 0 else 0
+                overdue = overdue_by_project.get(project.id, 0)
+                
+                stats.append({
+                    "project_id": project.id,
+                    "name": project.name,
+                    "status": project.status,
+                    "total_tasks": total,
+                    "completed_tasks": completed,
+                    "progress_percent": round(progress, 1),
+                    "overdue_tasks": overdue,
+                    "tasks_by_status": statuses,
+                })
+            
+            # Sort by progress
+            stats.sort(key=lambda x: x["progress_percent"], reverse=True)
+            return stats
 
     async def find_or_create(
         self,

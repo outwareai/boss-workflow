@@ -174,21 +174,41 @@ class TaskRepository:
         return await self.get_all(limit=limit)
 
     async def get_by_status(self, status: str) -> List[TaskDB]:
-        """Get tasks by status."""
+        """
+        Get tasks by status.
+        
+        Q2 2026 Optimization: Added eager loading to prevent lazy-load N+1.
+        """
+        from sqlalchemy.orm import selectinload
+        
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
                 .where(TaskDB.status == status)
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.dependencies)
+                )
                 .order_by(TaskDB.created_at.desc())
             )
             return list(result.scalars().all())
 
     async def get_by_assignee(self, assignee: str) -> List[TaskDB]:
-        """Get tasks by assignee."""
+        """
+        Get tasks by assignee.
+        
+        Q2 2026 Optimization: Added eager loading to prevent lazy-load N+1.
+        """
+        from sqlalchemy.orm import selectinload
+        
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
                 .where(TaskDB.assignee.ilike(f"%{assignee}%"))
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.dependencies)
+                )
                 .order_by(TaskDB.created_at.desc())
             )
             return list(result.scalars().all())

@@ -569,8 +569,8 @@ async def main():
 
         # Test 1: Mayank -> DEV channel
         print("\n[1/2] Testing Mayank -> DEV routing")
-        # Use working pattern from simple test: "Create task: [description] - assign to [name]"
-        mayank_msg = "Create task: Review the API code and fix any issues - assign to Mayank"
+        # Use "no questions" + simple description (no "and" to avoid task splitting)
+        mayank_msg = "Task for Mayank no questions: Review the API code for issues"
         results1 = await tester.full_test(mayank_msg)
         impl1 = extract_implementation_details(results1.get('railway_logs', []))
         role_found = impl1.get("role_found") or ""
@@ -588,8 +588,8 @@ async def main():
 
         # Test 2: Zea -> ADMIN channel
         print("\n[2/2] Testing Zea -> ADMIN routing")
-        # Use working pattern from simple test: "Create task: [description] - assign to [name]"
-        zea_msg = "Create task: Update the team schedule spreadsheet - assign to Zea"
+        # Use "no questions" + simple description (no "and" to avoid task splitting)
+        zea_msg = "Task for Zea no questions: Update the team schedule"
         results2 = await tester.full_test(zea_msg)
         impl2 = extract_implementation_details(results2.get('railway_logs', []))
         role_found = impl2.get("role_found") or ""
@@ -654,8 +654,8 @@ async def main():
 
         # Test 3: Routing
         print("\n[3/3] ROUTING TEST")
-        # Mayank - use working pattern
-        results = await tester.full_test("Create task: Review the API code - assign to Mayank")
+        # Mayank - use "no questions" + simple description
+        results = await tester.full_test("Task for Mayank no questions: Review API endpoints")
         impl = extract_implementation_details(results.get('railway_logs', []))
         role_found = impl.get("role_found") or ""
         channel_routed = impl.get("channel_routed") or ""
@@ -665,8 +665,8 @@ async def main():
 
         await asyncio.sleep(2)
 
-        # Zea - use working pattern
-        results = await tester.full_test("Create task: Update the team schedule - assign to Zea")
+        # Zea - use "no questions" + simple description
+        results = await tester.full_test("Task for Zea no questions: Update team schedule")
         impl = extract_implementation_details(results.get('railway_logs', []))
         role_found = impl.get("role_found") or ""
         channel_routed = impl.get("channel_routed") or ""
