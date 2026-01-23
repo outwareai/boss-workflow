@@ -342,30 +342,38 @@ python test_full_loop.py read-discord
 
 ### Step 3: End-of-Workflow Summary (REQUIRED)
 
-**At the end of EVERY significant task, output a summary like this:**
+**At the end of EVERY significant task, provide a clear summary covering:**
 
-```
-╔══════════════════════════════════════════════════════════════╗
-║              WORKFLOW COMPLETION SUMMARY                     ║
-╠══════════════════════════════════════════════════════════════╣
-║ TASK: [Brief description of what was requested]              ║
-╠══════════════════════════════════════════════════════════════╣
-║ WHAT WAS IMPLEMENTED:                                        ║
-║ • [Feature 1]: [Brief description]                           ║
-║ • [Feature 2]: [Brief description]                           ║
-║ • [Files changed]: file1.py, file2.py                        ║
-╠══════════════════════════════════════════════════════════════╣
-║ WHAT WAS TESTED:                                             ║
-║ • [Test 1]: [Result - PASSED/FAILED]                         ║
-║ • [Test 2]: [Result - PASSED/FAILED]                         ║
-╠══════════════════════════════════════════════════════════════╣
-║ COMMITS:                                                     ║
-║ • [commit-hash]: [commit message]                            ║
-╠══════════════════════════════════════════════════════════════╣
-║ STATUS: ✅ COMPLETE / ⚠️ PARTIAL / ❌ BLOCKED                 ║
-║ NEXT STEPS: [If any]                                         ║
-╚══════════════════════════════════════════════════════════════╝
-```
+1. **What was implemented** - Describe each feature/change made and which files were modified
+
+2. **What was tested** - List the tests run and their results (passed/failed)
+
+3. **Commits made** - List commit hashes and messages
+
+4. **Status** - Is the task complete, partial, or blocked?
+
+5. **Next steps** - If anything remains to be done
+
+**Example:**
+
+> **Task Complete: v2.2 Smart AI Upgrade**
+>
+> **Implemented:**
+> I added complexity detection to `clarifier.py` that scores tasks 1-10 based on keywords like "fix" (simple) vs "build system" (complex). Simple tasks now skip questions entirely, while complex tasks ask 1-2 fallback questions even if AI self-answered. Also added role-based routing in `discord.py` so Mayank's tasks go to DEV channel and Zea's go to ADMIN channel.
+>
+> **Tested:**
+> Ran 3 tests with `test_full_loop.py`:
+> - Simple task "fix login typo" - PASSED (complexity=1, no questions)
+> - Admin task for Zea - PASSED (routed to ADMIN channel)
+> - Complex task "build notification system" - PASSED (complexity=9, asked 2 questions)
+>
+> **Commits:**
+> - `4faed9b`: feat(ai): v2.2 Smart AI - complexity detection and role-aware routing
+> - `2fe6513`: docs(features): document v2.2 features
+>
+> **Status:** Complete
+>
+> **Next steps:** None - ready for production use
 
 **This summary is MANDATORY - never skip it!**
 
