@@ -3100,7 +3100,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             return "Which task would you like to modify? Please provide the task ID (e.g., TASK-001).", None
 
         # Get task
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 
@@ -3152,7 +3152,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             return f"Who should {task_id} be reassigned to?", None
 
         # Get task
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 
@@ -3202,7 +3202,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             return f"What priority level for {task_id}? (urgent/high/medium/low)", None
 
         # Get task
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 
@@ -3244,7 +3244,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             return "Which task's deadline would you like to change?", None
 
         # Get task
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 
@@ -3295,7 +3295,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             status_list = ", ".join(valid_statuses[:7]) + "..."
             return f"What status for {task_id}? Options: {status_list}", None
 
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 
@@ -3331,7 +3331,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if not new_tags:
             return f"What tags should be added to {task_id}?", None
 
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 
@@ -3372,7 +3372,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         if not tags_to_remove:
             return f"Which tags should be removed from {task_id}?", None
 
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 
@@ -3599,7 +3599,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             return "Which task would you like to split?", None
 
         # Get task
-        task = await self.sheets.get_task_by_id(task_id)
+        task = await self.sheets.get_task(task_id)
         if not task:
             return f"❌ Task {task_id} not found.", None
 

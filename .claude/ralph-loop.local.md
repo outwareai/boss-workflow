@@ -1,9 +1,12 @@
 ---
-active: true
-iteration: 4
+active: false
+iteration: 0
 max_iterations: 0
 completion_promise: null
-started_at: "2026-01-23T10:21:28Z"
+started_at: null
 ---
 
-Execute the plan in PLAN_COMPREHENSIVE_TASK_OPS.md.
+# Ralph Loop Disabled
+
+This file controls autonomous loop execution. Keep `active: false` to prevent
+Claude from working without your explicit instructions.
