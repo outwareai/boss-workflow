@@ -75,3 +75,8 @@ service-account.json
 # Local development
 .local/
 data/
+
+# Test result files (may contain sensitive data from logs)
+*_results.json
+test_*_results.json
+conversation_test_results.json
