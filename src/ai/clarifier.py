@@ -889,26 +889,58 @@ Make questions conversational and intelligent, like a senior developer or produc
         if not pending_questions:
             return updates
 
-        # Try to parse answers
-        lines = user_response.strip().split("\n")
+        # Try to parse answers - support multiple formats:
+        # "1tomorrow 2a", "1. tomorrow 2. a", "1) tomorrow 2) a", "A B", multiline, etc.
+        import re
+
         answers = []
+        response_text = user_response.strip()
 
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
+        # First try: Parse "1answer 2answer" or "1.answer 2.answer" format (inline numbered)
+        # Pattern: digit followed by optional separator, then answer text until next digit or end
+        inline_pattern = r'(\d+)[.\)\:\s]*([^0-9]+?)(?=\s*\d+[.\)\:\s]|$)'
+        inline_matches = re.findall(inline_pattern, response_text, re.IGNORECASE)
 
-            # Check for option selection (A, B, C, etc.)
-            if len(line) == 1 and line.upper() in "ABCDEFGH":
-                option_index = ord(line.upper()) - ord("A")
-                answers.append(("option", option_index))
-            # Check for numbered answer (1. answer, 2. answer)
-            elif line[0].isdigit() and "." in line[:3]:
-                answer_text = line.split(".", 1)[1].strip()
-                answers.append(("text", answer_text))
-            else:
-                # Plain text answer
-                answers.append(("text", line))
+        if inline_matches:
+            # Sort by question number and extract answers
+            sorted_matches = sorted(inline_matches, key=lambda x: int(x[0]))
+            for num, answer_text in sorted_matches:
+                answer_text = answer_text.strip()
+                if answer_text:
+                    # Check if answer is a single letter (option selection)
+                    if len(answer_text) == 1 and answer_text.upper() in "ABCDEFGH":
+                        option_index = ord(answer_text.upper()) - ord("A")
+                        answers.append(("option", option_index))
+                    else:
+                        answers.append(("text", answer_text))
+        else:
+            # Fallback: Parse line by line or single answers
+            lines = response_text.split("\n")
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Check for single option selection (A, B, C, etc.)
+                if len(line) == 1 and line.upper() in "ABCDEFGH":
+                    option_index = ord(line.upper()) - ord("A")
+                    answers.append(("option", option_index))
+                # Check for numbered answer with various separators (1. answer, 1) answer, 1: answer)
+                elif line[0].isdigit():
+                    # Remove leading number and separator
+                    match = re.match(r'^\d+[.\)\:\s]+(.+)$', line)
+                    if match:
+                        answers.append(("text", match.group(1).strip()))
+                    else:
+                        # Just a number followed directly by text
+                        match = re.match(r'^\d+(.+)$', line)
+                        if match:
+                            answers.append(("text", match.group(1).strip()))
+                        else:
+                            answers.append(("text", line))
+                else:
+                    # Plain text answer
+                    answers.append(("text", line))
 
         # Match answers to questions
         for i, (answer_type, answer_value) in enumerate(answers):

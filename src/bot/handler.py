@@ -201,6 +201,31 @@ class UnifiedHandler:
                 # Then finalize directly (skip showing preview again)
                 return await self._finalize_task(active_conv, user_id)
 
+            # User is providing actual answers to questions (e.g., "1tomorrow 2a", "A", "high priority")
+            # Process the answers and update the conversation
+            prefs = await self.prefs.get_preferences(user_id)
+            updates = await self.clarifier.process_user_answers(active_conv, message)
+
+            # Merge updates into extracted_info
+            if updates:
+                for field, value in updates.items():
+                    active_conv.extracted_info[field] = value
+                logger.info(f"Updated conversation with answers: {list(updates.keys())}")
+
+            # Save the conversation with updates
+            await self.context.save_conversation(active_conv)
+
+            # Generate spec preview with merged data and show to user
+            preview_text, spec = await self.clarifier.generate_spec_preview(
+                conversation=active_conv,
+                preferences=prefs.to_dict()
+            )
+            active_conv.generated_spec = spec
+            active_conv.stage = ConversationStage.PREVIEW
+            await self.context.save_conversation(active_conv)
+
+            return preview_text, None
+
         # Handle PREVIEW stage - user is responding to task preview
         if active_conv and active_conv.stage == ConversationStage.PREVIEW:
             msg_lower = message.lower().strip()
@@ -241,6 +266,17 @@ class UnifiedHandler:
                 correction = message[5:].strip() if msg_lower.startswith("wait ") else message[5:].strip()
                 if correction:
                     return await self._handle_task_correction(user_id, active_conv, correction, user_name)
+
+            # Detect correction-like messages without explicit prefix
+            # e.g., "You mistake the assignee is Mayank", "the assignee should be John", "wrong, it's for Zea"
+            correction_indicators = [
+                "mistake", "wrong", "incorrect", "should be", "supposed to be",
+                "assignee is", "assign to", "assigned to", "priority is", "priority should",
+                "deadline is", "deadline should", "title is", "title should",
+                "that's not right", "not correct", "fix the", "the effort", "effort should"
+            ]
+            if any(indicator in msg_lower for indicator in correction_indicators):
+                return await self._handle_task_correction(user_id, active_conv, message, user_name)
 
             # User just says "no" = cancel
             elif msg_lower == "no":
@@ -2157,10 +2193,29 @@ Return ONLY the reformulated message, nothing else."""
         conv = await self.context.get_active_conversation(user_id)
         if conv:
             if conv.stage == ConversationStage.AWAITING_ANSWER:
-                # They're answering a question
+                # They're answering a question - process answers and show preview
                 prefs = await self.prefs.get_preferences(user_id)
-                await self.clarifier.process_user_answers(conv, message)
-                return await self._create_task_directly(conv, prefs.to_dict())
+                updates = await self.clarifier.process_user_answers(conv, message)
+
+                # Merge updates into extracted_info
+                if updates:
+                    for field, value in updates.items():
+                        conv.extracted_info[field] = value
+                    logger.info(f"[_handle_unknown] Updated conversation with answers: {list(updates.keys())}")
+
+                # Save conversation with updates
+                await self.context.save_conversation(conv)
+
+                # Generate preview with merged data
+                preview_text, spec = await self.clarifier.generate_spec_preview(
+                    conversation=conv,
+                    preferences=prefs.to_dict()
+                )
+                conv.generated_spec = spec
+                conv.stage = ConversationStage.PREVIEW
+                await self.context.save_conversation(conv)
+
+                return preview_text, None
 
             elif conv.stage == ConversationStage.PREVIEW:
                 # They're responding to preview
