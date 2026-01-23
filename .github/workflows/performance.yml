@@ -1,0 +1,124 @@
+name: Performance Monitoring
+
+on:
+  schedule:
+    # Run every 6 hours to track performance metrics
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  performance-check:
+    name: Track Performance Metrics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests python-dateutil
+
+      - name: Check database health
+        id: db_health
+        run: |
+          response=$(curl -s "https://boss-workflow-production.up.railway.app/health/db")
+          echo "db_health=$response" >> $GITHUB_OUTPUT
+          echo "### Database Health" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$response" | python -m json.tool >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Check API performance
+        id: api_perf
+        run: |
+          # Measure /health endpoint
+          start=$(date +%s%N)
+          curl -s "https://boss-workflow-production.up.railway.app/health" > /dev/null
+          end=$(date +%s%N)
+          health_ms=$((($end - $start) / 1000000))
+
+          # Measure /api/db/stats endpoint
+          start=$(date +%s%N)
+          stats=$(curl -s "https://boss-workflow-production.up.railway.app/api/db/stats")
+          end=$(date +%s%N)
+          stats_ms=$((($end - $start) / 1000000))
+
+          echo "health_latency_ms=$health_ms" >> $GITHUB_OUTPUT
+          echo "stats_latency_ms=$stats_ms" >> $GITHUB_OUTPUT
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### API Performance" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | Latency |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| /health | ${health_ms}ms |" >> $GITHUB_STEP_SUMMARY
+          echo "| /api/db/stats | ${stats_ms}ms |" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Database Statistics" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$stats" | python -m json.tool >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Check connection pool utilization
+        run: |
+          health=$(curl -s "https://boss-workflow-production.up.railway.app/health/db")
+          pool_size=$(echo "$health" | python -c "import sys, json; print(json.load(sys.stdin).get('pool_size', 0))")
+          checked_out=$(echo "$health" | python -c "import sys, json; print(json.load(sys.stdin).get('checked_out', 0))")
+          overflow=$(echo "$health" | python -c "import sys, json; print(json.load(sys.stdin).get('overflow', 0))")
+
+          if [ "$checked_out" -gt "$pool_size" ]; then
+            echo "⚠️ WARNING: Connection pool using overflow connections!" >> $GITHUB_STEP_SUMMARY
+            echo "- Checked out: $checked_out" >> $GITHUB_STEP_SUMMARY
+            echo "- Pool size: $pool_size" >> $GITHUB_STEP_SUMMARY
+            echo "- Overflow: $overflow" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Connection pool healthy" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Performance assessment
+        run: |
+          health_ms=${{ steps.api_perf.outputs.health_latency_ms }}
+          stats_ms=${{ steps.api_perf.outputs.stats_latency_ms }}
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Performance Assessment" >> $GITHUB_STEP_SUMMARY
+
+          # Expected targets (v2.3.0)
+          health_target=50
+          stats_target=300
+
+          if [ "$health_ms" -lt "$health_target" ] && [ "$stats_ms" -lt "$stats_target" ]; then
+            echo "✅ **All metrics within target**" >> $GITHUB_STEP_SUMMARY
+            echo "- /health: ${health_ms}ms < ${health_target}ms target" >> $GITHUB_STEP_SUMMARY
+            echo "- /api/db/stats: ${stats_ms}ms < ${stats_target}ms target" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Some metrics above target**" >> $GITHUB_STEP_SUMMARY
+            if [ "$health_ms" -ge "$health_target" ]; then
+              echo "- ⚠️ /health: ${health_ms}ms >= ${health_target}ms target" >> $GITHUB_STEP_SUMMARY
+            fi
+            if [ "$stats_ms" -ge "$stats_target" ]; then
+              echo "- ⚠️ /api/db/stats: ${stats_ms}ms >= ${stats_target}ms target" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+      - name: Save metrics to file
+        run: |
+          mkdir -p performance-metrics
+          cat > performance-metrics/$(date +%Y-%m-%d_%H-%M-%S).json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "health_latency_ms": ${{ steps.api_perf.outputs.health_latency_ms }},
+            "stats_latency_ms": ${{ steps.api_perf.outputs.stats_latency_ms }},
+            "db_health": ${{ steps.db_health.outputs.db_health }}
+          }
+          EOF
+
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-metrics-${{ github.run_number }}
+          path: performance-metrics/
