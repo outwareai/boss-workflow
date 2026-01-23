@@ -13,11 +13,21 @@ from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
 import asyncio
 
 from config import settings
-from .models.api_validation import SubtaskCreate, DependencyCreate, TaskFilter, AdminAuthRequest
+from .models.api_validation import (
+    SubtaskCreate,
+    DependencyCreate,
+    TaskFilter,
+    AdminAuthRequest,
+    TeachingRequest,
+    ProjectCreate,
+    TelegramUpdate,
+)
 from .bot.telegram_simple import get_telegram_bot_simple
 from .scheduler.jobs import get_scheduler_manager
 from .memory.preferences import get_preferences_manager
@@ -527,21 +537,21 @@ async def db_health():
 
 
 @app.post("/admin/run-migration-simple")
-async def run_migration_simple(auth: dict):
+async def run_migration_simple(auth: AdminAuthRequest):
     """
     Run Q1 2026 composite indexes migration (hardcoded - guaranteed to work).
 
     Q1 2026 Security: Moved secret from query param to body, using constant-time comparison.
+    Q3 2026: Added Pydantic validation for admin secret.
     """
     try:
         import secrets as sec_module
 
         # Security check - constant-time comparison
         admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
-        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
 
-        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
-            return {"status": "error", "error": "Unauthorized"}
+        if not admin_secret or not sec_module.compare_digest(auth.secret, admin_secret):
+            raise HTTPException(status_code=403, detail="Unauthorized")
 
         db = get_database()
         import asyncpg
@@ -599,25 +609,22 @@ async def run_migration_simple(auth: dict):
 
 
 @app.post("/admin/run-migration")
-async def run_migration(auth: dict):
+async def run_migration(auth: AdminAuthRequest):
     """
     Run database migrations (admin only).
     Requires ADMIN_SECRET environment variable in request body.
 
     Q1 2026 Security: Moved secret from query param to body, using constant-time comparison.
+    Q3 2026: Added Pydantic validation for admin secret.
     """
     try:
         import secrets as sec_module
 
         # Security: Require admin secret - constant-time comparison
         admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
-        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
 
-        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
-            return {
-                "status": "error",
-                "error": "Unauthorized - Invalid admin secret"
-            }
+        if not admin_secret or not sec_module.compare_digest(auth.secret, admin_secret):
+            raise HTTPException(status_code=403, detail="Unauthorized - Invalid admin secret")
 
         db = get_database()
 
@@ -701,22 +708,22 @@ async def run_migration(auth: dict):
 
 
 @app.post("/admin/seed-test-team")
-async def seed_test_team(auth: dict):
+async def seed_test_team(auth: AdminAuthRequest):
     """
     Seed test team members (Mayank/Zea) for routing tests.
     Requires ADMIN_SECRET environment variable in request body.
 
     Q1 2026 Security: Moved secret from query param to body, using constant-time comparison.
+    Q3 2026: Added Pydantic validation for admin secret.
     """
     try:
         import secrets as sec_module
 
         # Security check - use constant-time comparison to prevent timing attacks
         admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
-        provided_secret = auth.get("secret", "") if isinstance(auth, dict) else ""
 
-        if not admin_secret or not sec_module.compare_digest(provided_secret, admin_secret):
-            return {"status": "error", "error": "Unauthorized"}
+        if not admin_secret or not sec_module.compare_digest(auth.secret, admin_secret):
+            raise HTTPException(status_code=403, detail="Unauthorized")
 
         from .database.repositories import get_team_repository
         team_repo = get_team_repository()
@@ -836,10 +843,29 @@ async def telegram_webhook(request: Request):
 
     Receives updates from Telegram and processes them in background
     to avoid Telegram's 60-second timeout causing duplicate requests.
+
+    Q3 2026: Added Pydantic validation (lenient due to Telegram's complex update structure).
     """
     try:
+        # Parse and validate basic structure
         update_data = await request.json()
+
+        # Basic validation of required fields
+        if not isinstance(update_data, dict):
+            logger.warning("Invalid Telegram update: not a dict")
+            return JSONResponse(
+                status_code=200,  # Return 200 to prevent Telegram retries
+                content={"ok": False, "error": "Invalid update format"}
+            )
+
         update_id = update_data.get('update_id')
+        if not update_id or not isinstance(update_id, int) or update_id <= 0:
+            logger.warning(f"Invalid update_id: {update_id}")
+            return JSONResponse(
+                status_code=200,
+                content={"ok": False, "error": "Invalid update_id"}
+            )
+
         logger.debug(f"Received Telegram update: {update_id}")
 
         # Deduplicate - Telegram resends if we're slow (>60s)
@@ -981,16 +1007,17 @@ async def get_weekly_overview():
 
 
 @app.post("/api/preferences/{user_id}/teach")
-async def teach_preference(user_id: str, request: Request):
-    """Teach the bot a new preference."""
-    try:
-        data = await request.json()
-        teaching_text = data.get("text", "")
+async def teach_preference(user_id: str, teaching: TeachingRequest):
+    """
+    Teach the bot a new preference.
 
+    Q3 2026: Added Pydantic validation with XSS prevention and length limits.
+    """
+    try:
         from .memory.learning import get_learning_manager
         learning = get_learning_manager()
 
-        success, response = await learning.process_teach_command(user_id, teaching_text)
+        success, response = await learning.process_teach_command(user_id, teaching.text)
 
         return {
             "success": success,
@@ -1274,21 +1301,20 @@ async def get_projects():
 
 
 @app.post("/api/db/projects")
-async def create_project(request: Request):
-    """Create a new project."""
+async def create_project(project_data: ProjectCreate):
+    """
+    Create a new project.
+
+    Q3 2026: Added Pydantic validation with XSS prevention, length limits, and color format validation.
+    """
     try:
         from .database.repositories import get_project_repository
         project_repo = get_project_repository()
 
-        data = await request.json()
-        name = data.get("name")
-        if not name:
-            raise HTTPException(status_code=400, detail="Project name required")
-
         project = await project_repo.create(
-            name=name,
-            description=data.get("description"),
-            color=data.get("color"),
+            name=project_data.name,
+            description=project_data.description,
+            color=project_data.color,
         )
 
         return {"ok": True, "project_id": project.id}
@@ -1343,6 +1369,61 @@ async def get_db_stats():
 
 
 # Error handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handle Pydantic validation errors with detailed feedback.
+
+    Q3 2026: Custom validation error handler that returns clear, actionable error messages.
+    """
+    errors = []
+    for error in exc.errors():
+        field = " -> ".join(str(loc) for loc in error["loc"] if loc != "body")
+        errors.append({
+            "field": field,
+            "message": error["msg"],
+            "type": error["type"],
+        })
+
+    logger.warning(f"Validation error on {request.url.path}: {errors}")
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "Validation failed",
+            "details": errors,
+            "help": "Please check the input fields and ensure they meet the requirements."
+        }
+    )
+
+
+@app.exception_handler(ValidationError)
+async def pydantic_validation_exception_handler(request: Request, exc: ValidationError):
+    """
+    Handle direct Pydantic validation errors.
+
+    Q3 2026: Catches validation errors raised within business logic.
+    """
+    errors = []
+    for error in exc.errors():
+        field = " -> ".join(str(loc) for loc in error["loc"])
+        errors.append({
+            "field": field,
+            "message": error["msg"],
+            "type": error["type"],
+        })
+
+    logger.warning(f"Pydantic validation error on {request.url.path}: {errors}")
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "Validation failed",
+            "details": errors,
+        }
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler."""

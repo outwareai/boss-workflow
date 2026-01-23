@@ -159,6 +159,41 @@ class TriggerJobRequest(BaseModel):
 
 
 # ============================================
+# PROJECT OPERATIONS
+# ============================================
+
+class ProjectCreate(BaseModel):
+    """Input validation for creating projects."""
+    name: str = Field(..., min_length=3, max_length=200)
+    description: Optional[str] = Field(None, max_length=2000)
+    color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v):
+        """Validate and sanitize project name."""
+        stripped = v.strip()
+        if len(stripped) < 3:
+            raise ValueError("name must be at least 3 characters after stripping")
+        # XSS prevention
+        if "<" in stripped or ">" in stripped:
+            raise ValueError("name cannot contain HTML/script tags")
+        return stripped
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v):
+        """Validate and sanitize description."""
+        if v is None:
+            return v
+        stripped = v.strip()
+        # XSS prevention
+        if "<script" in stripped.lower() or "<iframe" in stripped.lower():
+            raise ValueError("description cannot contain script/iframe tags")
+        return stripped if stripped else None
+
+
+# ============================================
 # ONBOARDING (Enhanced)
 # ============================================
 

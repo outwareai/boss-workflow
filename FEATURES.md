@@ -1,8 +1,8 @@
 # Boss Workflow Automation - Features Documentation
 
-> **Last Updated:** 2026-01-23
-> **Version:** 2.2.0
-> **Total Lines:** ~2182 | **Total Features:** 113+
+> **Last Updated:** 2026-01-24
+> **Version:** 2.3.1 (Q3 2026 - API Input Validation)
+> **Total Lines:** ~2300 | **Total Features:** 114+
 
 **Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
 **Usage Rule:** **Read this file FIRST when starting work, update LAST after making changes.**
@@ -2472,6 +2472,139 @@ async def process_telegram_update(update):
    - Completion times
 
 **JSON API:** `/api/audit/stats` returns same data as JSON
+
+---
+
+#### API Input Validation (Q3 2026)
+
+**File:** `src/models/api_validation.py`
+**Status:** ✅ Production (Q3 2026)
+
+**Purpose:** Comprehensive input validation using Pydantic models to prevent:
+- SQL injection attacks
+- XSS (Cross-Site Scripting) attacks
+- Resource exhaustion
+- Invalid data types
+- Malformed requests
+
+**Validated Endpoints:**
+
+| Endpoint | Model | Validation Rules |
+|----------|-------|-----------------|
+| `POST /api/db/tasks/{task_id}/subtasks` | `SubtaskCreate` | Title: 1-500 chars (trimmed), Description: 0-5000 chars |
+| `POST /api/db/tasks/{task_id}/dependencies` | `DependencyCreate` | Task ID format: `TASK-YYYYMMDD-NNN`, Type: enum validation |
+| `POST /api/db/projects` | `ProjectCreate` | Name: 3-200 chars (XSS check), Color: `#RRGGBB` format |
+| `POST /admin/seed-test-team` | `AdminAuthRequest` | Secret: min 1 char, constant-time comparison |
+| `POST /admin/clear-conversations` | `AdminAuthRequest` | Secret: min 1 char, constant-time comparison |
+| `POST /admin/run-migration` | `AdminAuthRequest` | Secret: min 1 char, constant-time comparison |
+| `POST /api/preferences/{user_id}/teach` | `TeachingRequest` | Text: 5-2000 chars (trimmed, no HTML tags) |
+| `POST /webhook/telegram` | Manual validation | update_id: positive integer, basic structure check |
+| `GET /api/db/tasks` | `TaskFilter` | limit: 1-1000, offset: 0-100000, status: enum |
+
+**XSS Prevention Examples:**
+
+```python
+# ProjectCreate validation
+@field_validator("name")
+@classmethod
+def validate_name(cls, v):
+    stripped = v.strip()
+    if "<" in stripped or ">" in stripped:
+        raise ValueError("name cannot contain HTML/script tags")
+    return stripped
+
+@field_validator("description")
+@classmethod
+def validate_description(cls, v):
+    if v is None:
+        return v
+    stripped = v.strip()
+    if "<script" in stripped.lower() or "<iframe" in stripped.lower():
+        raise ValueError("description cannot contain script/iframe tags")
+    return stripped
+```
+
+**Error Response Format:**
+
+```json
+{
+  "error": "Validation failed",
+  "details": [
+    {
+      "field": "name",
+      "message": "name must be at least 3 characters after stripping",
+      "type": "value_error"
+    }
+  ],
+  "help": "Please check the input fields and ensure they meet the requirements."
+}
+```
+
+**Custom Error Handler:**
+
+```python
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Returns 400 with detailed field-level errors."""
+    errors = []
+    for error in exc.errors():
+        field = " -> ".join(str(loc) for loc in error["loc"] if loc != "body")
+        errors.append({
+            "field": field,
+            "message": error["msg"],
+            "type": error["type"],
+        })
+    return JSONResponse(status_code=400, content={"error": "Validation failed", "details": errors})
+```
+
+**Testing:**
+
+```bash
+# Unit tests for validation models
+pytest tests/unit/test_api_validation.py -v
+
+# Integration tests with actual endpoints
+python test_validation_endpoints.py
+```
+
+**Security Features:**
+
+1. **Length Limits** - Prevent resource exhaustion
+   - Titles: 3-500 characters
+   - Descriptions: 10-5000 characters
+   - Teaching text: 5-2000 characters
+
+2. **Format Validation** - Ensure correct data types
+   - Task IDs: `TASK-20260123-001` pattern
+   - Discord IDs: 17-19 digit snowflakes
+   - Telegram IDs: 9-12 digits
+   - Color codes: `#RRGGBB` hex format
+
+3. **XSS Prevention** - Block script injection
+   - Strip HTML tags from text fields
+   - Reject `<script>`, `<iframe>` tags
+   - Validate special characters
+
+4. **Constant-Time Comparison** - Prevent timing attacks
+   ```python
+   import secrets
+   if not secrets.compare_digest(auth.secret, admin_secret):
+       raise HTTPException(status_code=403)
+   ```
+
+5. **Enum Validation** - Type-safe status/role fields
+   - Task statuses: 14 valid values
+   - Dependency types: 3 valid values
+   - Team roles: 5 valid values
+
+**Benefits:**
+
+- ✅ Automatic validation before business logic
+- ✅ Clear, actionable error messages
+- ✅ Protection against common attacks
+- ✅ Reduced manual validation code
+- ✅ Type safety with Pydantic models
+- ✅ Easy to extend with new validators
 
 ---
 

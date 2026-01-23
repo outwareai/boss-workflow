@@ -20,6 +20,7 @@ from src.models.api_validation import (
     OAuthCallback,
     TelegramUpdate,
     DiscordWebhookPayload,
+    ProjectCreate,
 )
 
 
@@ -328,3 +329,75 @@ class TestDiscordWebhookPayload:
         """Test Discord snowflake ID format."""
         with pytest.raises(ValidationError):
             DiscordWebhookPayload(type=1, id="123")  # Too short
+
+
+class TestProjectCreate:
+    """Test project creation validation."""
+
+    def test_valid_project(self):
+        """Test creating valid project."""
+        project = ProjectCreate(name="New Project", description="A test project", color="#FF5733")
+        assert project.name == "New Project"
+        assert project.description == "A test project"
+        assert project.color == "#FF5733"
+
+    def test_name_too_short(self):
+        """Test minimum name length."""
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="AB")  # Only 2 chars
+
+    def test_name_too_long(self):
+        """Test maximum name length."""
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="x" * 201)
+
+    def test_name_whitespace_only(self):
+        """Test name cannot be whitespace only."""
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="   ")
+
+    def test_xss_prevention_in_name(self):
+        """Test XSS prevention in name field."""
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Project<script>alert('xss')</script>")
+
+    def test_xss_prevention_in_description(self):
+        """Test XSS prevention in description field."""
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Valid Project", description="Test <script>alert('xss')</script>")
+
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Valid Project", description="Test <iframe src='evil'></iframe>")
+
+    def test_invalid_color_format(self):
+        """Test color format validation."""
+        # Invalid hex format
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Project", color="FF5733")  # Missing #
+
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Project", color="#FF57")  # Too short
+
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Project", color="#FF57339")  # Too long
+
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Project", color="#GGGGGG")  # Invalid hex chars
+
+    def test_valid_color_formats(self):
+        """Test various valid color formats."""
+        ProjectCreate(name="Project", color="#FF5733")
+        ProjectCreate(name="Project", color="#ffffff")
+        ProjectCreate(name="Project", color="#000000")
+        ProjectCreate(name="Project", color="#AbCdEf")
+
+    def test_optional_fields(self):
+        """Test optional description and color."""
+        project = ProjectCreate(name="Minimal Project")
+        assert project.description is None
+        assert project.color is None
+
+    def test_description_max_length(self):
+        """Test description maximum length."""
+        with pytest.raises(ValidationError):
+            ProjectCreate(name="Project", description="x" * 2001)
