@@ -1157,37 +1157,6 @@ async def add_dependency(task_id: str, dependency: DependencyCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/db/audit/{task_id}")
-async def get_task_audit(task_id: str):
-    """Get audit history for a task."""
-    try:
-        from .database.repositories import get_audit_repository
-        audit_repo = get_audit_repository()
-
-        logs = await audit_repo.get_task_history(task_id)
-
-        return {
-            "task_id": task_id,
-            "history": [
-                {
-                    "action": log.action,
-                    "field": log.field_changed,
-                    "old_value": log.old_value,
-                    "new_value": log.new_value,
-                    "changed_by": log.changed_by,
-                    "timestamp": log.timestamp.isoformat(),
-                    "reason": log.reason,
-                }
-                for log in logs
-            ],
-            "count": len(logs),
-        }
-
-    except Exception as e:
-        logger.error(f"Error getting audit logs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/api/db/audit")
 async def query_audit_logs(
     action: Optional[str] = None,
@@ -1255,6 +1224,38 @@ async def query_audit_logs(
     except Exception as e:
         logger.error(f"Error querying audit logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/db/audit/{task_id}")
+async def get_task_audit(task_id: str):
+    """Get audit history for a task."""
+    try:
+        from .database.repositories import get_audit_repository
+        audit_repo = get_audit_repository()
+
+        logs = await audit_repo.get_task_history(task_id)
+
+        return {
+            "task_id": task_id,
+            "history": [
+                {
+                    "action": log.action,
+                    "field": log.field_changed,
+                    "old_value": log.old_value,
+                    "new_value": log.new_value,
+                    "changed_by": log.changed_by,
+                    "timestamp": log.timestamp.isoformat(),
+                    "reason": log.reason,
+                }
+                for log in logs
+            ],
+            "count": len(logs),
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting audit logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get("/api/db/projects")
