@@ -244,7 +244,7 @@ class DiscordIntegration:
             team_repo = get_team_repository()
             member = await team_repo.find_member(assignee)
             if member and member.role:
-                logger.info(f"Found role for {assignee} in database: {member.role}")
+                logger.info(f"Found role for '{assignee}': '{member.role}' (source: database)")
                 return member.role
             else:
                 logger.debug(f"No database match for {assignee}")
