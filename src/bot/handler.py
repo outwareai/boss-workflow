@@ -56,7 +56,6 @@ class UnifiedHandler:
         self.tasks = get_tasks_integration()
         self.reviewer = get_submission_reviewer()
         self.task_repo = get_task_repository()
-        self.deepseek = get_deepseek_client()
 
         # Track active sessions
         self._validation_sessions: Dict[str, Dict] = {}
@@ -3439,11 +3438,6 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         )
 
         if subtask:
-            # Sync to sheets
-            task = await self.task_repo.get_by_id(task_id)
-            if task:
-                await self.sheets.sync_task_with_subtasks(task)
-
             await self.discord.post_simple_message(
                 f"➕ Subtask Added: {task_id}\n{subtask_title}\nBy {user_name}"
             )
@@ -3466,14 +3460,9 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             return f"Which subtask number for {task_id}?", None
 
         # Mark subtask complete
-        success = await self.task_repo.complete_subtask(task_id, subtask_number)
+        success = await self.task_repo.complete_subtask_by_order(task_id, subtask_number, user_name)
 
         if success:
-            # Sync to sheets
-            task = await self.task_repo.get_by_id(task_id)
-            if task:
-                await self.sheets.sync_task_with_subtasks(task)
-
             await self.discord.post_simple_message(
                 f"✅ Subtask Completed: {task_id}\nSubtask #{subtask_number}\nBy {user_name}"
             )
@@ -3495,9 +3484,9 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         dependency_task = task_ids[1]
 
         # Add dependency
-        success = await self.task_repo.add_dependency(dependent_task, dependency_task)
+        dependency = await self.task_repo.add_dependency(dependent_task, dependency_task)
 
-        if success:
+        if dependency is not None:
             await self.discord.post_simple_message(
                 f"🔗 Dependency Added\n{dependent_task} now depends on {dependency_task}\nBy {user_name}"
             )
@@ -3604,7 +3593,7 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
             return f"❌ Task {task_id} not found.", None
 
         # Use AI to suggest split
-        breakdown = await self.deepseek.breakdown_task(
+        breakdown = await self.ai.breakdown_task(
             title=task.get("title"),
             description=task.get("description"),
             priority=task.get("priority"),
