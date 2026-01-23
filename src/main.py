@@ -550,7 +550,10 @@ async def run_migration(secret: str = ""):
 
         # CREATE INDEX CONCURRENTLY cannot run in a transaction, so use raw connection
         import asyncpg
-        conn = await asyncpg.connect(db.engine.url.render_as_string(hide_password=False))
+        # Convert SQLAlchemy URL to asyncpg-compatible format
+        db_url = db.engine.url.render_as_string(hide_password=False)
+        db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        conn = await asyncpg.connect(db_url)
 
         try:
             for statement in statements:
