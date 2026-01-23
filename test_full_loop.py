@@ -498,7 +498,8 @@ async def main():
         # Test simple task - should skip questions (complexity 1-3)
         print("\n[TEST-SIMPLE] Testing simple task flow (should skip questions)")
         print("-" * 60)
-        test_message = "Tell Mayank to fix the login typo"
+        # Use "create task" phrasing to ensure task creation intent
+        test_message = "Create task: Fix the login page typo - assign to Mayank"
         print(f"Sending: '{test_message}'")
         results = await tester.full_test(test_message)
         impl = extract_implementation_details(results.get('railway_logs', []))
@@ -518,7 +519,8 @@ async def main():
         # Test complex task - should ask questions (complexity 7+)
         print("\n[TEST-COMPLEX] Testing complex task flow (should ask questions)")
         print("-" * 60)
-        test_message = "Build a notification system with email, SMS, and push notifications for user alerts"
+        # Use "create task" phrasing with complex feature to trigger task creation + complexity detection
+        test_message = "Create task: Build a complete notification system with email, SMS, and push notifications for user alerts and monitoring"
         print(f"Sending: '{test_message}'")
         results = await tester.full_test(test_message, wait_seconds=10)
         impl = extract_implementation_details(results.get('railway_logs', []))
@@ -541,7 +543,7 @@ async def main():
 
         # Test 1: Mayank -> DEV channel
         print("\n[1/2] Testing Mayank -> DEV routing")
-        mayank_msg = "Tell Mayank to review the API code"
+        mayank_msg = "Create task for Mayank: Review the API code and fix any issues"
         results1 = await tester.full_test(mayank_msg)
         impl1 = extract_implementation_details(results1.get('railway_logs', []))
         role_found = impl1.get("role_found") or ""
@@ -559,7 +561,7 @@ async def main():
 
         # Test 2: Zea -> ADMIN channel
         print("\n[2/2] Testing Zea -> ADMIN routing")
-        zea_msg = "Tell Zea to update the team schedule"
+        zea_msg = "Create task for Zea: Update the team schedule spreadsheet"
         results2 = await tester.full_test(zea_msg)
         impl2 = extract_implementation_details(results2.get('railway_logs', []))
         role_found = impl2.get("role_found") or ""
@@ -596,7 +598,7 @@ async def main():
 
         # Test 1: Simple
         print("\n[1/3] SIMPLE TASK TEST")
-        test_msg = "Tell Mayank to fix the login typo"
+        test_msg = "Create task: Fix the login page typo - assign to Mayank"
         results = await tester.full_test(test_msg)
         impl = extract_implementation_details(results.get('railway_logs', []))
         complexity = impl.get("complexity")
@@ -610,7 +612,7 @@ async def main():
 
         # Test 2: Complex
         print("\n[2/3] COMPLEX TASK TEST")
-        test_msg = "Build a notification system with email, SMS, and push for alerts"
+        test_msg = "Create task: Build a complete notification system with email, SMS, and push for user alerts"
         results = await tester.full_test(test_msg, wait_seconds=10)
         impl = extract_implementation_details(results.get('railway_logs', []))
         complexity = impl.get("complexity")
@@ -625,7 +627,7 @@ async def main():
         # Test 3: Routing
         print("\n[3/3] ROUTING TEST")
         # Mayank
-        results = await tester.full_test("Tell Mayank to review code")
+        results = await tester.full_test("Create task for Mayank: Review the API code")
         impl = extract_implementation_details(results.get('railway_logs', []))
         role_found = impl.get("role_found") or ""
         channel_routed = impl.get("channel_routed") or ""
@@ -636,7 +638,7 @@ async def main():
         await asyncio.sleep(2)
 
         # Zea
-        results = await tester.full_test("Tell Zea to update schedule")
+        results = await tester.full_test("Create task for Zea: Update the team schedule")
         impl = extract_implementation_details(results.get('railway_logs', []))
         role_found = impl.get("role_found") or ""
         channel_routed = impl.get("channel_routed") or ""
