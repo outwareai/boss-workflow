@@ -57,6 +57,21 @@ class UserIntent(str, Enum):
     CLEAR_TASKS = "clear_tasks"              # "clear all tasks", "delete all tasks"
     ARCHIVE_TASKS = "archive_tasks"          # "archive completed tasks"
 
+    # Task modification operations (v2.2)
+    MODIFY_TASK = "modify_task"              # "change the title", "update description"
+    REASSIGN_TASK = "reassign_task"          # "reassign to Sarah", "give TASK-001 to John"
+    CHANGE_PRIORITY = "change_priority"      # "make this urgent", "lower priority"
+    CHANGE_DEADLINE = "change_deadline"      # "extend deadline to tomorrow"
+    CHANGE_STATUS = "change_status"          # "move to in_progress", "mark as blocked"
+    ADD_TAGS = "add_tags"                    # "tag this as frontend"
+    REMOVE_TAGS = "remove_tags"              # "remove urgent tag"
+    ADD_SUBTASK = "add_subtask"              # "add subtask to design mockup"
+    COMPLETE_SUBTASK = "complete_subtask"    # "mark subtask 1 done"
+    ADD_DEPENDENCY = "add_dependency"        # "TASK-001 depends on TASK-002"
+    REMOVE_DEPENDENCY = "remove_dependency"  # "remove dependency"
+    DUPLICATE_TASK = "duplicate_task"        # "duplicate this task for Sarah"
+    SPLIT_TASK = "split_task"                # "split this into 2 tasks"
+
     # Team management
     ADD_TEAM_MEMBER = "add_team"             # "john is our backend dev"
 
@@ -144,6 +159,12 @@ class IntentDetector:
         intent, data = self._handle_context_state(message_lower, context)
         if intent != UserIntent.UNKNOWN:
             logger.info(f"Context state handled: {intent.value}")
+            return intent, data
+
+        # === STEP 2.5: TASK MODIFICATION PATTERNS (pre-AI check) ===
+        intent, data = self._handle_modification_patterns(message, message_lower)
+        if intent != UserIntent.UNKNOWN:
+            logger.info(f"Task modification pattern detected: {intent.value}")
             return intent, data
 
         # === STEP 3: AI CLASSIFICATION (the brain) ===
@@ -256,6 +277,110 @@ class IntentDetector:
 
         return UserIntent.UNKNOWN, {}
 
+    def _handle_modification_patterns(
+        self,
+        message: str,
+        message_lower: str
+    ) -> Tuple[UserIntent, Dict[str, Any]]:
+        """
+        Handle obvious task modification patterns before AI classification.
+
+        If message contains TASK-ID and modification keywords, directly classify
+        without needing AI (these are unambiguous).
+        """
+
+        # Extract task IDs from message
+        task_ids = re.findall(r'TASK-[\w\-]+', message, re.IGNORECASE)
+
+        if not task_ids:
+            return UserIntent.UNKNOWN, {}
+
+        task_id = task_ids[0].upper()
+        data = {"task_id": task_id, "task_ids": [t.upper() for t in task_ids], "message": message}
+
+        # Check for modification keywords
+        # MODIFY_TASK: change/update/rename title/description
+        if any(k in message_lower for k in ["change", "update", "rename", "edit"]):
+            if any(k in message_lower for k in ["title", "description"]):
+                return UserIntent.MODIFY_TASK, data
+
+        # REASSIGN_TASK: reassign/give/assign to [name]
+        if any(k in message_lower for k in ["reassign", "give", "assign", "transfer"]):
+            if any(k in message_lower for k in [" to ", " for "]):
+                # Extract person name
+                for name in TEAM_NAMES:
+                    if name.lower() in message_lower:
+                        data["new_assignee"] = name.capitalize()
+                        break
+                return UserIntent.REASSIGN_TASK, data
+
+        # CHANGE_PRIORITY: make urgent/high/low priority
+        if any(k in message_lower for k in ["make", "set", "change", "priority"]):
+            priority_map = {
+                "urgent": "urgent",
+                "high": "high",
+                "medium": "medium",
+                "low": "low",
+                "normal": "medium",
+            }
+            for key, value in priority_map.items():
+                if key in message_lower:
+                    data["new_priority"] = value
+                    return UserIntent.CHANGE_PRIORITY, data
+
+        # CHANGE_DEADLINE: extend/push deadline, due [date]
+        if any(k in message_lower for k in ["deadline", "due"]):
+            if any(k in message_lower for k in ["extend", "push", "change", "move", "tomorrow", "friday", "monday", "week"]):
+                return UserIntent.CHANGE_DEADLINE, data
+
+        # CHANGE_STATUS: move to/mark as [status]
+        if any(k in message_lower for k in ["move to", "mark as", "status"]):
+            return UserIntent.CHANGE_STATUS, data
+
+        # ADD_TAGS: tag as/label/add tag
+        if any(k in message_lower for k in ["tag", "label"]):
+            if not any(k in message_lower for k in ["remove", "delete", "untag"]):
+                return UserIntent.ADD_TAGS, data
+
+        # REMOVE_TAGS: remove tag/untag
+        if any(k in message_lower for k in ["remove tag", "delete tag", "untag"]):
+            return UserIntent.REMOVE_TAGS, data
+
+        # ADD_SUBTASK: add subtask
+        if "add subtask" in message_lower or "subtask" in message_lower:
+            if "add" in message_lower or "create" in message_lower:
+                return UserIntent.ADD_SUBTASK, data
+
+        # COMPLETE_SUBTASK: complete/finish/done subtask
+        if "subtask" in message_lower:
+            if any(k in message_lower for k in ["complete", "finish", "done", "mark"]):
+                # Extract subtask number
+                match = re.search(r'subtask\s+#?(\d+)', message_lower)
+                if match:
+                    data["subtask_number"] = int(match.group(1))
+                return UserIntent.COMPLETE_SUBTASK, data
+
+        # ADD_DEPENDENCY: depends on/blocked by
+        if len(task_ids) >= 2:
+            if any(k in message_lower for k in ["depends on", "blocked by", "after"]):
+                return UserIntent.ADD_DEPENDENCY, data
+
+        # REMOVE_DEPENDENCY: remove dependency
+        if len(task_ids) >= 2:
+            if any(k in message_lower for k in ["remove dependency", "unblock"]):
+                return UserIntent.REMOVE_DEPENDENCY, data
+
+        # DUPLICATE_TASK: duplicate/copy
+        if any(k in message_lower for k in ["duplicate", "copy"]):
+            return UserIntent.DUPLICATE_TASK, data
+
+        # SPLIT_TASK: split/break into
+        if any(k in message_lower for k in ["split", "break into"]):
+            return UserIntent.SPLIT_TASK, data
+
+        # If has task ID but no clear modification pattern, let AI handle it
+        return UserIntent.UNKNOWN, {}
+
     async def _ai_classify(
         self,
         message: str,
@@ -290,6 +415,25 @@ AVAILABLE INTENTS (pick exactly one):
 - archive_tasks: Archive completed tasks.
 - delay_task: Postpone a task. Keywords: "delay", "postpone", "push back", "reschedule".
 - bulk_complete: Mark multiple tasks done. Keywords: "mark done", "complete these".
+
+**TASK MODIFICATION (if message contains TASK-XXXXXX-XXX pattern, likely modification):**
+- modify_task: Change task title or description. Keywords: "change TASK-X title", "update TASK-X description", "rename TASK-X", "edit TASK-X". Pattern: "change/update/rename TASK-ID title/description to X". REQUIRES task ID.
+- reassign_task: Change who's assigned. Keywords: "reassign TASK-X", "give TASK-X to [name]", "assign TASK-X to", "transfer TASK-X to". Pattern: "reassign/give/assign TASK-ID to [name]". REQUIRES task ID.
+- change_priority: Update priority level. Keywords: "make TASK-X urgent", "TASK-X high priority", "lower priority of TASK-X", "priority to medium for TASK-X". Pattern: "make TASK-ID urgent/high/medium/low" or "TASK-ID priority to X". REQUIRES task ID.
+- change_deadline: Update deadline. Keywords: "extend TASK-X deadline", "push TASK-X deadline", "TASK-X due tomorrow", "deadline Friday for TASK-X". Pattern: "extend/push TASK-ID deadline to X" or "TASK-ID due X". REQUIRES task ID.
+- change_status: Directly update status. Keywords: "move TASK-X to in_progress", "mark TASK-X as blocked", "status to review for TASK-X". Pattern: "move/mark TASK-ID to/as STATUS". REQUIRES task ID.
+- add_tags: Add tags/labels. Keywords: "tag TASK-X as", "label TASK-X", "add tag to TASK-X". Pattern: "tag/label TASK-ID as X". REQUIRES task ID.
+- remove_tags: Remove tags. Keywords: "remove tag from TASK-X", "untag TASK-X", "delete tag from TASK-X". Pattern: "remove/delete tag from TASK-ID". REQUIRES task ID.
+
+**CRITICAL: When message contains TASK-XXXXXX-XXX format AND action verbs (change, update, reassign, etc.), it's MODIFICATION not task creation!**
+
+**TASK STRUCTURE:**
+- add_subtask: Add subtask to task. Keywords: "add subtask", "break down into", "add step". REQUIRES task ID.
+- complete_subtask: Mark subtask done. Keywords: "subtask done", "finish subtask #1". REQUIRES task ID.
+- add_dependency: Link tasks as dependencies. Keywords: "depends on", "blocked by", "after TASK-X". REQUIRES 2 task IDs.
+- remove_dependency: Remove dependency link. Keywords: "remove dependency", "unblock". REQUIRES 2 task IDs.
+- duplicate_task: Clone a task. Keywords: "duplicate", "copy task", "create similar". REQUIRES task ID.
+- split_task: Break into multiple tasks. Keywords: "split into", "break into 2 tasks". REQUIRES task ID.
 
 **DIRECT COMMUNICATION (NOT task creation):**
 - ask_team_member: Boss wants to COMMUNICATE with team member (ask question, send message, request update). This is NOT assigning work - it's asking/telling/messaging. Keywords: "ask [name]", "tell [name]", "message [name]", "check with [name]", "ping [name]".
@@ -336,19 +480,36 @@ AVAILABLE INTENTS (pick exactly one):
 3. **Spec sheets / detailed tasks:**
    - If message contains "specsheets", "spec sheet", "detailed spec", "PRD" → create_task with detailed_mode: true
 
+4. **Task modification vs task creation:**
+   - "change TASK-001 title to X" → modify_task (MODIFICATION of existing task)
+   - "create task titled X" → create_task (NEW task)
+   - "reassign TASK-001 to Sarah" → reassign_task (MODIFICATION)
+   - "Sarah needs to work on X" → create_task (NEW task)
+   - "make TASK-001 urgent" → change_priority (MODIFICATION)
+   - "urgent task for John" → create_task (NEW task)
+   - **KEY: If message references existing TASK-ID format (TASK-XXXXXX-XXX), it's likely MODIFICATION not creation!**
+
 RESPOND WITH ONLY THIS JSON (no other text):
 {{
     "intent": "intent_name",
     "confidence": 0.95,
     "reasoning": "Brief explanation of why this intent",
     "extracted_data": {{
-        "message": "original message for task creation",
+        "message": "original message",
+        "task_id": "TASK-001 if single task mentioned",
+        "task_ids": ["TASK-001", "TASK-002"] if multiple tasks mentioned,
         "target_name": "person name if ask_team_member",
         "original_request": "what to send if ask_team_member",
-        "task_ids": ["TASK-001"] if specific tasks mentioned,
         "query": "search query if searching",
         "detailed_mode": true/false for spec sheets,
         "priority": "urgent/high/medium/low if mentioned",
+        "new_priority": "new priority for change_priority",
+        "new_assignee": "person name for reassignment",
+        "new_status": "status name for change_status",
+        "new_deadline": "deadline for change_deadline",
+        "tags": ["tag1", "tag2"] for add_tags/remove_tags,
+        "subtask_title": "subtask title for add_subtask",
+        "subtask_number": 1 for complete_subtask,
         "filter": "today/week/pending if status filter"
     }}
 }}
@@ -462,6 +623,83 @@ Only include relevant fields in extracted_data. Remove null/empty fields."""
         if intent == UserIntent.SEARCH_TASKS:
             if "query" not in data:
                 data["query"] = message
+
+        # For modification operations, ensure task_id is present
+        modification_intents = [
+            UserIntent.MODIFY_TASK,
+            UserIntent.REASSIGN_TASK,
+            UserIntent.CHANGE_PRIORITY,
+            UserIntent.CHANGE_DEADLINE,
+            UserIntent.CHANGE_STATUS,
+            UserIntent.ADD_TAGS,
+            UserIntent.REMOVE_TAGS,
+            UserIntent.ADD_SUBTASK,
+            UserIntent.COMPLETE_SUBTASK,
+            UserIntent.ADD_DEPENDENCY,
+            UserIntent.REMOVE_DEPENDENCY,
+            UserIntent.DUPLICATE_TASK,
+            UserIntent.SPLIT_TASK,
+        ]
+
+        if intent in modification_intents:
+            # Extract task IDs if not already present
+            if not data.get("task_id") and task_ids:
+                data["task_id"] = task_ids[0].upper()
+            if not data.get("task_ids") and task_ids:
+                data["task_ids"] = [t.upper() for t in task_ids]
+
+            # Extract values based on intent type
+            if intent == UserIntent.REASSIGN_TASK:
+                # Extract target person name if not already present
+                if not data.get("new_assignee"):
+                    for name in TEAM_NAMES:
+                        if name.lower() in message.lower():
+                            data["new_assignee"] = name.capitalize()
+                            break
+
+            elif intent == UserIntent.CHANGE_PRIORITY:
+                # Extract priority level if not already present
+                if not data.get("new_priority"):
+                    priority_map = {
+                        "urgent": "urgent",
+                        "high": "high",
+                        "medium": "medium",
+                        "low": "low",
+                        "normal": "medium",
+                    }
+                    for key, value in priority_map.items():
+                        if key in message.lower():
+                            data["new_priority"] = value
+                            break
+
+            elif intent == UserIntent.CHANGE_STATUS:
+                # Extract status if not already present
+                if not data.get("new_status"):
+                    valid_statuses = [
+                        "pending", "in_progress", "in_review", "awaiting_validation",
+                        "needs_revision", "completed", "cancelled", "blocked",
+                        "delayed", "undone", "on_hold", "waiting", "needs_info", "overdue"
+                    ]
+                    for status in valid_statuses:
+                        if status.replace("_", " ") in message.lower():
+                            data["new_status"] = status
+                            break
+
+            elif intent in [UserIntent.ADD_TAGS, UserIntent.REMOVE_TAGS]:
+                # Extract tags if not already present
+                if not data.get("tags"):
+                    tags = re.findall(r'tag(?:ged)? (?:as |with )?(\w+)', message.lower())
+                    if tags:
+                        data["tags"] = tags
+
+            elif intent == UserIntent.COMPLETE_SUBTASK:
+                # Extract subtask number if not already present
+                if not data.get("subtask_number"):
+                    match = re.search(r'subtask\s+#?(\d+)', message, re.IGNORECASE)
+                    if match:
+                        data["subtask_number"] = int(match.group(1))
+
+            data["message"] = message
 
         return data
 

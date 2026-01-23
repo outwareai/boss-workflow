@@ -5,6 +5,7 @@ Interprets natural language and routes to appropriate actions.
 """
 
 import logging
+import re
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
 
@@ -54,6 +55,8 @@ class UnifiedHandler:
         self.calendar = get_calendar_integration()
         self.tasks = get_tasks_integration()
         self.reviewer = get_submission_reviewer()
+        self.task_repo = get_task_repository()
+        self.deepseek = get_deepseek_client()
 
         # Track active sessions
         self._validation_sessions: Dict[str, Dict] = {}
@@ -290,6 +293,20 @@ class UnifiedHandler:
             UserIntent.GENERATE_SPEC: self._handle_generate_spec,
             UserIntent.REPORT_ABSENCE: self._handle_report_absence,
             UserIntent.ASK_TEAM_MEMBER: self._handle_ask_team_member,
+            # Task modification operations (v2.2)
+            UserIntent.MODIFY_TASK: self._handle_modify_task,
+            UserIntent.REASSIGN_TASK: self._handle_reassign_task,
+            UserIntent.CHANGE_PRIORITY: self._handle_change_priority,
+            UserIntent.CHANGE_DEADLINE: self._handle_change_deadline,
+            UserIntent.CHANGE_STATUS: self._handle_change_status,
+            UserIntent.ADD_TAGS: self._handle_add_tags,
+            UserIntent.REMOVE_TAGS: self._handle_remove_tags,
+            UserIntent.ADD_SUBTASK: self._handle_add_subtask_intent,
+            UserIntent.COMPLETE_SUBTASK: self._handle_complete_subtask_intent,
+            UserIntent.ADD_DEPENDENCY: self._handle_add_dependency,
+            UserIntent.REMOVE_DEPENDENCY: self._handle_remove_dependency,
+            UserIntent.DUPLICATE_TASK: self._handle_duplicate_task,
+            UserIntent.SPLIT_TASK: self._handle_split_task,
             UserIntent.CANCEL: self._handle_cancel,
             UserIntent.SKIP: self._handle_skip,
             UserIntent.UNKNOWN: self._handle_unknown,
@@ -3071,6 +3088,545 @@ Or respond per task: **1 yes 2 no** / **1 yes 2 edit**""", None
         self._batch_tasks[user_id] = batch
 
         return self._format_sequential_task_preview(batch, next_idx), None
+
+    # ==================== TASK MODIFICATION HANDLERS (v2.2) ====================
+
+    async def _handle_modify_task(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle task modification (title/description)."""
+        task_id = data.get("task_id")
+
+        if not task_id:
+            return "Which task would you like to modify? Please provide the task ID (e.g., TASK-001).", None
+
+        # Get task
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        # Try to extract what to change from message
+        new_title = None
+        new_description = None
+
+        # Simple pattern matching for common phrases
+        if "change title" in message.lower() or "rename" in message.lower():
+            # Extract new title after "to"
+            match = re.search(r'to\s+["\']?(.+?)["\']?\s*$', message, re.IGNORECASE)
+            if match:
+                new_title = match.group(1).strip('"\' ')
+
+        if "update description" in message.lower() or "change description" in message.lower():
+            # Extract new description after "to"
+            match = re.search(r'to\s+["\']?(.+?)["\']?\s*$', message, re.IGNORECASE)
+            if match:
+                new_description = match.group(1).strip('"\' ')
+
+        updates = {}
+        if new_title:
+            updates["title"] = new_title
+        if new_description:
+            updates["description"] = new_description
+
+        if not updates:
+            return f"What would you like to change about {task_id}? (e.g., 'change title to \"New Title\"')", None
+
+        # Update task
+        success = await self.task_repo.update(task_id, updates)
+        if success:
+            # Sync to sheets
+            await self.sheets.update_task(task_id, updates)
+
+            # Post to Discord
+            changes_text = ", ".join([f"{k} updated" for k in updates.keys()])
+            await self.discord.post_simple_message(
+                f"✏️ Task Updated: {task_id}\n{changes_text}\nUpdated by {user_name}"
+            )
+
+            return f"✅ Updated {task_id}: {changes_text}", None
+
+        return f"❌ Failed to update {task_id}.", None
+
+    async def _handle_reassign_task(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle task reassignment."""
+        task_id = data.get("task_id")
+        new_assignee = data.get("new_assignee")
+
+        if not task_id:
+            return "Which task would you like to reassign? Please provide the task ID.", None
+
+        if not new_assignee:
+            return f"Who should {task_id} be reassigned to?", None
+
+        # Get task
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        old_assignee = task.get("assignee", "unassigned")
+
+        # Get team member info
+        from config.team import TEAM_MEMBERS
+        team_member = TEAM_MEMBERS.get(new_assignee.lower())
+
+        updates = {
+            "assignee": new_assignee,
+        }
+
+        if team_member:
+            updates["assignee_telegram_id"] = team_member.get("telegram_id")
+            updates["assignee_discord_id"] = team_member.get("discord_id")
+            updates["assignee_email"] = team_member.get("email")
+
+        # Update
+        success = await self.task_repo.update(task_id, updates)
+        if success:
+            await self.sheets.update_task(task_id, updates)
+
+            # Notify on Discord
+            await self.discord.post_simple_message(
+                f"👤 Task Reassigned: {task_id}\n{old_assignee} → {new_assignee}\nBy {user_name}"
+            )
+
+            return f"✅ Reassigned {task_id} from {old_assignee} to {new_assignee}", None
+
+        return f"❌ Failed to reassign {task_id}.", None
+
+    async def _handle_change_priority(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle priority change."""
+        task_id = data.get("task_id")
+        new_priority = data.get("new_priority")
+
+        if not task_id:
+            return "Which task's priority would you like to change?", None
+
+        if not new_priority:
+            return f"What priority level for {task_id}? (urgent/high/medium/low)", None
+
+        # Get task
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        old_priority = task.get("priority", "medium")
+
+        updates = {"priority": new_priority}
+        success = await self.task_repo.update(task_id, updates)
+
+        if success:
+            await self.sheets.update_task(task_id, updates)
+
+            # Map priority to emoji
+            priority_emoji = {
+                "urgent": "🔴",
+                "high": "🟠",
+                "medium": "🟡",
+                "low": "🟢"
+            }
+
+            await self.discord.post_simple_message(
+                f"⚡ Priority Changed: {task_id}\n"
+                f"{priority_emoji.get(old_priority, '')} {old_priority} → {priority_emoji.get(new_priority, '')} {new_priority}\n"
+                f"By {user_name}"
+            )
+
+            return f"✅ Changed {task_id} priority: {old_priority} → {new_priority}", None
+
+        return f"❌ Failed to update priority for {task_id}.", None
+
+    async def _handle_change_deadline(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle deadline change."""
+        task_id = data.get("task_id")
+        new_deadline = data.get("new_deadline")
+
+        if not task_id:
+            return "Which task's deadline would you like to change?", None
+
+        # Get task
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        # If deadline not extracted, try to parse from message
+        if not new_deadline:
+            # Simple date extraction patterns
+            from datetime import datetime, timedelta
+
+            if "tomorrow" in message.lower():
+                new_deadline = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+            elif "next week" in message.lower():
+                new_deadline = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+            elif "friday" in message.lower():
+                # Find next Friday
+                today = datetime.now()
+                days_ahead = 4 - today.weekday()  # Friday is 4
+                if days_ahead <= 0:
+                    days_ahead += 7
+                new_deadline = (today + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+
+        if not new_deadline:
+            return f"What's the new deadline for {task_id}? (e.g., 'tomorrow', 'next Friday', '2026-02-01')", None
+
+        old_deadline = task.get("deadline", "not set")
+
+        updates = {"deadline": new_deadline}
+        success = await self.task_repo.update(task_id, updates)
+
+        if success:
+            await self.sheets.update_task(task_id, updates)
+
+            await self.discord.post_simple_message(
+                f"📅 Deadline Changed: {task_id}\n{old_deadline} → {new_deadline}\nBy {user_name}"
+            )
+
+            return f"✅ Updated {task_id} deadline: {new_deadline}", None
+
+        return f"❌ Failed to update deadline for {task_id}.", None
+
+    async def _handle_change_status(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle status change."""
+        task_id = data.get("task_id")
+        new_status = data.get("new_status")
+
+        if not task_id:
+            return "Which task's status would you like to change?", None
+
+        # Valid statuses
+        valid_statuses = [
+            "pending", "in_progress", "in_review", "awaiting_validation",
+            "needs_revision", "completed", "cancelled", "blocked",
+            "delayed", "undone", "on_hold", "waiting", "needs_info", "overdue"
+        ]
+
+        if not new_status:
+            status_list = ", ".join(valid_statuses[:7]) + "..."
+            return f"What status for {task_id}? Options: {status_list}", None
+
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        old_status = task.get("status", "pending")
+
+        updates = {"status": new_status}
+        success = await self.task_repo.update(task_id, updates)
+
+        if success:
+            await self.sheets.update_task(task_id, updates)
+
+            await self.discord.post_simple_message(
+                f"🔄 Status Changed: {task_id}\n{old_status} → {new_status}\nBy {user_name}"
+            )
+
+            return f"✅ Changed {task_id} status: {old_status} → {new_status}", None
+
+        return f"❌ Failed to update status for {task_id}.", None
+
+    async def _handle_add_tags(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle adding tags."""
+        task_id = data.get("task_id")
+        new_tags = data.get("tags", [])
+
+        if not task_id:
+            return "Which task would you like to tag?", None
+
+        if not new_tags:
+            return f"What tags should be added to {task_id}?", None
+
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        current_tags = task.get("tags", [])
+        if isinstance(current_tags, str):
+            current_tags = [t.strip() for t in current_tags.split(",") if t.strip()]
+
+        # Add new tags (avoid duplicates)
+        updated_tags = list(set(current_tags + new_tags))
+
+        updates = {"tags": updated_tags}
+        success = await self.task_repo.update(task_id, updates)
+
+        if success:
+            await self.sheets.update_task(task_id, updates)
+
+            await self.discord.post_simple_message(
+                f"🏷️ Tags Added: {task_id}\nAdded: {', '.join(new_tags)}\nBy {user_name}"
+            )
+
+            return f"✅ Added tags to {task_id}: {', '.join(new_tags)}", None
+
+        return f"❌ Failed to add tags to {task_id}.", None
+
+    async def _handle_remove_tags(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle removing tags."""
+        task_id = data.get("task_id")
+        tags_to_remove = data.get("tags", [])
+
+        if not task_id:
+            return "Which task would you like to remove tags from?", None
+
+        if not tags_to_remove:
+            return f"Which tags should be removed from {task_id}?", None
+
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        current_tags = task.get("tags", [])
+        if isinstance(current_tags, str):
+            current_tags = [t.strip() for t in current_tags.split(",") if t.strip()]
+
+        # Remove specified tags
+        updated_tags = [t for t in current_tags if t.lower() not in [r.lower() for r in tags_to_remove]]
+
+        updates = {"tags": updated_tags}
+        success = await self.task_repo.update(task_id, updates)
+
+        if success:
+            await self.sheets.update_task(task_id, updates)
+
+            await self.discord.post_simple_message(
+                f"🏷️ Tags Removed: {task_id}\nRemoved: {', '.join(tags_to_remove)}\nBy {user_name}"
+            )
+
+            return f"✅ Removed tags from {task_id}: {', '.join(tags_to_remove)}", None
+
+        return f"❌ Failed to remove tags from {task_id}.", None
+
+    async def _handle_add_subtask_intent(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle adding subtask via natural language."""
+        task_id = data.get("task_id")
+        subtask_title = data.get("subtask_title")
+
+        if not task_id:
+            return "Which task should this subtask be added to?", None
+
+        if not subtask_title:
+            # Try to extract from message
+            patterns = [
+                r'add subtask[:\s]+"([^"]+)"',
+                r'subtask[:\s]+(.+?)(?:\.|$)',
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, message, re.IGNORECASE)
+                if match:
+                    subtask_title = match.group(1).strip()
+                    break
+
+        if not subtask_title:
+            return f"What should the subtask for {task_id} be?", None
+
+        # Add subtask using repository
+        subtask = await self.task_repo.add_subtask(
+            task_id=task_id,
+            title=subtask_title,
+            description=""
+        )
+
+        if subtask:
+            # Sync to sheets
+            task = await self.task_repo.get_by_id(task_id)
+            if task:
+                await self.sheets.sync_task_with_subtasks(task)
+
+            await self.discord.post_simple_message(
+                f"➕ Subtask Added: {task_id}\n{subtask_title}\nBy {user_name}"
+            )
+
+            return f"✅ Added subtask to {task_id}: {subtask_title}", None
+
+        return f"❌ Failed to add subtask to {task_id}.", None
+
+    async def _handle_complete_subtask_intent(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle completing subtask via natural language."""
+        task_id = data.get("task_id")
+        subtask_number = data.get("subtask_number")
+
+        if not task_id:
+            return "Which task's subtask would you like to complete?", None
+
+        if not subtask_number:
+            return f"Which subtask number for {task_id}?", None
+
+        # Mark subtask complete
+        success = await self.task_repo.complete_subtask(task_id, subtask_number)
+
+        if success:
+            # Sync to sheets
+            task = await self.task_repo.get_by_id(task_id)
+            if task:
+                await self.sheets.sync_task_with_subtasks(task)
+
+            await self.discord.post_simple_message(
+                f"✅ Subtask Completed: {task_id}\nSubtask #{subtask_number}\nBy {user_name}"
+            )
+
+            return f"✅ Marked subtask #{subtask_number} complete on {task_id}", None
+
+        return f"❌ Failed to complete subtask for {task_id}.", None
+
+    async def _handle_add_dependency(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle adding task dependency."""
+        task_ids = data.get("task_ids", [])
+
+        if len(task_ids) < 2:
+            return "Please specify two tasks (e.g., 'TASK-001 depends on TASK-002')", None
+
+        dependent_task = task_ids[0]
+        dependency_task = task_ids[1]
+
+        # Add dependency
+        success = await self.task_repo.add_dependency(dependent_task, dependency_task)
+
+        if success:
+            await self.discord.post_simple_message(
+                f"🔗 Dependency Added\n{dependent_task} now depends on {dependency_task}\nBy {user_name}"
+            )
+
+            return f"✅ {dependent_task} now depends on {dependency_task}", None
+
+        return f"❌ Failed to add dependency.", None
+
+    async def _handle_remove_dependency(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle removing task dependency."""
+        task_ids = data.get("task_ids", [])
+
+        if len(task_ids) < 2:
+            return "Please specify two tasks to unlink", None
+
+        dependent_task = task_ids[0]
+        dependency_task = task_ids[1]
+
+        # Remove dependency
+        success = await self.task_repo.remove_dependency(dependent_task, dependency_task)
+
+        if success:
+            await self.discord.post_simple_message(
+                f"🔓 Dependency Removed\n{dependent_task} no longer depends on {dependency_task}\nBy {user_name}"
+            )
+
+            return f"✅ Removed dependency: {dependent_task} no longer depends on {dependency_task}", None
+
+        return f"❌ Failed to remove dependency.", None
+
+    async def _handle_duplicate_task(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle duplicating a task."""
+        task_id = data.get("task_id")
+        new_assignee = data.get("new_assignee")
+
+        if not task_id:
+            return "Which task would you like to duplicate?", None
+
+        # Get original task
+        task_db = await self.task_repo.get_by_id(task_id)
+        if not task_db:
+            return f"❌ Task {task_id} not found.", None
+
+        # Generate new task ID
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%y%m%d")
+        import random
+        task_number = random.randint(100, 999)
+        new_task_id = f"TASK-{timestamp}-{task_number}"
+
+        # Create new task with same details
+        new_task_data = {
+            "task_id": new_task_id,
+            "title": f"{task_db.title} (copy)",
+            "description": task_db.description,
+            "priority": task_db.priority,
+            "task_type": task_db.task_type,
+            "assignee": new_assignee or task_db.assignee,
+            "deadline": task_db.deadline,
+            "estimated_effort": task_db.estimated_effort,
+            "tags": task_db.tags,
+            "acceptance_criteria": task_db.acceptance_criteria,
+            "created_by": user_name,
+        }
+
+        new_task = await self.task_repo.create(new_task_data)
+
+        if new_task:
+            # Sync to sheets
+            await self.sheets.add_task({
+                "task_id": new_task.task_id,
+                "title": new_task.title,
+                "description": new_task.description,
+                "priority": new_task.priority,
+                "assignee": new_task.assignee,
+                "status": new_task.status,
+                "deadline": new_task.deadline.strftime('%Y-%m-%d') if new_task.deadline else "",
+            })
+
+            await self.discord.post_simple_message(
+                f"📋 Task Duplicated\n{task_id} → {new_task.task_id}\nBy {user_name}"
+            )
+
+            return f"✅ Duplicated {task_id} as {new_task.task_id}", None
+
+        return f"❌ Failed to duplicate {task_id}.", None
+
+    async def _handle_split_task(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle splitting a task into multiple tasks."""
+        task_id = data.get("task_id")
+
+        if not task_id:
+            return "Which task would you like to split?", None
+
+        # Get task
+        task = await self.sheets.get_task_by_id(task_id)
+        if not task:
+            return f"❌ Task {task_id} not found.", None
+
+        # Use AI to suggest split
+        breakdown = await self.deepseek.breakdown_task(
+            title=task.get("title"),
+            description=task.get("description"),
+            priority=task.get("priority"),
+        )
+
+        if not breakdown.get("subtasks"):
+            return f"Unable to determine how to split {task_id}. Please provide more details.", None
+
+        # Show suggested split
+        suggestions = "\n".join([
+            f"{i+1}. {sub.get('title')}"
+            for i, sub in enumerate(breakdown.get("subtasks", []))
+        ])
+
+        response = f"💡 Suggested split for {task_id}:\n\n{suggestions}\n\nCreate these as separate tasks? Reply 'yes' to proceed."
+
+        # Store in context for confirmation
+        return response, {
+            "awaiting_split_confirm": True,
+            "original_task_id": task_id,
+            "split_tasks": breakdown.get("subtasks")
+        }
 
 
 # Singleton

@@ -1282,6 +1282,17 @@ class DiscordIntegration:
 
         return await self.send_message(general_channel_id, content=content, embed=embed)
 
+    async def post_simple_message(
+        self,
+        content: str,
+        role_category: RoleCategory = RoleCategory.DEV
+    ) -> Optional[str]:
+        """
+        Post a simple message to the general channel.
+        Alias for post_general_message for convenience.
+        """
+        return await self.post_general_message(content, role_category=role_category)
+
     async def post_help(self, role_category: RoleCategory = RoleCategory.DEV) -> bool:
         """Post a help message with reaction guide and available commands."""
         general_channel_id = self._get_channel_id(ChannelType.GENERAL, role_category)
