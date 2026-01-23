@@ -388,8 +388,8 @@ class GoogleSheetsIntegration:
                         created = datetime.strptime(created_str.split()[0], '%Y-%m-%d')
                         if week_start.date() <= created.date() <= week_end.date():
                             week_tasks.append(task)
-                    except:
-                        pass
+                    except (ValueError, AttributeError, IndexError) as e:
+                        logger.debug(f"Skipping task with invalid created date: {created_str}")
 
                 updated_str = task.get('Updated', '')
                 status = task.get('Status', '')
@@ -398,8 +398,8 @@ class GoogleSheetsIntegration:
                         updated = datetime.strptime(updated_str.split()[0], '%Y-%m-%d')
                         if week_start.date() <= updated.date() <= week_end.date():
                             completed_this_week.append(task)
-                    except:
-                        pass
+                    except (ValueError, AttributeError, IndexError) as e:
+                        logger.debug(f"Skipping task with invalid date: {e}")
 
             # Calculate metrics
             tasks_created = len(week_tasks)
@@ -433,8 +433,8 @@ class GoogleSheetsIntegration:
                             deadline = datetime.strptime(deadline_str.split()[0], '%Y-%m-%d')
                             if deadline.date() < now.date():
                                 overdue_count += 1
-                        except:
-                            pass
+                        except (ValueError, AttributeError, IndexError) as e:
+                            logger.debug(f"Skipping task with invalid date: {e}")
 
             # On-time rate
             on_time_count = tasks_completed - overdue_count if tasks_completed > overdue_count else tasks_completed
@@ -533,8 +533,8 @@ class GoogleSheetsIntegration:
                         created = datetime.strptime(created_str.split()[0], '%Y-%m-%d')
                         if month_start.date() <= created.date() <= month_end.date():
                             month_created.append(task)
-                    except:
-                        pass
+                    except (ValueError, AttributeError, IndexError) as e:
+                        logger.debug(f"Skipping task with invalid date: {e}")
 
                 updated_str = task.get('Updated', '')
                 status = task.get('Status', '')
@@ -543,8 +543,8 @@ class GoogleSheetsIntegration:
                         updated = datetime.strptime(updated_str.split()[0], '%Y-%m-%d')
                         if month_start.date() <= updated.date() <= month_end.date():
                             month_completed.append(task)
-                    except:
-                        pass
+                    except (ValueError, AttributeError, IndexError) as e:
+                        logger.debug(f"Skipping task with invalid date: {e}")
 
             # Calculate metrics
             tasks_created = len(month_created)
@@ -589,8 +589,8 @@ class GoogleSheetsIntegration:
                             deadline = datetime.strptime(deadline_str.split()[0], '%Y-%m-%d')
                             if deadline.date() < now.date():
                                 overdue_count += 1
-                        except:
-                            pass
+                        except (ValueError, AttributeError, IndexError) as e:
+                            logger.debug(f"Skipping task with invalid date: {e}")
 
             on_time_rate = round(((tasks_completed - overdue_count) / tasks_completed * 100) if tasks_completed > 0 else 100, 1)
 

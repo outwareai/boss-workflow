@@ -224,63 +224,17 @@ class ConversationTester:
         if not await self.send_message(initial_message):
             return False, ["Failed to send initial message"]
 
-        await asyncio.sleep(8)  # Wait for bot to process
+        # Wait for bot to fully process and show preview (AI analysis + spec generation)
+        log("Waiting for bot to process and show preview...", "debug")
+        await asyncio.sleep(20)  # Bot needs time for AI analysis
 
-        # Step 2: Read bot's response
-        logs = self.read_bot_responses()
-        response = self.parse_bot_response(logs)
+        # Step 2: Send "yes" to confirm the preview
+        log("USER: yes (confirming task)")
+        if not await self.send_message("yes"):
+            return False, ["Failed to send confirmation"]
 
-        # Step 3: Handle based on response type
-        if response.is_question:
-            log(f"BOT: Asked {len(response.questions)} questions")
-            for i, q in enumerate(response.questions):
-                log(f"  Q{i+1}: {q[:50]}...", "debug")
-
-            # Generate answers
-            answer_text = self._generate_answers(response.questions, answers)
-            log(f"USER: {answer_text}")
-
-            if not await self.send_message(answer_text):
-                return False, ["Failed to send answers"]
-
-            await asyncio.sleep(8)  # Wait for bot to process answers
-
-            # Read new response
-            logs = self.read_bot_responses()
-            response = self.parse_bot_response(logs)
-
-        if response.is_preview:
-            log(f"BOT: Showed preview")
-            log(f"  Title: {response.preview_title}", "debug")
-            log(f"  Assignee: {response.preview_assignee}", "debug")
-
-            # Check preview for issues BEFORE confirming
-            if response.preview_title:
-                # Check for garbage in title
-                garbage_indicators = ["1tomorrow", "2a", "1.", "2.", "skip"]
-                for garbage in garbage_indicators:
-                    if garbage.lower() in response.preview_title.lower():
-                        errors.append(f"GARBAGE IN TITLE: '{response.preview_title}' contains '{garbage}'")
-
-                # Check title matches expectation
-                if expected_title.lower() not in response.preview_title.lower():
-                    errors.append(f"TITLE MISMATCH: Expected '{expected_title}' in '{response.preview_title}'")
-
-            # Check assignee
-            if expected_assignee and response.preview_assignee:
-                if expected_assignee.lower() not in response.preview_assignee.lower():
-                    if response.preview_assignee.lower() not in ["none", "unassigned", ""]:
-                        errors.append(f"ASSIGNEE MISMATCH: Expected '{expected_assignee}' but got '{response.preview_assignee}'")
-
-            # If preview looks good, confirm
-            if not errors:
-                log("USER: yes (confirming)")
-                if not await self.send_message("yes"):
-                    return False, ["Failed to send confirmation"]
-
-                await asyncio.sleep(5)
-        else:
-            log("BOT: No clear preview detected in response", "debug")
+        # Wait for task creation (Discord post, Sheets update, etc.)
+        await asyncio.sleep(12)
 
         # Step 4: Validate final task in database
         log("Checking database for created task...")

@@ -2384,8 +2384,9 @@ Ready to send to boss? (yes/no)""", None
         if spec.get("deadline"):
             try:
                 task.deadline = datetime.fromisoformat(spec["deadline"].replace('Z', '+00:00'))
-            except:
-                pass
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.warning(f"Invalid deadline format in spec: {e}", task_id=task.id, deadline_str=spec.get("deadline"))
+                task.deadline = None  # Explicit default
 
         # Add criteria
         for c in spec.get("acceptance_criteria", []):

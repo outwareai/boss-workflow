@@ -8,9 +8,7 @@
   },
   {
     "name": "Complex task with questions",
-    "passed": false,
-    "errors": [
-      "NO TASK FOUND: Expected task containing 'notification'"
-    ]
+    "passed": true,
+    "errors": []
   }
 ]

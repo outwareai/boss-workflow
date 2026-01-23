@@ -2,15 +2,15 @@
   "tests": [
     {
       "name": "simple",
-      "passed": true,
-      "complexity": null,
-      "questions": null
+      "passed": false,
+      "complexity": 6,
+      "questions": 0
     },
     {
       "name": "complex",
       "passed": false,
-      "complexity": null,
-      "questions": null
+      "complexity": 6,
+      "questions": 0
     },
     {
       "name": "routing",
@@ -19,5 +19,5 @@
       "zea": false
     }
   ],
-  "timestamp": "2026-01-23T13:23:42.428027"
+  "timestamp": "2026-01-23T13:31:14.849153"
 }

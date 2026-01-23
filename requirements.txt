@@ -45,3 +45,14 @@ pytz==2024.1
 
 # Logging and monitoring
 structlog==24.1.0
+
+# Async file I/O (Phase 1: Fix blocking I/O)
+aiofiles==24.1.0
+
+# Security (Phase 2: OAuth encryption)
+cryptography==43.0.0
+
+# Testing infrastructure (Phase 3: Unit tests)
+pytest==8.0.0
+pytest-asyncio==0.23.0
+pytest-cov==4.1.0
