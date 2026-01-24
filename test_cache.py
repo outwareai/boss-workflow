@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Test Redis caching implementation.
 
@@ -6,6 +7,12 @@ Q3 2026: Verify cache layer functionality.
 """
 import asyncio
 import sys
+import io
+
+# Fix Windows console encoding for emoji/unicode
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 from config.settings import get_settings
 
 settings = get_settings()
@@ -21,24 +28,24 @@ async def test_redis_connection():
         client = await get_redis()
 
         if client is None:
-            print("❌ Redis not configured (REDIS_URL not set)")
-            print(f"   Current REDIS_URL: {settings.redis_url}")
+            print("[FAIL] Redis not configured (REDIS_URL not set)")
+            print(f"       Current REDIS_URL: {settings.redis_url or '(empty)'}")
             return False
 
         # Test ping
         pong = await client.ping()
-        print(f"✓ Redis connection successful (ping: {pong})")
+        print(f"[PASS] Redis connection successful (ping: {pong})")
 
         # Test info
         info = await client.info()
-        print(f"✓ Redis version: {info.get('redis_version')}")
-        print(f"✓ Connected clients: {info.get('connected_clients')}")
-        print(f"✓ Used memory: {info.get('used_memory_human')}")
+        print(f"[PASS] Redis version: {info.get('redis_version')}")
+        print(f"[PASS] Connected clients: {info.get('connected_clients')}")
+        print(f"[PASS] Used memory: {info.get('used_memory_human')}")
 
         return True
 
     except Exception as e:
-        print(f"❌ Redis connection failed: {e}")
+        print(f"[FAIL] Redis connection failed: {e}")
         return False
     finally:
         await close_redis()
@@ -53,27 +60,27 @@ async def test_cache_operations():
     try:
         # Test set
         await cache.set("test_key", {"value": "hello", "number": 123}, ttl=60)
-        print("✓ Cache SET successful")
+        print("[PASS] Cache SET successful")
 
         # Test get
         value = await cache.get("test_key")
         assert value == {"value": "hello", "number": 123}
-        print(f"✓ Cache GET successful: {value}")
+        print(f"[PASS] Cache GET successful: {value}")
 
         # Test exists
         exists = await cache.exists("test_key")
         assert exists is True
-        print("✓ Cache EXISTS successful")
+        print("[PASS] Cache EXISTS successful")
 
         # Test TTL
         ttl = await cache.ttl("test_key")
-        print(f"✓ Cache TTL: {ttl} seconds")
+        print(f"[PASS] Cache TTL: {ttl} seconds")
 
         # Test delete
         await cache.delete("test_key")
         value = await cache.get("test_key")
         assert value is None
-        print("✓ Cache DELETE successful")
+        print("[PASS] Cache DELETE successful")
 
         # Test pattern invalidation
         await cache.set("test:1", "value1", ttl=60)
@@ -82,7 +89,7 @@ async def test_cache_operations():
 
         deleted = await cache.invalidate_pattern("test:*")
         assert deleted == 2
-        print(f"✓ Pattern invalidation successful ({deleted} keys deleted)")
+        print(f"[PASS] Pattern invalidation successful ({deleted} keys deleted)")
 
         # Cleanup
         await cache.delete("other:1")
@@ -90,10 +97,10 @@ async def test_cache_operations():
         return True
 
     except AssertionError as e:
-        print(f"❌ Cache operation assertion failed: {e}")
+        print(f"[FAIL] Cache operation assertion failed: {e}")
         return False
     except Exception as e:
-        print(f"❌ Cache operations failed: {e}")
+        print(f"[FAIL] Cache operations failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -122,27 +129,27 @@ async def test_cache_decorator():
         result1 = await expensive_function(5, 3)
         assert result1 == 8
         assert call_count == 1
-        print(f"✓ First call executed function (result: {result1})")
+        print(f"[PASS] First call executed function (result: {result1})")
 
         # Second call - should use cache
         result2 = await expensive_function(5, 3)
         assert result2 == 8
         assert call_count == 1  # Should not increment
-        print(f"✓ Second call used cache (call_count: {call_count})")
+        print(f"[PASS] Second call used cache (call_count: {call_count})")
 
         # Different args - should execute function
         result3 = await expensive_function(10, 20)
         assert result3 == 30
         assert call_count == 2
-        print(f"✓ Different args executed function (result: {result3})")
+        print(f"[PASS] Different args executed function (result: {result3})")
 
         return True
 
     except AssertionError as e:
-        print(f"❌ Decorator test assertion failed: {e}")
+        print(f"[FAIL] Decorator test assertion failed: {e}")
         return False
     except Exception as e:
-        print(f"❌ Decorator test failed: {e}")
+        print(f"[FAIL] Decorator test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -170,23 +177,23 @@ async def test_cache_stats():
         assert summary["hits"] == 2
         assert summary["misses"] == 1
         assert summary["total"] == 3
-        print(f"✓ Stats tracking successful: {summary}")
+        print(f"[PASS] Stats tracking successful: {summary}")
 
         # Test Redis stats
         redis_stats = await stats.get_redis_stats()
         if redis_stats:
-            print(f"✓ Redis stats retrieved: {redis_stats.get('redis_version')}")
+            print(f"[PASS] Redis stats retrieved: {redis_stats.get('redis_version')}")
         else:
-            print("⚠ Redis stats not available")
+            print("[WARN] Redis stats not available")
 
         # Test full stats
         full_stats = await stats.get_full_stats()
-        print(f"✓ Full stats: {full_stats['application']['hit_rate_percent']}")
+        print(f"[PASS] Full stats: {full_stats['application']['hit_rate_percent']}")
 
         return True
 
     except Exception as e:
-        print(f"❌ Stats test failed: {e}")
+        print(f"[FAIL] Stats test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -230,10 +237,10 @@ async def main():
     print(f"Passed: {passed}/{total}")
 
     if all(results):
-        print("✓ ALL TESTS PASSED")
+        print("[PASS] ALL TESTS PASSED")
         return True
     else:
-        print("❌ SOME TESTS FAILED")
+        print("[FAIL] SOME TESTS FAILED")
         return False
 
 
