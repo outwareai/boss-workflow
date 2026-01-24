@@ -211,7 +211,7 @@ class BossWorkflowTester:
         print(f"[3/5] Waiting {wait_seconds}s for processing...")
         await asyncio.sleep(wait_seconds)
 
-        logs = self.read_railway_logs(lines=60)  # Get more logs for analysis
+        logs = self.read_railway_logs(lines=200)  # Increased from 60 to 200 for test-all compatibility
         bot_responses = self.extract_bot_responses(logs)
         results["railway_logs"] = logs  # Keep all logs for implementation analysis
         results["bot_responses"] = bot_responses

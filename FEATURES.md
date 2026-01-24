@@ -3275,10 +3275,137 @@ count = await handler.get_validation_count()  # 2
 
 ---
 
+### ApprovalHandler (v2.5.0)
+
+**File:** `src/bot/handlers/approval_handler.py`
+**Status:** ✅ Complete (Task #4.5)
+**Parent:** BaseHandler
+**Tests:** 12/12 passing
+
+Extracted from UnifiedHandler - handles confirmation flows for dangerous/destructive actions.
+
+**Responsibilities:**
+- Request confirmation for dangerous actions (delete, bulk operations)
+- Track pending approvals with 5-minute timeout
+- Process yes/no responses
+- Execute approved actions (delete tasks, attendance reports, bulk updates)
+- Cancel operations on rejection
+- Track pending actions via SessionManager
+
+**Dangerous Actions:**
+- `clear_tasks` - Delete all active tasks
+- `attendance_report` - Report absence/late for team member
+- `delete_task` - Delete a specific task
+- `bulk_update` - Update multiple tasks at once
+
+**Key Methods:**
+
+```python
+# Request approval
+async def request_approval(
+    user_id: str,
+    action_type: str,
+    action_data: Dict[str, Any],
+    message: str,
+    timeout_minutes: int = 5
+) -> bool
+
+# Check if this is an approval response
+async def can_handle(message: str, user_id: str) -> bool
+    # Returns True if:
+    # - Message is "yes", "no", "confirm", "cancel", etc.
+    # - User has pending approval in SessionManager
+
+# Process approval/rejection
+async def handle(update: Update, context: ContextTypes) -> None
+    # Routes to approve or reject based on user response
+```
+
+**Action Executors:**
+- `_execute_clear_tasks()` - Delete all active tasks from Sheets, DB, Discord
+- `_execute_attendance_report()` - Record attendance event
+- `_execute_delete_task()` - Delete single task
+- `_execute_bulk_update()` - Update multiple tasks
+
+**Safety Features:**
+- 5-minute timeout on pending approvals
+- Audit logging of all approvals/rejections
+- Clear error messages on expired requests
+- Session cleanup after action (approved or rejected)
+
+**Usage Examples:**
+
+```python
+# Request approval for dangerous action
+handler = ApprovalHandler()
+await handler.request_approval(
+    user_id="123456",
+    action_type="clear_tasks",
+    action_data={},
+    message="⚠️ Delete All Tasks?\n\nThis will permanently delete 10 active tasks.\n\nReply **yes** to confirm or **no** to cancel.",
+    timeout_minutes=5
+)
+
+# User responds "yes"
+# ApprovalHandler.can_handle() returns True
+# ApprovalHandler.handle() executes _execute_clear_tasks()
+```
+
+**Flow Example:**
+
+```
+Boss: "clear all tasks"
+→ UnifiedHandler detects dangerous action
+→ ApprovalHandler.request_approval() stores pending action
+→ Bot: "⚠️ Delete All Tasks? Reply yes to confirm"
+
+Boss: "yes"
+→ ApprovalHandler.can_handle() returns True
+→ ApprovalHandler.handle() checks expiration
+→ ApprovalHandler._execute_clear_tasks() runs
+→ Bot: "✅ Deleted 10 tasks from Sheets and 8 Discord threads"
+→ SessionManager clears pending action
+→ AuditRepository logs approval
+```
+
+**Unit Tests (12 total):**
+
+```bash
+✅ test_can_handle_yes_response - Detects yes/no/confirm responses
+✅ test_can_handle_no_pending - Ignores when no pending action
+✅ test_can_handle_non_confirmation - Ignores non-confirmation messages
+✅ test_request_approval - Creates pending action in SessionManager
+✅ test_is_expired_not_expired - Checks timeout (within 5 min)
+✅ test_is_expired_expired - Checks timeout (past 5 min)
+✅ test_handle_no_pending_action - Error when no pending action
+✅ test_handle_expired_action - Clears expired action
+✅ test_handle_approval_clear_tasks - Executes clear_tasks action
+✅ test_handle_rejection - Cancels action on "no"
+✅ test_execute_delete_task - Deletes from Sheets, DB, Discord
+✅ test_execute_bulk_update - Updates multiple tasks
+```
+
+**Integration:**
+- Uses SessionManager for pending_actions (5-minute TTL)
+- Uses TaskRepository for task deletion/updates
+- Uses DiscordIntegration for deleting Discord threads
+- Uses SheetsIntegration for deleting/updating Sheets rows
+- Uses AuditRepository for logging all approvals/rejections
+- Uses AttendanceService for recording attendance events
+
+**Impact:**
+- Reduces UnifiedHandler by ~200 lines
+- Second specialized handler extracted (2/6 complete)
+- Centralizes all dangerous action confirmations
+- Prevents accidental destructive operations
+- Enables independent testing of approval logic
+
+---
+
 **Next Steps (Task #4.4-6):**
 - ✅ Task #4.3: Extract ValidationHandler from UnifiedHandler (COMPLETE)
+- ✅ Task #4.5: Extract ApprovalHandler from UnifiedHandler (COMPLETE)
 - Task #4.4: Extract RoutingHandler from UnifiedHandler
-- Task #4.5: Extract ApprovalHandler from UnifiedHandler
 - Task #4.6: Extract QueryHandler, ModificationHandler, CommandHandler
 - Final: Replace UnifiedHandler with router that delegates to specialized handlers
 
@@ -4082,7 +4209,7 @@ Mirror Discord functionality to Slack
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| **2.5.0** | 2026-01-24 | **🔧 VALIDATION HANDLER EXTRACTION (Task #4.3):** Extracted ValidationHandler from 3,636-line UnifiedHandler. Handles task approval/rejection flows, proof submission, boss validation, staff notifications. Features: 9 unit tests, SessionManager integration, BaseHandler inheritance. **Impact:** First specialized handler extracted (1/6 complete), reduces UnifiedHandler complexity |
+| **2.5.0** | 2026-01-24 | **🔧 HANDLER REFACTORING (Task #4.3-4.5):** Extracted ValidationHandler (task approval/rejection) and ApprovalHandler (dangerous action confirmations) from 3,636-line UnifiedHandler. Features: 21 total unit tests (9 validation + 12 approval), SessionManager integration, BaseHandler inheritance. **Impact:** 2/6 specialized handlers extracted, ~500 lines reduced from UnifiedHandler, centralized dangerous action confirmations |
 | **2.4.0** | 2026-01-24 | **🔧 SESSIONMANAGER FOUNDATION (Task #4 Phase 1):** Centralized session state management with Redis persistence. Replaces 7 handler dictionaries with unified storage. Features: TTL expiration, thread-safe locks, in-memory fallback, 17 unit tests. **Impact:** Foundation for handler refactoring, session persistence across restarts |
 | **2.3.1** | 2026-01-24 | **🔧 SLASH COMMAND AUTO-FINALIZATION:** Fixed /task and /urgent commands to auto-finalize simple tasks (skip preview). Added command detection before conversation state handling. Fixed PREVIEW stage confusion. **Impact:** /task commands now create tasks immediately, routing tests pass |
 | **2.3.0** | 2026-01-24 | **⚡ Q1 2026 PERFORMANCE OPTIMIZATION:** 5 composite indexes (10x query speed), 7 N+1 query fixes, connection pooling (30% throughput boost), dependency updates (FastAPI 0.128, telegram-bot 22.5, SQLAlchemy 2.0.46), /health/db monitoring endpoint. **Impact:** Daily reports 5s→500ms, API latency 2-3s→200-300ms, 60+ CVEs patched |
