@@ -222,7 +222,7 @@ async def google_auth_callback(code: Optional[str] = None, state: Optional[str] 
         redirect_uri = f"{settings.webhook_base_url}/auth/google/callback"
 
         # Exchange code for tokens
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 "https://oauth2.googleapis.com/token",
                 data={

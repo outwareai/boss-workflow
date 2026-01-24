@@ -334,7 +334,8 @@ class StaffMessageHandler:
 
 _Reply to this message to respond to {staff_name}._"""
 
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30.0)  # 30 second timeout for Telegram API
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     f"{self.telegram_api}/sendMessage",
                     json={
@@ -391,7 +392,8 @@ _Reply to this message to respond to {staff_name}._"""
 
 _Reply to this message: "approve" or "reject [reason]"_"""
 
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30.0)  # 30 second timeout for Telegram API
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     f"{self.telegram_api}/sendMessage",
                     json={

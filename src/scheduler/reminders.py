@@ -46,7 +46,8 @@ class ReminderService:
             return False
 
         try:
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30.0)  # 30 second timeout for Telegram API
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     f"{self.telegram_api_base}/sendMessage",
                     json={

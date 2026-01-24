@@ -234,7 +234,8 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
 
                     # Send to boss via Telegram API directly
                     telegram_api = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
-                    async with aiohttp.ClientSession() as session:
+                    timeout = aiohttp.ClientTimeout(total=30.0)  # 30 second timeout for Telegram API
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
                         await session.post(
                             telegram_api,
                             json={

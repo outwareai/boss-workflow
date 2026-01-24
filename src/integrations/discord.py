@@ -338,7 +338,8 @@ class DiscordIntegration:
         url = f"{DISCORD_API_BASE}{endpoint}"
 
         try:
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10.0)  # 10 second timeout for Discord API
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.request(
                     method,
                     url,
