@@ -9,13 +9,28 @@ from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from datetime import datetime
 from cryptography.fernet import Fernet
 
-
-# Set encryption key before imports
-os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
-
-
 from src.database.repositories.oauth import OAuthTokenRepository
-from src.utils.encryption import get_token_encryption
+from src.utils.encryption import TokenEncryption
+
+
+@pytest.fixture
+def mock_encryption():
+    """Create a real encryption instance with a test key."""
+    # Create a fresh encryption instance for each test
+    test_key = Fernet.generate_key()
+
+    # Patch settings to return our test key
+    from config.settings import settings
+    original_key = settings.encryption_key
+    settings.encryption_key = test_key.decode()
+
+    encryption = TokenEncryption()
+    assert encryption._initialized, "Encryption should be initialized for tests"
+
+    yield encryption
+
+    # Restore original key
+    settings.encryption_key = original_key
 
 
 @pytest.fixture
@@ -51,18 +66,21 @@ def mock_database():
 
 
 @pytest.fixture
-def repository(mock_database):
-    """Create repository with mocked database."""
+def repository(mock_database, mock_encryption):
+    """Create repository with mocked database and real encryption."""
     db, session, execute_result = mock_database
     repo = OAuthTokenRepository()
     repo.db = db
-    return repo, session, execute_result
+
+    # Patch get_token_encryption to return our test encryption instance
+    with patch("src.database.repositories.oauth.get_token_encryption", return_value=mock_encryption):
+        yield repo, session, execute_result, mock_encryption
 
 
 @pytest.mark.asyncio
 async def test_store_token_encrypts_data(repository):
     """Test that store_token encrypts tokens before storage."""
-    repo, session, execute_result = repository
+    repo, session, execute_result, encryption = repository
 
     # Mock execute to return no existing token
     execute_result.scalar_one_or_none = Mock(return_value=None)
@@ -95,10 +113,9 @@ async def test_store_token_encrypts_data(repository):
 @pytest.mark.asyncio
 async def test_get_token_decrypts_data(repository):
     """Test that get_token decrypts tokens after retrieval."""
-    repo, session, execute_result = repository
+    repo, session, execute_result, encryption = repository
 
     # Create encrypted token
-    encryption = get_token_encryption()
     encrypted_refresh = encryption.encrypt("plaintext_refresh")
     encrypted_access = encryption.encrypt("plaintext_access")
 
@@ -126,7 +143,7 @@ async def test_get_token_decrypts_data(repository):
 @pytest.mark.asyncio
 async def test_backward_compatibility_plaintext_tokens(repository):
     """Test that plaintext tokens (pre-encryption) still work."""
-    repo, session, execute_result = repository
+    repo, session, execute_result, encryption = repository
 
     # Mock database with plaintext token (old format)
     mock_token = Mock()
@@ -152,7 +169,7 @@ async def test_backward_compatibility_plaintext_tokens(repository):
 @pytest.mark.asyncio
 async def test_update_access_token_encrypts(repository):
     """Test that update_access_token encrypts the new token."""
-    repo, session, execute_result = repository
+    repo, session, execute_result, encryption = repository
 
     # Mock existing token
     mock_token = Mock()
@@ -181,7 +198,7 @@ async def test_update_access_token_encrypts(repository):
 @pytest.mark.asyncio
 async def test_round_trip_encryption(repository):
     """Test full encrypt → store → load → decrypt cycle."""
-    repo, session, execute_result = repository
+    repo, session, execute_result, encryption = repository
 
     original_refresh = "my_refresh_token_12345"
     original_access = "my_access_token_67890"
@@ -214,7 +231,7 @@ async def test_round_trip_encryption(repository):
 @pytest.mark.asyncio
 async def test_store_token_updates_existing_encrypted(repository):
     """Test that updating an existing token encrypts the new values."""
-    repo, session, execute_result = repository
+    repo, session, execute_result, encryption = repository
 
     # Mock existing token
     existing_token = Mock()
