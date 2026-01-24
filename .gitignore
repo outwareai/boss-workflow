@@ -72,6 +72,10 @@ service-account.json
 *.pem
 *.key
 
+# OAuth backups (contain plaintext tokens - NEVER commit!)
+backups/
+oauth_tokens_backup_*.json
+
 # Local development
 .local/
 data/
