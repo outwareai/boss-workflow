@@ -1830,13 +1830,23 @@ End-to-end encryption for OAuth tokens using Fernet (AES-128-CBC + HMAC-SHA256).
 - Updated migration checklist
 - Go/no-go decision: **GO** ✅
 
-**Week 4: Production Deployment** 🔴 Planned
-- [ ] Final production backup
-- [ ] Deploy to production Railway
-- [ ] Monitor for decryption errors
-- [ ] Verify all OAuth flows working
-- [ ] Confirm no plaintext tokens in logs
-- [ ] Run bulk encryption for existing tokens
+**Week 4: Production Deployment** 🚀 Ready to Deploy
+- [x] Production deployment script created (`scripts/deploy_oauth_encryption_production.py`)
+- [x] Deployment report template created (`docs/oauth_week4_deployment_report.md`)
+- [x] Updated checklist for Week 4 execution
+- [ ] Execute gradual rollout (10% batches with 10s monitoring)
+- [ ] Verify 100% encryption coverage
+- [ ] 24-hour monitoring (checks every 4 hours)
+- [ ] Update FEATURES.md after successful deployment
+
+**Production Deployment Features:**
+- Gradual rollout mode: 10% batches with 10-second monitoring wait
+- Full rollout mode: All tokens at once (for low-count scenarios)
+- Prerequisites checker: Verifies backup, ENCRYPTION_KEY, staging tests
+- Plaintext scanner: Identifies tokens needing encryption
+- Encryption migrator: Re-saves tokens to trigger auto-encryption
+- Coverage verifier: Validates 100% encryption post-deployment
+- Rollback plan: Stop script → restore backup → revert code
 
 #### Testing
 
