@@ -3,55 +3,64 @@ Monitoring module for Prometheus metrics and Grafana dashboards.
 
 Q3 2026: Production observability infrastructure.
 """
-from .prometheus import (
-    http_requests_total,
-    http_request_duration,
-    tasks_created_total,
-    tasks_completed_total,
-    tasks_by_status,
-    ai_requests_total,
-    ai_request_duration,
-    db_queries_total,
-    db_query_duration,
-    db_pool_connections,
-    cache_operations_total,
-    discord_messages_sent,
-    errors_total,
-    rate_limit_violations_total,
-    rate_limit_near_limit,
-    redis_connection_errors,
-    redis_operation_duration_seconds,
-    feature_flag_status,
-    update_db_pool_metrics,
-    record_task_status_counts,
-)
 
-from .middleware import metrics_middleware
+# Always available: Alerts (no dependencies)
 from .alerts import alert_manager, AlertManager, AlertSeverity
 
-__all__ = [
-    'http_requests_total',
-    'http_request_duration',
-    'tasks_created_total',
-    'tasks_completed_total',
-    'tasks_by_status',
-    'ai_requests_total',
-    'ai_request_duration',
-    'db_queries_total',
-    'db_query_duration',
-    'db_pool_connections',
-    'cache_operations_total',
-    'discord_messages_sent',
-    'errors_total',
-    'rate_limit_violations_total',
-    'rate_limit_near_limit',
-    'redis_connection_errors',
-    'redis_operation_duration_seconds',
-    'feature_flag_status',
-    'update_db_pool_metrics',
-    'record_task_status_counts',
-    'metrics_middleware',
-    'alert_manager',
-    'AlertManager',
-    'AlertSeverity',
-]
+# Try to import Prometheus metrics (requires prometheus_client)
+try:
+    from .prometheus import (
+        http_requests_total,
+        http_request_duration,
+        tasks_created_total,
+        tasks_completed_total,
+        tasks_by_status,
+        ai_requests_total,
+        ai_request_duration,
+        db_queries_total,
+        db_query_duration,
+        db_pool_connections,
+        cache_operations_total,
+        discord_messages_sent,
+        errors_total,
+        rate_limit_violations_total,
+        rate_limit_near_limit,
+        redis_connection_errors,
+        redis_operation_duration_seconds,
+        update_db_pool_metrics,
+        record_task_status_counts,
+    )
+    from .middleware import metrics_middleware
+
+    __all__ = [
+        'http_requests_total',
+        'http_request_duration',
+        'tasks_created_total',
+        'tasks_completed_total',
+        'tasks_by_status',
+        'ai_requests_total',
+        'ai_request_duration',
+        'db_queries_total',
+        'db_query_duration',
+        'db_pool_connections',
+        'cache_operations_total',
+        'discord_messages_sent',
+        'errors_total',
+        'rate_limit_violations_total',
+        'rate_limit_near_limit',
+        'redis_connection_errors',
+        'redis_operation_duration_seconds',
+        'update_db_pool_metrics',
+        'record_task_status_counts',
+        'metrics_middleware',
+        'alert_manager',
+        'AlertManager',
+        'AlertSeverity',
+    ]
+except ImportError:
+    # Prometheus not available, only export alerts
+    __all__ = [
+        'alert_manager',
+        'AlertManager',
+        'AlertSeverity',
+    ]

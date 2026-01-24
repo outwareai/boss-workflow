@@ -28,8 +28,8 @@ sqlalchemy[asyncio]==2.0.46  # Already at latest 2.0.x - Async improvements, bat
 alembic==1.18.1  # Updated from 1.13.1 - Migration improvements, performance
 
 # Redis for caching and conversation state
-redis==5.2.0  # Updated from 5.0.1 - Performance improvements (not 7.x - breaking changes)
-aioredis==2.0.1
+# Q3 2026: Using redis[asyncio] instead of deprecated aioredis
+redis[asyncio]==5.2.0  # Updated from 5.0.1 - Performance improvements (not 7.x - breaking changes)
 
 # Scheduler
 apscheduler==3.11.2  # Updated from 3.10.4 - Bug fixes, performance improvements

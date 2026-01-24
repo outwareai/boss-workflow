@@ -1,0 +1,93 @@
+groups:
+  - name: boss-workflow-alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Slow API responses
+      - alert: SlowAPIResponses
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API responses are slow"
+          description: "95th percentile response time is {{ $value }}s (threshold: 2s)"
+
+      # Database pool exhaustion
+      - alert: DatabasePoolExhaustion
+        expr: db_pool_connections{state="overflow"} > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool near capacity"
+          description: "{{ $value }} overflow connections (investigate connection leaks)"
+
+      # High database query latency
+      - alert: HighDatabaseLatency
+        expr: histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database queries are slow"
+          description: "95th percentile query time is {{ $value }}s (threshold: 1s)"
+
+      # Low cache hit rate
+      - alert: LowCacheHitRate
+        expr: rate(cache_operations_total{result="hit"}[5m]) / rate(cache_operations_total{operation="get"}[5m]) < 0.5
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Cache hit rate is low"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 50%)"
+
+      # AI request failures
+      - alert: AIRequestFailures
+        expr: rate(ai_requests_total{status="error"}[5m]) / rate(ai_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High AI request failure rate"
+          description: "AI failure rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # Discord message send failures
+      - alert: DiscordSendFailures
+        expr: rate(discord_messages_sent_total{status!="success"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Discord message send failures detected"
+          description: "{{ $value }} failed Discord messages per second"
+
+      # Application down
+      - alert: ApplicationDown
+        expr: up{job="boss-workflow"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Boss Workflow application is down"
+          description: "Application has been down for more than 1 minute"
+
+      # High memory usage (if you add node_exporter)
+      # - alert: HighMemoryUsage
+      #   expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+      #   for: 5m
+      #   labels:
+      #     severity: warning
+      #   annotations:
+      #     summary: "High memory usage"
+      #     description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"

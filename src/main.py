@@ -114,6 +114,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Context Redis failed: {e}")
 
+    # Q3 2026: Initialize Redis cache
+    try:
+        from .cache.redis_client import get_redis
+        redis_client = await get_redis()
+        if redis_client:
+            logger.info("Redis cache initialized")
+        else:
+            logger.warning("Redis cache not configured (REDIS_URL not set)")
+    except Exception as e:
+        logger.warning(f"Redis cache init failed: {e}")
+
     # Start scheduler
     try:
         scheduler = get_scheduler_manager()
@@ -413,6 +424,14 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
         await context.disconnect()
     except Exception as e:
         logger.warning(f"Failed to disconnect conversation context during shutdown: {e}")
+
+    # Q3 2026: Close Redis cache connection
+    try:
+        from .cache.redis_client import close_redis
+        await close_redis()
+        logger.info("Redis cache connection closed")
+    except Exception as e:
+        logger.warning(f"Failed to close Redis cache during shutdown: {e}")
 
     try:
         await close_database()
@@ -1277,6 +1296,98 @@ async def verify_oauth_encryption_api():
             "status": "error",
             "error": str(e)
         }
+
+
+# ==================== CACHE ADMIN ENDPOINTS (Q3 2026) ====================
+
+@app.get("/api/admin/cache/stats")
+async def get_cache_stats():
+    """
+    Get cache statistics and Redis server info.
+
+    Q3 2026: Redis caching performance monitoring endpoint.
+
+    Returns:
+        JSON with application hit rate, Redis stats, and health info
+    """
+    try:
+        from .cache.stats import stats
+
+        full_stats = await stats.get_full_stats()
+
+        return {
+            "status": "ok",
+            "timestamp": datetime.now().isoformat(),
+            **full_stats
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting cache stats: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.post("/api/admin/cache/clear")
+async def clear_cache(pattern: str = "*"):
+    """
+    Clear cache entries matching pattern.
+
+    Q3 2026: Cache invalidation endpoint for admins.
+
+    Args:
+        pattern: Pattern to match (e.g., "tasks:*", "task:TASK-*")
+
+    Returns:
+        JSON with number of entries cleared
+    """
+    try:
+        from .cache.redis_client import cache
+
+        deleted = await cache.invalidate_pattern(pattern)
+
+        logger.info(f"Admin cleared {deleted} cache entries matching {pattern}")
+
+        return {
+            "status": "ok",
+            "pattern": pattern,
+            "deleted": deleted,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/cache/reset-stats")
+async def reset_cache_stats():
+    """
+    Reset cache hit/miss statistics.
+
+    Q3 2026: Reset application-level cache statistics counters.
+
+    Returns:
+        JSON confirmation
+    """
+    try:
+        from .cache.stats import stats
+
+        stats.reset()
+
+        logger.info("Admin reset cache statistics")
+
+        return {
+            "status": "ok",
+            "message": "Cache statistics reset",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error resetting cache stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Track processed update IDs to prevent duplicate processing from Telegram retries

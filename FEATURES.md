@@ -4767,6 +4767,145 @@ Major version updates for core dependencies with security patches and performanc
 
 ---
 
+#### 6. Load Testing Infrastructure (Q3 2026 - Production Hardening)
+
+**Status:** ✅ Complete
+**Completion Date:** 2026-01-25
+**Test Scenarios:** 4 (Light, Medium, Heavy, Spike)
+**Target Capacity:** 1,000 requests/minute
+
+Comprehensive load testing suite using Locust to validate system performance under production load conditions.
+
+**Implementation:**
+
+**Files Created:**
+- `tests/load/locustfile.py` - Main Locust test file with user behaviors
+- `tests/load/scenarios.py` - Pre-defined test scenarios (light/medium/heavy/spike)
+- `tests/load/benchmark.py` - Quick performance benchmarking tool
+- `tests/load/quick_test.py` - Simplified CLI for running tests
+- `tests/load/README.md` - Comprehensive documentation
+- `scripts/run_load_tests.sh` - Full test suite runner (Linux/Mac)
+- `scripts/run_load_tests.bat` - Full test suite runner (Windows)
+
+**Test Scenarios:**
+
+1. **Light Load** (100 users, 10/sec spawn, 5 min)
+   - Purpose: Warmup and basic functionality validation
+   - Expected: < 200ms P95, 0% errors
+
+2. **Medium Load** (500 users, 50/sec spawn, 10 min)
+   - Purpose: Sustained moderate traffic testing
+   - Expected: < 350ms P95, 0% errors
+
+3. **Heavy Load** (1000 users, 100/sec spawn, 15 min)
+   - Purpose: **Target capacity validation (1,000 req/min)**
+   - Expected: < 500ms P95, < 1% errors
+
+4. **Spike Test** (2000 users, 200/sec spawn, 5 min)
+   - Purpose: Sudden traffic spike behavior
+   - Expected: < 1000ms P95, < 5% errors
+
+**User Behavior Patterns:**
+
+**BossWorkflowUser (Normal User):**
+- List tasks (40% - weight 10)
+- Get task by status (20% - weight 5)
+- Get specific task (16% - weight 4)
+- Create task (12% - weight 3)
+- Update task status (8% - weight 2)
+- Get statistics (4% - weight 1)
+- Health check (4% - weight 1)
+
+**AdminUser (Admin User):**
+- Get pool status (50%)
+- Get cache stats (50%)
+
+**Success Criteria:**
+
+| Metric | Target | Critical |
+|--------|--------|----------|
+| P95 Response Time | < 500ms | < 1000ms |
+| P99 Response Time | < 1000ms | < 2000ms |
+| Error Rate (Normal) | 0% | < 1% |
+| Error Rate (Spike) | < 1% | < 5% |
+| Throughput | 1,000 req/min | 800 req/min |
+| Database Pool | No overflow | - |
+| Cache Hit Rate | > 70% | > 50% |
+
+**Usage:**
+
+```bash
+# Quick benchmark
+python tests/load/benchmark.py
+
+# Run single scenario
+python tests/load/scenarios.py light   # or medium, heavy, spike
+
+# Full test suite
+bash scripts/run_load_tests.sh        # Linux/Mac
+scripts\run_load_tests.bat            # Windows
+
+# Using quick test CLI
+python tests/load/quick_test.py benchmark
+python tests/load/quick_test.py test heavy
+python tests/load/quick_test.py full
+
+# Test against production
+export LOAD_TEST_HOST=https://boss-workflow-production.up.railway.app
+python tests/load/benchmark.py $LOAD_TEST_HOST
+```
+
+**Reports Generated:**
+
+After each test, HTML and CSV reports are created in `tests/load/reports/`:
+- `report_100users.html` - Light load results
+- `report_500users.html` - Medium load results
+- `report_1000users.html` - Heavy load results (TARGET CAPACITY)
+- `report_2000users.html` - Spike test results
+- `stats_*_stats.csv` - CSV statistics
+- `stats_*_failures.csv` - Failure details
+
+**Features:**
+
+- ✅ 4 pre-configured load test scenarios
+- ✅ Realistic user behavior simulation
+- ✅ HTML report generation
+- ✅ CSV export for analysis
+- ✅ Performance benchmarking tool
+- ✅ Quick test CLI interface
+- ✅ Production deployment testing support
+- ✅ Configurable via environment variables
+- ✅ Both headless and web UI modes
+- ✅ Distributed testing support
+
+**Dependencies Added:**
+```
+locust==2.20.0  # Load testing framework
+```
+
+**Monitoring During Tests:**
+
+```bash
+# Monitor pool status
+watch -n 1 'curl -s http://localhost:8000/api/admin/pool-status | jq'
+
+# Monitor cache stats
+watch -n 1 'curl -s http://localhost:8000/api/admin/cache/stats | jq'
+
+# Railway logs
+railway logs -s boss-workflow
+```
+
+**Next Steps:**
+1. Run baseline load tests locally
+2. Document current performance metrics
+3. Run load tests against Railway deployment
+4. Optimize based on bottlenecks identified
+5. Re-test to validate improvements
+6. Set up automated load testing in CI/CD
+
+---
+
 ### Planned Features
 
 #### 🔴 Priority 1: Team Member Bot Access

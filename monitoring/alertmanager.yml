@@ -1,0 +1,49 @@
+global:
+  resolve_timeout: 5m
+
+# Route configuration
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'discord'
+  routes:
+    # Critical alerts go to Discord immediately
+    - match:
+        severity: critical
+      receiver: 'discord-critical'
+      continue: true
+
+    # Warning alerts batched
+    - match:
+        severity: warning
+      receiver: 'discord'
+      group_wait: 30s
+
+# Receivers
+receivers:
+  - name: 'discord'
+    webhook_configs:
+      - url: '${DISCORD_WEBHOOK_URL}'
+        send_resolved: true
+
+  - name: 'discord-critical'
+    webhook_configs:
+      - url: '${DISCORD_WEBHOOK_URL}'
+        send_resolved: true
+
+  # Optional: Add Slack/email/PagerDuty
+  # - name: 'slack'
+  #   slack_configs:
+  #     - api_url: '${SLACK_WEBHOOK_URL}'
+  #       channel: '#alerts'
+  #       title: 'Boss Workflow Alert'
+
+# Inhibition rules (prevent duplicate alerts)
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
