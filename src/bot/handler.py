@@ -173,19 +173,21 @@ class UnifiedHandler:
             # Route to command handlers
             if command == '/task':
                 # Start new task creation with the command text
+                # Pass _auto_finalize flag to skip preview confirmation for simple tasks
                 return await self._handle_create_task(
                     user_id=user_id,
                     message=command_text if command_text else "Create a new task",
-                    data={"message": command_text, "is_urgent": False},
+                    data={"message": command_text, "is_urgent": False, "_auto_finalize": True},
                     context=context,
                     user_name=user_name
                 )
             elif command == '/urgent':
                 # Start urgent task creation
+                # Auto-finalize urgent tasks (no preview needed)
                 return await self._handle_create_task(
                     user_id=user_id,
                     message=command_text if command_text else "Create an urgent task",
-                    data={"message": command_text, "is_urgent": True},
+                    data={"message": command_text, "is_urgent": True, "_auto_finalize": True},
                     context=context,
                     user_name=user_name
                 )
@@ -693,7 +695,9 @@ What would you like to do?""", None
             return f"{intro}{question_msg}", None
         else:
             # Can create directly
-            return await self._create_task_directly(conversation, prefs.to_dict())
+            # Check if auto_finalize flag is set (from /task or /urgent commands)
+            auto_finalize = data.get("_auto_finalize", False)
+            return await self._create_task_directly(conversation, prefs.to_dict(), auto_finalize=auto_finalize)
 
     async def _handle_task_correction(
         self, user_id: str, conversation: ConversationState, correction: str, user_name: str
@@ -847,15 +851,29 @@ Look good now? (yes/no)""", None
         return "\n".join(lines)
 
     async def _create_task_directly(
-        self, conversation: ConversationState, preferences: Dict
+        self, conversation: ConversationState, preferences: Dict, auto_finalize: bool = False
     ) -> Tuple[str, Optional[Dict]]:
-        """Create task without questions, with smart dependency check."""
+        """Create task without questions, with smart dependency check.
+
+        Args:
+            conversation: The conversation state
+            preferences: User preferences
+            auto_finalize: If True, skip preview and create task immediately (used for /task, /urgent commands)
+        """
         preview, spec = await self.clarifier.generate_spec_preview(
             conversation=conversation,
             preferences=preferences
         )
 
         conversation.generated_spec = spec
+
+        # If auto_finalize is True, skip preview and finalize immediately
+        if auto_finalize:
+            logger.info(f"Auto-finalizing task from command for user {conversation.user_id}")
+            conversation.stage = ConversationStage.FINALIZED
+            return await self._finalize_task(conversation, conversation.user_id)
+
+        # Normal flow: go to preview stage and ask for confirmation
         conversation.stage = ConversationStage.PREVIEW
         await self.context.save_conversation(conversation)
 
