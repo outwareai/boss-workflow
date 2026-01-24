@@ -1425,7 +1425,7 @@ Make the changes and submit again when ready!"""
                         db_task_ids = set()
                         for task in db_tasks:
                             if task.status and task.status.lower() not in ["completed", "cancelled"]:
-                                db_task_ids.add(task.id)
+                                db_task_ids.add(task.task_id)  # Use task_id (string), not id (integer)
                         logger.info(f"Found {len(db_task_ids)} tasks in Database")
                         tasks_to_delete.update(db_task_ids)
                     except Exception as e:
