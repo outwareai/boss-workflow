@@ -406,7 +406,7 @@ async def test_get_project_stats_nonexistent_project(project_repository):
     """Test getting statistics for a nonexistent project."""
     repo, session = project_repository
 
-    with pytest.mock.patch.object(repo, 'get_by_id', return_value=None):
+    with patch.object(repo, 'get_by_id', return_value=None):
         stats = await repo.get_project_stats(999)
 
         assert stats == {}
@@ -422,7 +422,7 @@ async def test_get_all_stats_multiple_projects(project_repository):
         ProjectDB(id=2, name="Project 2", status="active")
     ]
 
-    with pytest.mock.patch.object(repo, 'get_active', return_value=projects):
+    with patch.object(repo, 'get_active', return_value=projects):
         # Mock status counts for both projects
         status_rows = [
             (1, "completed", 5),
@@ -453,7 +453,7 @@ async def test_get_all_stats_no_active_projects(project_repository):
     """Test getting statistics when no active projects exist."""
     repo, session = project_repository
 
-    with pytest.mock.patch.object(repo, 'get_active', return_value=[]):
+    with patch.object(repo, 'get_active', return_value=[]):
         stats = await repo.get_all_stats()
 
         assert stats == []
@@ -468,7 +468,7 @@ async def test_find_or_create_existing_project(project_repository, sample_projec
     """Test find_or_create returns existing project."""
     repo, session = project_repository
 
-    with pytest.mock.patch.object(repo, 'get_by_name', return_value=sample_project):
+    with patch.object(repo, 'get_by_name', return_value=sample_project):
         result = await repo.find_or_create("Q1 2026 Sprint", created_by="Boss")
 
         assert result == sample_project
@@ -481,7 +481,7 @@ async def test_find_or_create_new_project(project_repository):
     """Test find_or_create creates new project when not found."""
     repo, session = project_repository
 
-    with pytest.mock.patch.object(repo, 'get_by_name', return_value=None):
+    with patch.object(repo, 'get_by_name', return_value=None):
         result = await repo.find_or_create("New Project", created_by="Boss")
 
         # Should call add for new project
@@ -493,7 +493,7 @@ async def test_find_or_create_idempotency(project_repository, sample_project):
     """Test find_or_create idempotency - multiple calls return same project."""
     repo, session = project_repository
 
-    with pytest.mock.patch.object(repo, 'get_by_name', return_value=sample_project):
+    with patch.object(repo, 'get_by_name', return_value=sample_project):
         result1 = await repo.find_or_create("Q1 2026 Sprint")
         result2 = await repo.find_or_create("Q1 2026 Sprint")
 
