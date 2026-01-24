@@ -3069,8 +3069,147 @@ class TestHandler(BaseHandler):
 - ✅ Easy to test via concrete subclasses
 - ✅ Foundation for extracting 6 specialized handlers
 
-**Next Steps (Task #4.3-6):**
-- Task #4.3: Extract ValidationHandler from UnifiedHandler
+---
+
+### ValidationHandler (v2.5.0)
+
+**File:** `src/bot/handlers/validation_handler.py`
+**Status:** ✅ Complete (Task #4.3)
+**Parent:** BaseHandler
+**Tests:** 9/9 passing
+
+Extracted from UnifiedHandler - handles all task validation and approval flows.
+
+**Responsibilities:**
+- Request validation from boss (when staff submits work)
+- Process /approve commands (boss accepts work)
+- Process /reject commands (boss requests revision)
+- Notify staff of validation results
+- Update task status (awaiting_validation → completed/needs_revision)
+- Track pending validations via SessionManager
+- Handle multi-step proof submission flow
+
+**Key Methods:**
+
+```python
+# Public API
+async def can_handle(message: str, user_id: str, **kwargs) -> bool:
+    """Detect validation-related messages (/approve, /reject, validation sessions)"""
+
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route to approve/reject handlers or validation flow"""
+
+async def request_validation(
+    task_id: str,
+    staff_user_id: str,
+    boss_user_id: str,
+    description: str,
+    proof_items: list = None,
+    notes: Optional[str] = None
+) -> bool:
+    """Send validation request to boss with proof and notes"""
+
+async def get_pending_validations() -> list:
+    """Get all tasks awaiting boss approval"""
+
+async def get_validation_count() -> int:
+    """Count pending validations"""
+
+# Internal handlers
+async def _handle_approve(...) -> Tuple[str, Optional[Dict]]:
+    """Process /approve command, update task to completed"""
+
+async def _handle_reject(...) -> Tuple[str, Optional[Dict]]:
+    """Process /reject command, update task to needs_revision"""
+
+async def _handle_validation_flow(...) -> None:
+    """Multi-step flow: proof collection → notes → confirmation"""
+```
+
+**Validation Flow:**
+
+1. **Staff Submission:**
+   - Staff says "finished task"
+   - Bot enters proof collection mode
+   - Staff sends screenshots/links/notes
+   - Staff confirms "that's all"
+   - Bot requests notes
+   - Staff confirms submission
+
+2. **Boss Notification:**
+   - Boss receives formatted validation request
+   - Shows task ID, description, proof items, notes
+   - Provides /approve and /reject commands
+
+3. **Boss Decision:**
+   - **Approve:** `/approve TASK-001` → Task status = completed, staff notified
+   - **Reject:** `/reject TASK-001 Needs improvement` → Task status = needs_revision, feedback sent
+
+4. **Status Updates:**
+   - Task synced to Google Sheets
+   - Discord notification posted
+   - Audit log created
+   - Session cleared
+
+**Usage Examples:**
+
+```python
+# Request validation programmatically
+handler = ValidationHandler()
+await handler.request_validation(
+    task_id="TASK-001",
+    staff_user_id="12345",
+    boss_user_id="67890",
+    description="Fixed login bug",
+    proof_items=[
+        {"type": "screenshot", "content": "before.png"},
+        {"type": "screenshot", "content": "after.png"},
+        {"type": "link", "content": "https://github.com/pr/123"}
+    ],
+    notes="Tested on Chrome and Firefox"
+)
+
+# Check pending validations
+validations = await handler.get_pending_validations()
+# Returns: [
+#   {"task_id": "TASK-001", "staff_user_id": "12345", "submitted_at": "..."},
+#   {"task_id": "TASK-002", "staff_user_id": "67890", "submitted_at": "..."}
+# ]
+
+count = await handler.get_validation_count()  # 2
+```
+
+**Tests:**
+```python
+# tests/unit/test_validation_handler.py (9/9 passing)
+✅ test_can_handle_approve - Detects /approve commands
+✅ test_can_handle_reject - Detects /reject commands
+✅ test_can_handle_normal_message - Rejects normal messages
+✅ test_handle_approve - Processes approval flow
+✅ test_handle_approve_no_pending - Handles empty queue
+✅ test_request_validation - Sends validation request
+✅ test_handle_reject - Processes rejection with feedback
+✅ test_get_pending_validations - Lists pending validations
+✅ test_get_validation_count - Counts validations
+```
+
+**Integration:**
+- Uses SessionManager for pending_validation and validation_sessions
+- Uses TaskRepository for task status updates
+- Uses DiscordIntegration for approval/rejection notifications
+- Uses SheetsIntegration for syncing task status
+- Uses AuditRepository for logging all validation actions
+
+**Impact:**
+- Reduces UnifiedHandler by ~300 lines
+- First specialized handler extracted (1/6 complete)
+- Enables independent testing of validation logic
+- Cleaner separation of concerns
+
+---
+
+**Next Steps (Task #4.4-6):**
+- ✅ Task #4.3: Extract ValidationHandler from UnifiedHandler (COMPLETE)
 - Task #4.4: Extract RoutingHandler from UnifiedHandler
 - Task #4.5: Extract ApprovalHandler from UnifiedHandler
 - Task #4.6: Extract QueryHandler, ModificationHandler, CommandHandler
@@ -3876,6 +4015,7 @@ Mirror Discord functionality to Slack
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| **2.5.0** | 2026-01-24 | **🔧 VALIDATION HANDLER EXTRACTION (Task #4.3):** Extracted ValidationHandler from 3,636-line UnifiedHandler. Handles task approval/rejection flows, proof submission, boss validation, staff notifications. Features: 9 unit tests, SessionManager integration, BaseHandler inheritance. **Impact:** First specialized handler extracted (1/6 complete), reduces UnifiedHandler complexity |
 | **2.4.0** | 2026-01-24 | **🔧 SESSIONMANAGER FOUNDATION (Task #4 Phase 1):** Centralized session state management with Redis persistence. Replaces 7 handler dictionaries with unified storage. Features: TTL expiration, thread-safe locks, in-memory fallback, 17 unit tests. **Impact:** Foundation for handler refactoring, session persistence across restarts |
 | **2.3.0** | 2026-01-23 | **⚡ Q1 2026 PERFORMANCE OPTIMIZATION:** 5 composite indexes (10x query speed), 7 N+1 query fixes, connection pooling (30% throughput boost), dependency updates (FastAPI 0.128, telegram-bot 22.5, SQLAlchemy 2.0.46), /health/db monitoring endpoint. **Impact:** Daily reports 5s→500ms, API latency 2-3s→200-300ms, 60+ CVEs patched |
 | **2.2.0** | 2026-01-23 | **🧠 SMART AI v2.2:** Complexity detection (1-10 score), role-aware routing (Mayank→DEV, Zea→ADMIN), keyword-based role inference, intelligent self-answering. **🔧 COMPREHENSIVE TASK OPS:** 13 new intents for natural language task modifications |
