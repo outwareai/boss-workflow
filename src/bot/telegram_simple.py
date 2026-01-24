@@ -21,7 +21,8 @@ from .handlers import (
     ApprovalHandler,
     QueryHandler,
     ModificationHandler,
-    CommandHandler
+    CommandHandler,
+    UnifiedHandlerWrapper
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class TelegramBotSimple:
         self.query_handler = QueryHandler()
         self.modification_handler = ModificationHandler()
         self.command_handler = CommandHandler()
+        self.unified_wrapper = UnifiedHandlerWrapper()
 
         # Initialize routing handler and register all handlers
         self.router = RoutingHandler()
@@ -58,6 +60,7 @@ class TelegramBotSimple:
         self.router.register_handler(self.validation_handler)   # Third - task validation
         self.router.register_handler(self.query_handler)        # Fourth - status queries
         self.router.register_handler(self.modification_handler) # Fifth - task updates
+        self.router.register_handler(self.unified_wrapper)      # Last - fallback to UnifiedHandler
 
         self.boss_chat_id = settings.telegram_boss_chat_id
         self.app: Optional[Application] = None

@@ -138,14 +138,9 @@ class RoutingHandler(BaseHandler):
                 await self.clear_active_handler(user_id)
                 await self.send_message(update, "Cancelled. What would you like to do?")
             else:
-                # Unknown intent
-                await self.send_message(
-                    update,
-                    "I'm not sure what you want to do. Try:\n"
-                    "• `/task` - Create a new task\n"
-                    "• `/status` - Check task status\n"
-                    "• `/help` - See all commands"
-                )
+                # Route to UnifiedHandler for all other intents
+                # This includes: CLEAR_TASKS, CREATE_TASK, SEARCH_TASKS, etc.
+                await self._route_to_unified_handler(update, context, intent, data)
 
         except Exception as e:
             self.logger.error(f"AI intent detection failed: {e}", exc_info=True)
@@ -210,6 +205,37 @@ class RoutingHandler(BaseHandler):
                 return
 
         await self.send_message(update, "Processing approval... (ValidationHandler not registered)")
+
+    async def _route_to_unified_handler(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        intent: UserIntent,
+        data: Dict[str, Any]
+    ) -> None:
+        """
+        Route to UnifiedHandler for intents not explicitly handled here.
+
+        This catches all intents like CLEAR_TASKS, SEARCH_TASKS, CREATE_TASK, etc.
+        that the specialized handlers don't claim.
+        """
+        for handler in self.handlers:
+            if handler.__class__.__name__ == "UnifiedHandlerWrapper":
+                # Store intent and data in context for UnifiedHandler to use
+                context.user_data["detected_intent"] = intent
+                context.user_data["detected_data"] = data
+                await handler.handle(update, context)
+                return
+
+        # Fallback if UnifiedHandlerWrapper not registered
+        self.logger.warning(f"UnifiedHandlerWrapper not registered, cannot route intent: {intent.value}")
+        await self.send_message(
+            update,
+            "I'm not sure what you want to do. Try:\n"
+            "• `/task` - Create a new task\n"
+            "• `/status` - Check task status\n"
+            "• `/help` - See all commands"
+        )
 
     async def _route_help(
         self,

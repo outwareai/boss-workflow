@@ -10,6 +10,7 @@ from .approval_handler import ApprovalHandler
 from .query_handler import QueryHandler
 from .modification_handler import ModificationHandler
 from .command_handler import CommandHandler
+from .unified_wrapper import UnifiedHandlerWrapper
 
 __all__ = [
     "ValidationHandler",
@@ -18,4 +19,5 @@ __all__ = [
     "QueryHandler",
     "ModificationHandler",
     "CommandHandler",
+    "UnifiedHandlerWrapper",
 ]
