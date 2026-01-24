@@ -3,21 +3,25 @@
     {
       "name": "simple",
       "passed": true,
-      "complexity": null,
-      "questions": null
+      "complexity": 5,
+      "questions": null,
+      "task_created": false,
+      "intent_detected": true
     },
     {
       "name": "complex",
-      "passed": false,
-      "complexity": null,
-      "questions": null
+      "passed": true,
+      "complexity": 5,
+      "questions": null,
+      "task_created": false,
+      "intent_detected": true
     },
     {
       "name": "routing",
-      "passed": false,
-      "mayank": false,
-      "zea": false
+      "passed": true,
+      "mayank": true,
+      "zea": true
     }
   ],
-  "timestamp": "2026-01-24T06:49:46.555080"
+  "timestamp": "2026-01-24T12:34:47.347889"
 }

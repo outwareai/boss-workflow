@@ -4659,39 +4659,78 @@ Comprehensive unit test suite for all repository classes providing 70%+ code cov
 
 ---
 
-#### 4. Rate Limiting (v2.5.0)
+#### 4. Rate Limiting (v2.5.0 - Hybrid Implementation)
 
-**Status:** ✅ Complete
-**Implementation:** slowapi library
+**Status:** ✅ Complete (Hybrid with Feature Flag)
+**Implementation:** Custom middleware (default) + slowapi library (optional)
 **Coverage:** All public API endpoints
 
-Implemented request rate limiting to prevent abuse and ensure fair resource allocation.
+Implemented dual rate limiting approaches with easy toggle for production testing and rollback.
+
+**Implementations:**
+
+1. **Custom Middleware** (Default - `USE_SLOWAPI_RATE_LIMITING=false`)
+   - Token bucket algorithm
+   - Redis-backed (distributed) or in-memory fallback
+   - Configurable per-endpoint limits
+   - File: `src/middleware/rate_limit.py`
+
+2. **Slowapi Library** (Optional - `USE_SLOWAPI_RATE_LIMITING=true`)
+   - Industry-standard library (battle-tested)
+   - Redis-backed or in-memory
+   - Decorator-based per-route configuration
+   - File: `src/middleware/slowapi_limiter.py`
 
 **Configuration:**
-```python
-# Public endpoints: 20 requests per minute
-RATE_LIMIT_PUBLIC = "20/minute"
+```bash
+# Feature flag (default: false = custom middleware)
+USE_SLOWAPI_RATE_LIMITING=false
 
-# Authenticated endpoints: 100 requests per minute
-RATE_LIMIT_AUTHENTICATED = "100/minute"
+# Rate limits (used by slowapi implementation)
+RATE_LIMIT_PUBLIC="20/minute"
+RATE_LIMIT_AUTHENTICATED="100/minute"
 
-# Admin endpoints: 200 requests per minute
-RATE_LIMIT_ADMIN = "200/minute"
+# Redis backend (optional - both implementations)
+REDIS_URL="redis://localhost:6379"
 ```
 
+**Custom Middleware Limits:**
+- Admin endpoints: 5 requests/hour
+- Webhook endpoints: 200 requests/minute
+- Database API: 50 requests/minute
+- General API: 100 requests/minute
+- Health/docs: Unlimited
+
 **Protected Endpoints:**
-- `/webhook/telegram` - 100/min (authenticated)
-- `/api/tasks` - 100/min (authenticated)
-- `/api/team` - 100/min (authenticated)
-- `/health/db` - 100/min (authenticated)
-- Public endpoints - 20/min
+- `/webhook/telegram` - 200/min
+- `/api/db/*` - 50/min
+- `/api/*` - 100/min
+- `/admin/*` - 5/hour
+- Public endpoints - 100/min
 
 **Features:**
-- ✅ Per-IP rate limiting
-- ✅ Grace period for burst traffic
+- ✅ Hybrid approach with feature flag
+- ✅ Per-IP rate limiting (both implementations)
+- ✅ Redis-backed for distributed deployments
+- ✅ In-memory fallback for single-instance
 - ✅ Automatic response: 429 Too Many Requests
+- ✅ Rate limit headers in responses
 - ✅ Configurable limits per endpoint
 - ✅ Logging of rate limit violations
+- ✅ Easy A/B testing and rollback
+
+**Usage:**
+```bash
+# Enable slowapi (Railway/Production)
+railway variables set USE_SLOWAPI_RATE_LIMITING=true -s boss-workflow
+
+# Disable (use existing middleware - default)
+railway variables set USE_SLOWAPI_RATE_LIMITING=false -s boss-workflow
+
+# Test locally
+export USE_SLOWAPI_RATE_LIMITING=true
+python -m src.main
+```
 
 ---
 

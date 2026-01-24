@@ -437,14 +437,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add rate limiting middleware (Q1 2026 Security)
+# Add rate limiting middleware (Q1 2026 Security - Hybrid approach with feature flag)
 try:
-    from .middleware.rate_limit import RateLimitMiddleware
-    from .memory.preferences import get_redis_client
+    if settings.use_slowapi_rate_limiting:
+        # Use slowapi implementation
+        from .middleware.slowapi_limiter import setup_rate_limiting
+        limiter = setup_rate_limiting(app, settings.redis_url)
+        logger.info("Slowapi rate limiting enabled (via feature flag)")
+    else:
+        # Use existing custom middleware (default)
+        from .middleware.rate_limit import RateLimitMiddleware
+        from .memory.preferences import get_redis_client
 
-    redis_client = get_redis_client()
-    app.add_middleware(RateLimitMiddleware, redis_client=redis_client)
-    logger.info("Rate limiting middleware enabled")
+        redis_client = get_redis_client()
+        app.add_middleware(RateLimitMiddleware, redis_client=redis_client)
+        logger.info("Custom rate limiting middleware enabled (default)")
 except Exception as e:
     logger.warning(f"Rate limiting middleware disabled: {e}")
 

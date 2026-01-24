@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     # OAuth Token Encryption (Q1 2026)
     encryption_key: str = Field(default="", env="ENCRYPTION_KEY")
 
+    # Rate Limiting (Q1 2026)
+    use_slowapi_rate_limiting: bool = Field(default=False, env="USE_SLOWAPI_RATE_LIMITING")
+    rate_limit_authenticated: str = Field(default="100/minute", env="RATE_LIMIT_AUTHENTICATED")
+    rate_limit_public: str = Field(default="20/minute", env="RATE_LIMIT_PUBLIC")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

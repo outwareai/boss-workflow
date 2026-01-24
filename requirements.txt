@@ -47,6 +47,9 @@ pytz==2025.2  # Updated from 2024.1 - Latest timezone database
 # Logging and monitoring
 structlog==25.5.0  # Updated from 24.1.0 - Performance improvements, new features
 
+# Rate limiting (Q1 2026 - Alternative implementation with feature flag)
+slowapi==0.1.9
+
 # Async file I/O (Phase 1: Fix blocking I/O)
 aiofiles==25.1.0  # Updated from 24.1.0 - Bug fixes, performance
 
