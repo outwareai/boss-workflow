@@ -219,11 +219,12 @@ async def test_get_token_backward_compatibility_plaintext(oauth_repository):
     session.execute.return_value = mock_result
 
     with patch('src.database.repositories.oauth.get_token_encryption') as mock_enc, \
-         patch('src.database.repositories.oauth.log_audit_event') as mock_audit:
+         patch('src.utils.audit_logger.log_audit_event') as mock_audit:
 
         mock_encryption = Mock()
         mock_encryption.decrypt = Mock(side_effect=Exception("Invalid token format"))
         mock_enc.return_value = mock_encryption
+        mock_audit.return_value = AsyncMock()
 
         result = await repo.get_token("old@example.com", "calendar")
 
@@ -243,7 +244,7 @@ async def test_get_token_logs_audit_event(oauth_repository, sample_oauth_token):
     session.execute.return_value = mock_result
 
     with patch('src.database.repositories.oauth.get_token_encryption') as mock_enc, \
-         patch('src.database.repositories.oauth.log_audit_event') as mock_audit:
+         patch('src.utils.audit_logger.log_audit_event') as mock_audit:
 
         mock_encryption = Mock()
         mock_encryption.decrypt = Mock(return_value="decrypted_token")
@@ -273,7 +274,7 @@ async def test_update_access_token_encrypts(oauth_repository, sample_oauth_token
     session.execute.return_value = mock_result
 
     with patch('src.database.repositories.oauth.get_token_encryption') as mock_enc, \
-         patch('src.database.repositories.oauth.log_audit_event') as mock_audit:
+         patch('src.utils.audit_logger.log_audit_event') as mock_audit:
 
         mock_encryption = Mock()
         mock_encryption.encrypt = Mock(return_value=b"gAAAAA_new_access_encrypted")

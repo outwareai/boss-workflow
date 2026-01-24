@@ -75,7 +75,7 @@ async def test_create_team_member_success(team_repository):
     """Test creating a new team member successfully."""
     repo, session = team_repository
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         result = await repo.create(
@@ -95,7 +95,7 @@ async def test_create_logs_audit_event(team_repository):
     """Test that create() logs an audit event (Q2 2026)."""
     repo, session = team_repository
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         result = await repo.create(
@@ -116,7 +116,7 @@ async def test_create_generates_username(team_repository):
     """Test that create() generates username from name."""
     repo, session = team_repository
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         result = await repo.create(
@@ -153,7 +153,7 @@ async def test_update_team_member_success(team_repository, sample_team_member):
     mock_result.scalar_one_or_none = Mock(return_value=sample_team_member)
     session.execute.return_value = mock_result
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         result = await repo.update(1, {
@@ -173,7 +173,7 @@ async def test_update_logs_audit_event(team_repository, sample_team_member):
     mock_result.scalar_one_or_none = Mock(return_value=sample_team_member)
     session.execute.return_value = mock_result
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         result = await repo.update(1, {"email": "newemail@example.com"})
@@ -194,7 +194,7 @@ async def test_update_adds_timestamp(team_repository, sample_team_member):
     mock_result.scalar_one_or_none = Mock(return_value=sample_team_member)
     session.execute.return_value = mock_result
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         updates = {"role": "new role"}
@@ -217,7 +217,7 @@ async def test_delete_team_member_success(team_repository, sample_team_member):
     mock_result.scalar_one_or_none = Mock(return_value=sample_team_member)
     session.execute.return_value = mock_result
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         result = await repo.delete(1)
@@ -235,7 +235,7 @@ async def test_delete_logs_audit_event_with_warning_level(team_repository, sampl
     mock_result.scalar_one_or_none = Mock(return_value=sample_team_member)
     session.execute.return_value = mock_result
 
-    with patch('src.database.repositories.team.log_audit_event') as mock_audit:
+    with patch('src.utils.audit_logger.log_audit_event') as mock_audit:
         mock_audit.return_value = AsyncMock()
 
         result = await repo.delete(1)
