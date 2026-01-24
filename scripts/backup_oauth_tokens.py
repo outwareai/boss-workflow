@@ -98,7 +98,7 @@ async def backup_tokens():
         with open(filepath, 'w') as f:
             json.dump(backup, f, indent=2)
 
-        print(f"✅ Successfully backed up {len(tokens)} tokens to: {filename}")
+        print(f"[SUCCESS] Successfully backed up {len(tokens)} tokens to: {filename}")
         print(f"📂 Full path: {filepath}")
         print()
         print("[CRITICAL] CRITICAL NEXT STEPS:")
@@ -112,7 +112,7 @@ async def backup_tokens():
         return filename
 
     except Exception as e:
-        print(f"❌ Error during backup: {e}")
+        print(f"[ERROR] Error during backup: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -132,7 +132,7 @@ async def verify_backup(filename: str):
         filepath = Path(__file__).parent.parent / filename
 
         if not filepath.exists():
-            print(f"❌ Backup file not found: {filepath}")
+            print(f"[ERROR] Backup file not found: {filepath}")
             return False
 
         with open(filepath, 'r') as f:
@@ -141,24 +141,24 @@ async def verify_backup(filename: str):
         required_fields = ["backup_date", "token_count", "tokens"]
         for field in required_fields:
             if field not in backup:
-                print(f"❌ Missing required field: {field}")
+                print(f"[ERROR] Missing required field: {field}")
                 return False
 
         token_count = backup.get("token_count", 0)
         actual_count = len(backup.get("tokens", []))
 
         if token_count != actual_count:
-            print(f"❌ Token count mismatch: expected {token_count}, got {actual_count}")
+            print(f"[ERROR] Token count mismatch: expected {token_count}, got {actual_count}")
             return False
 
-        print(f"✅ Backup verification passed")
+        print(f"[SUCCESS] Backup verification passed")
         print(f"   - Backup date: {backup['backup_date']}")
         print(f"   - Token count: {token_count}")
 
         return True
 
     except Exception as e:
-        print(f"❌ Error verifying backup: {e}")
+        print(f"[ERROR] Error verifying backup: {e}")
         return False
 
 

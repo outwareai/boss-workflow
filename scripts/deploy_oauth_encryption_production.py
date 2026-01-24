@@ -22,10 +22,10 @@ async def check_prerequisites() -> bool:
     try:
         encryption = get_token_encryption()
         encryption.encrypt(b"test")
-        print("✅ ENCRYPTION_KEY configured correctly")
+        print("[SUCCESS] ENCRYPTION_KEY configured correctly")
         checks.append(True)
     except Exception as e:
-        print(f"❌ ENCRYPTION_KEY missing or invalid: {e}")
+        print(f"[ERROR] ENCRYPTION_KEY missing or invalid: {e}")
         checks.append(False)
 
     # 2. Check database connection
@@ -33,20 +33,20 @@ async def check_prerequisites() -> bool:
         from src.database.connection import get_database
         db = get_database()
         await db.initialize()
-        print("✅ Database connection working")
+        print("[SUCCESS] Database connection working")
         checks.append(True)
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        print(f"[ERROR] Database connection failed: {e}")
         checks.append(False)
 
     # 3. Check backup exists
     import os
     backup_dir = "backups/oauth_tokens"
     if os.path.exists(backup_dir) and os.listdir(backup_dir):
-        print(f"✅ Backup found in {backup_dir}")
+        print(f"[SUCCESS] Backup found in {backup_dir}")
         checks.append(True)
     else:
-        print(f"❌ No backup found in {backup_dir}")
+        print(f"[ERROR] No backup found in {backup_dir}")
         print("   Run scripts/backup_oauth_tokens.py first!")
         checks.append(False)
 
@@ -56,13 +56,13 @@ async def check_prerequisites() -> bool:
         with open(staging_report, 'r') as f:
             content = f.read()
             if "GO" in content and "5/5" in content:
-                print(f"✅ Staging tests passed (5/5)")
+                print(f"[SUCCESS] Staging tests passed (5/5)")
                 checks.append(True)
             else:
-                print(f"❌ Staging tests not passed")
+                print(f"[ERROR] Staging tests not passed")
                 checks.append(False)
     else:
-        print(f"❌ Staging report not found")
+        print(f"[ERROR] Staging report not found")
         checks.append(False)
 
     return all(checks)
@@ -120,7 +120,7 @@ async def encrypt_plaintext_tokens(limit: int = None) -> Dict:
             current = await repo.get_token(email, service)
 
             if not current:
-                print(f"⚠️  Token disappeared: {email}/{service}")
+                print(f"[WARNING]  Token disappeared: {email}/{service}")
                 continue
 
             # Re-save (will auto-encrypt via repository)
@@ -133,12 +133,12 @@ async def encrypt_plaintext_tokens(limit: int = None) -> Dict:
             )
 
             results["success"] += 1
-            print(f"✅ Encrypted: {email}/{service}")
+            print(f"[SUCCESS] Encrypted: {email}/{service}")
 
         except Exception as e:
             results["failed"] += 1
             results["errors"].append(f"{email}/{service}: {str(e)}")
-            print(f"❌ Failed: {email}/{service} - {e}")
+            print(f"[ERROR] Failed: {email}/{service} - {e}")
 
     return results
 
@@ -186,7 +186,7 @@ async def deploy_gradual():
 
     # Step 1: Prerequisites
     if not await check_prerequisites():
-        print("\n❌ Prerequisites not met. Fix issues and try again.")
+        print("\n[ERROR] Prerequisites not met. Fix issues and try again.")
         return False
 
     # Step 2: Get plaintext count
@@ -194,7 +194,7 @@ async def deploy_gradual():
     total_plaintext = len(plaintext)
 
     if total_plaintext == 0:
-        print("\n✅ No plaintext tokens found. Deployment already complete!")
+        print("\n[SUCCESS] No plaintext tokens found. Deployment already complete!")
         return True
 
     print(f"\n📊 Found {total_plaintext} plaintext tokens to encrypt")
@@ -225,7 +225,7 @@ async def deploy_gradual():
         print("\n🎉 SUCCESS! 100% of tokens encrypted")
         return True
     else:
-        print(f"\n⚠️  WARNING: {stats['plaintext']} tokens still plaintext")
+        print(f"\n[WARNING]  WARNING: {stats['plaintext']} tokens still plaintext")
         return False
 
 
@@ -237,7 +237,7 @@ async def deploy_full():
 
     # Step 1: Prerequisites
     if not await check_prerequisites():
-        print("\n❌ Prerequisites not met. Fix issues and try again.")
+        print("\n[ERROR] Prerequisites not met. Fix issues and try again.")
         return False
 
     # Step 2: Encrypt all
@@ -257,7 +257,7 @@ async def deploy_full():
         print("\n🎉 SUCCESS! 100% of tokens encrypted")
         return True
     else:
-        print(f"\n⚠️  WARNING: {stats['plaintext']} tokens still plaintext")
+        print(f"\n[WARNING]  WARNING: {stats['plaintext']} tokens still plaintext")
         return False
 
 
