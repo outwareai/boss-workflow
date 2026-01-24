@@ -922,6 +922,138 @@ async def backup_oauth_tokens_api():
         }
 
 
+@app.post("/api/admin/encrypt-oauth-tokens")
+async def encrypt_oauth_tokens_api(mode: str = "gradual"):
+    """
+    Encrypt all OAuth tokens in production database.
+
+    This endpoint runs the encryption migration within Railway's environment,
+    avoiding database connection issues from external machines.
+
+    Args:
+        mode: "gradual" (batch by batch) or "all" (all at once)
+
+    Returns:
+        JSON with encryption statistics and coverage
+    """
+    try:
+        from sqlalchemy import select
+        from .database.models import OAuthTokenDB
+        from .database.repositories.oauth import get_oauth_repository
+
+        logger.info(f"[ENCRYPTION] Starting OAuth token encryption (mode={mode})...")
+
+        repo = get_oauth_repository()
+        db = get_database()
+
+        # Get all tokens
+        async with db.session() as session:
+            stmt = select(OAuthTokenDB)
+            result = await session.execute(stmt)
+            tokens = result.scalars().all()
+
+            if not tokens:
+                logger.warning("[ENCRYPTION] No tokens found in database")
+                return {
+                    "status": "warning",
+                    "message": "No tokens found",
+                    "stats": {"total": 0, "encrypted": 0, "plaintext": 0}
+                }
+
+            logger.info(f"[ENCRYPTION] Found {len(tokens)} token(s)")
+
+            # Collect plaintext tokens
+            plaintext_tokens = []
+            already_encrypted = 0
+
+            for token in tokens:
+                # Check if already encrypted (Fernet tokens start with "gAAAAA")
+                if token.refresh_token and token.refresh_token.startswith("gAAAAA"):
+                    already_encrypted += 1
+                else:
+                    plaintext_tokens.append((token.email, token.service))
+
+            logger.info(f"[STATS] Already encrypted: {already_encrypted}")
+            logger.info(f"[STATS] Plaintext: {len(plaintext_tokens)}")
+
+            if not plaintext_tokens:
+                logger.info("[SUCCESS] All tokens already encrypted!")
+                return {
+                    "status": "success",
+                    "mode": mode,
+                    "message": "All tokens already encrypted",
+                    "stats": {
+                        "total": len(tokens),
+                        "already_encrypted": already_encrypted,
+                        "encrypted": 0,
+                        "failed": 0,
+                        "plaintext": 0
+                    }
+                }
+
+            # Encrypt plaintext tokens
+            results = {
+                "success": 0,
+                "failed": 0,
+                "errors": []
+            }
+
+            for email, service in plaintext_tokens:
+                try:
+                    # Get current token
+                    current = await repo.get_token(email, service)
+
+                    if not current:
+                        logger.warning(f"[WARNING] Token disappeared: {email}/{service}")
+                        continue
+
+                    # Re-save (will auto-encrypt via repository)
+                    await repo.store_token(
+                        email=email,
+                        service=service,
+                        refresh_token=current["refresh_token"],
+                        access_token=current.get("access_token", ""),
+                        expires_at=current.get("expires_at")
+                    )
+
+                    results["success"] += 1
+                    logger.info(f"[SUCCESS] Encrypted: {email}/{service}")
+
+                except Exception as e:
+                    results["failed"] += 1
+                    results["errors"].append(f"{email}/{service}: {str(e)}")
+                    logger.error(f"[ERROR] Failed: {email}/{service} - {e}")
+
+            # Calculate final stats
+            remaining_plaintext = len(plaintext_tokens) - results["success"]
+
+            final_stats = {
+                "total": len(tokens),
+                "already_encrypted": already_encrypted,
+                "encrypted": results["success"],
+                "failed": results["failed"],
+                "plaintext": remaining_plaintext
+            }
+
+            logger.info(f"[COMPLETE] Encryption migration finished")
+            logger.info(f"[STATS] {final_stats}")
+
+            return {
+                "status": "success",
+                "mode": mode,
+                "message": "Encryption migration complete",
+                "stats": final_stats,
+                "errors": results["errors"] if results["errors"] else None
+            }
+
+    except Exception as e:
+        logger.error(f"[ERROR] Encryption migration failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 # Track processed update IDs to prevent duplicate processing from Telegram retries
 _processed_updates: set = set()
 _max_processed_updates = 1000
