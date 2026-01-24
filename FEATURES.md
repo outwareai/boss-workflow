@@ -1,8 +1,8 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-24
-> **Version:** 2.4.0 (Q3 2026 - SessionManager Foundation)
-> **Total Lines:** ~2400 | **Total Features:** 115+
+> **Version:** 2.5.0 (Q1 2026 - Handler Refactoring Foundation)
+> **Total Lines:** ~2600 | **Total Features:** 116+
 
 **Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
 **Usage Rule:** **Read this file FIRST when starting work, update LAST after making changes.**
@@ -2798,6 +2798,144 @@ session:message:{user_id}             # Recent messages
 - Integrate into UnifiedHandler
 - Replace existing dict-based sessions
 - Add session persistence hooks
+
+---
+
+#### base_handler.py (v2.5 - Q1 2026)
+
+**Purpose:** Abstract base class for all message handlers (handler refactoring foundation)
+
+**File:** `src/bot/base_handler.py`
+**Status:** ✅ Production (Task #4.2)
+**Tests:** 11/11 unit tests passing
+
+**Overview:**
+BaseHandler provides common functionality for all specialized handlers, enabling the extraction of UnifiedHandler (3,636 lines) into 6 focused handlers:
+1. ValidationHandler - Task validation flows
+2. RoutingHandler - Intent routing and delegation
+3. ApprovalHandler - Task approval/rejection
+4. QueryHandler - Status queries and reports
+5. ModificationHandler - Task updates/edits
+6. CommandHandler - Slash commands
+
+**Core Features:**
+
+**Session Management:**
+- `get_session(type, user_id)` - Retrieve user session
+- `set_session(type, user_id, data, ttl)` - Store session data
+- `clear_session(type, user_id)` - Clear session
+- Wraps SessionManager methods with unified interface
+
+**Repository Access:**
+- `task_repo` - Task operations (TaskRepository)
+- `team_repo` - Team member management (TeamRepository)
+- `conversation_repo` - Conversation history (ConversationRepository)
+- `audit_repo` - Audit logging (AuditRepository)
+
+**Integration Access:**
+- `sheets` - Google Sheets operations (GoogleSheetsIntegration)
+- `discord` - Discord notifications (DiscordIntegration)
+- `preferences` - User preferences (PreferencesManager)
+
+**User Context:**
+- `get_user_info(update)` - Extract user details from Telegram update
+- `is_boss(user_id)` - Check if user is the boss
+- `get_user_permissions(user_id)` - Get user permission dict
+  - Returns: `{is_boss, is_team_member, can_create_tasks, can_approve_tasks, can_manage_team, can_submit_work}`
+
+**Response Helpers:**
+- `send_message(update, text, parse_mode="Markdown")` - Send formatted message
+- `send_error(update, error)` - Send error with ❌ prefix
+- `send_success(update, message)` - Send success with ✅ prefix
+
+**Formatting Utilities:**
+- `format_task(task)` - Format task dict for display
+- `truncate(text, max_length=100)` - Truncate with ellipsis
+
+**Logging & Audit:**
+- `log_action(action, user_id, details)` - Log to audit trail
+- `logger` - Handler-specific logger instance
+
+**Abstract Methods:**
+Subclasses must implement:
+- `can_handle(message, user_id, **kwargs) -> bool` - Determine if handler should process message
+- `handle(update, context) -> None` - Process the message
+
+**Usage Example:**
+```python
+from src.bot.base_handler import BaseHandler
+
+class ValidationHandler(BaseHandler):
+    """Handle task validation flows."""
+
+    async def can_handle(self, message: str, user_id: str, **kwargs) -> bool:
+        # Check if user has pending validation session
+        session = await self.get_session("validation", user_id)
+        return session is not None
+
+    async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user_info = await self.get_user_info(update)
+        user_id = user_info["user_id"]
+
+        # Get session
+        session = await self.get_session("validation", user_id)
+        if not session:
+            await self.send_error(update, "No validation session found")
+            return
+
+        # Process validation
+        task_id = session["task_id"]
+        task = await self.task_repo.get_by_id(task_id)
+
+        # Log action
+        await self.log_action("validation_processed", user_id, {
+            "task_id": task_id,
+            "step": session["step"]
+        })
+
+        # Clear session
+        await self.clear_session("validation", user_id)
+        await self.send_success(update, "Validation complete!")
+```
+
+**Testing:**
+```python
+# tests/unit/test_base_handler.py
+class TestHandler(BaseHandler):
+    async def can_handle(self, message: str, user_id: str, **kwargs) -> bool:
+        return "test" in message.lower()
+
+    async def handle(self, update: Update, context) -> None:
+        await self.send_success(update, "Test handled")
+
+# All 11 tests passing:
+# ✅ test_can_handle
+# ✅ test_get_user_info
+# ✅ test_send_message
+# ✅ test_send_error
+# ✅ test_send_success
+# ✅ test_format_task
+# ✅ test_truncate
+# ✅ test_is_boss
+# ✅ test_get_user_permissions
+# ✅ test_session_management
+# ✅ test_log_action
+```
+
+**Benefits:**
+- ✅ Eliminates code duplication across handlers
+- ✅ Consistent session management interface
+- ✅ Unified logging and audit trail
+- ✅ Standardized permission checks
+- ✅ Easy to test via concrete subclasses
+- ✅ Foundation for extracting 6 specialized handlers
+
+**Next Steps (Task #4.3-6):**
+- Task #4.3: Extract ValidationHandler from UnifiedHandler
+- Task #4.4: Extract RoutingHandler from UnifiedHandler
+- Task #4.5: Extract ApprovalHandler from UnifiedHandler
+- Task #4.6: Extract QueryHandler, ModificationHandler, CommandHandler
+- Final: Replace UnifiedHandler with router that delegates to specialized handlers
 
 ---
 
