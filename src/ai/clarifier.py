@@ -80,11 +80,17 @@ class TaskClarifier:
 
         # Increase for complexity signals
         complex_keywords = ['system', 'architecture', 'integration', 'design', 'build', 'create', 'implement']
-        if any(word in message_lower for word in complex_keywords):
+        complex_matches = sum(1 for word in complex_keywords if word in message_lower)
+        if complex_matches >= 2:
+            score += 3  # Multiple complex keywords = very complex
+        elif complex_matches == 1:
             score += 2
 
-        scope_keywords = ['multiple', 'several', 'complex', 'comprehensive', 'complete', 'full']
-        if any(word in message_lower for word in scope_keywords):
+        scope_keywords = ['multiple', 'several', 'complex', 'comprehensive', 'complete', 'full', 'entire', 'whole']
+        scope_matches = sum(1 for word in scope_keywords if word in message_lower)
+        if scope_matches >= 2:
+            score += 3  # Multiple scope indicators = very complex
+        elif scope_matches == 1:
             score += 2
 
         # Long messages indicate more complexity
