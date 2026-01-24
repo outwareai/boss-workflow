@@ -2,9 +2,12 @@
 Repository classes for database operations.
 
 Each repository handles CRUD and complex queries for its entity type.
+
+Q3 2026: Added cached repository variants for performance.
 """
 
 from .tasks import TaskRepository, get_task_repository
+from .tasks_cached import CachedTaskRepository, get_cached_task_repository
 from .audit import AuditRepository, get_audit_repository
 from .conversations import ConversationRepository, get_conversation_repository
 from .ai_memory import AIMemoryRepository, get_ai_memory_repository
@@ -17,6 +20,8 @@ from .staff_context import StaffContextRepository, get_staff_context_repository
 __all__ = [
     "TaskRepository",
     "get_task_repository",
+    "CachedTaskRepository",
+    "get_cached_task_repository",
     "AuditRepository",
     "get_audit_repository",
     "ConversationRepository",

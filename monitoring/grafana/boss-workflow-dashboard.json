@@ -1,0 +1,193 @@
+{
+  "dashboard": {
+    "title": "Boss Workflow Monitoring",
+    "tags": ["boss-workflow", "production", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "HTTP Request Rate (req/s)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{endpoint}} ({{status}})"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "HTTP Request Duration p95 (seconds)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{method}} {{endpoint}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Tasks by Status",
+        "type": "piechart",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "tasks_by_status",
+            "legendFormat": "{{status}}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Task Creation Rate (tasks/hour)",
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(tasks_created_total[1h]) * 3600",
+            "legendFormat": "{{assignee}} ({{priority}})"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Task Completion Rate (tasks/hour)",
+        "type": "graph",
+        "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(tasks_completed_total[1h]) * 3600",
+            "legendFormat": "{{assignee}}"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Database Pool Status",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "db_pool_connections",
+            "legendFormat": "{{state}}"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Database Query Duration p95 (seconds)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{operation}}"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Cache Hit Rate (%)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(cache_operations_total{result='hit'}[5m]) / rate(cache_operations_total{operation='get'}[5m]) * 100",
+            "legendFormat": "Cache Hit Rate"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Error Rate (errors/min)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(errors_total[5m]) * 60",
+            "legendFormat": "{{type}} ({{severity}})"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "AI Request Duration p95 (seconds)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(ai_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{operation}}"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Discord Messages Sent (msg/min)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(discord_messages_sent_total[5m]) * 60",
+            "legendFormat": "{{channel}} ({{status}})"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Total Tasks Created (cumulative)",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 40, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(tasks_created_total)"
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Total Tasks Completed (cumulative)",
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 40, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(tasks_completed_total)"
+          }
+        ]
+      },
+      {
+        "id": 14,
+        "title": "DB Query Rate (queries/s)",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 40, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "rate(db_queries_total[5m])"
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "title": "HTTP Request Error Rate (%)",
+        "type": "stat",
+        "gridPos": {"x": 18, "y": 40, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=~'5..'}[5m]) / rate(http_requests_total[5m]) * 100"
+          }
+        ],
+        "thresholds": [
+          {"value": 0, "color": "green"},
+          {"value": 1, "color": "yellow"},
+          {"value": 5, "color": "red"}
+        ]
+      }
+    ]
+  }
+}

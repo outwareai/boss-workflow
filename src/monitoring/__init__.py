@@ -21,6 +21,7 @@ from .prometheus import (
     rate_limit_near_limit,
     redis_connection_errors,
     redis_operation_duration_seconds,
+    feature_flag_status,
     update_db_pool_metrics,
     record_task_status_counts,
 )
@@ -46,6 +47,7 @@ __all__ = [
     'rate_limit_near_limit',
     'redis_connection_errors',
     'redis_operation_duration_seconds',
+    'feature_flag_status',
     'update_db_pool_metrics',
     'record_task_status_counts',
     'metrics_middleware',

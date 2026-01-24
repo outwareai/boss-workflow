@@ -586,6 +586,16 @@ async def db_health():
         # Get pool status using new helper
         pool_status = await get_pool_status()
 
+        # Q3 2026: Update Prometheus metrics for DB pool
+        try:
+            from .monitoring.prometheus import update_db_pool_metrics
+            if db.engine and db.engine.pool:
+                update_db_pool_metrics(db.engine.pool)
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"Failed to update DB pool metrics: {e}")
+
         return {
             "timestamp": __import__('datetime').datetime.now().isoformat(),
             **pool_status
@@ -914,6 +924,52 @@ async def clear_all_conversations(auth: AdminAuthRequest):
 
     except Exception as e:
         logger.error(f"Error clearing conversations: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/admin/test-alert")
+async def test_alert(severity: str = "warning"):
+    """
+    Test alerting system.
+
+    Q3 2026: Send a test alert to configured channels (Slack/Discord).
+
+    Usage:
+        POST /api/admin/test-alert?severity=critical
+        POST /api/admin/test-alert?severity=warning
+        POST /api/admin/test-alert?severity=info
+    """
+    try:
+        from .monitoring.alerts import alert_manager, AlertSeverity
+
+        # Validate severity
+        try:
+            alert_severity = AlertSeverity(severity)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid severity. Must be one of: critical, warning, info"
+            )
+
+        await alert_manager.send_alert(
+            title="Test Alert",
+            message="This is a test alert from the admin panel",
+            severity=alert_severity,
+            metrics={
+                "test": "value",
+                "timestamp": datetime.utcnow().isoformat(),
+                "environment": settings.environment
+            }
+        )
+
+        return {
+            "status": "success",
+            "message": f"Test alert sent with severity: {severity}",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error sending test alert: {e}")
         return {"status": "error", "error": str(e)}
 
 

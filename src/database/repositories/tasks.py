@@ -792,7 +792,11 @@ class TaskRepository:
             return True
 
     async def get_blocking_tasks(self, task_id: str) -> List[TaskDB]:
-        """Get tasks that are blocking this task."""
+        """
+        Get tasks that are blocking this task.
+        
+        Q3 2026: Added eager loading for relationship data.
+        """
         async with self.db.session() as session:
             task_result = await session.execute(
                 select(TaskDB).where(TaskDB.task_id == task_id)
@@ -806,11 +810,19 @@ class TaskRepository:
                 select(TaskDB)
                 .join(TaskDependencyDB, TaskDependencyDB.depends_on_id == TaskDB.id)
                 .where(TaskDependencyDB.task_id == task.id)
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.project)
+                )
             )
             return list(result.scalars().all())
 
     async def get_blocked_tasks(self, task_id: str) -> List[TaskDB]:
-        """Get tasks that this task is blocking."""
+        """
+        Get tasks that this task is blocking.
+        
+        Q3 2026: Added eager loading for relationship data.
+        """
         async with self.db.session() as session:
             task_result = await session.execute(
                 select(TaskDB).where(TaskDB.task_id == task_id)
@@ -824,6 +836,10 @@ class TaskRepository:
                 select(TaskDB)
                 .join(TaskDependencyDB, TaskDependencyDB.task_id == TaskDB.id)
                 .where(TaskDependencyDB.depends_on_id == task.id)
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.project)
+                )
             )
             return list(result.scalars().all())
 
