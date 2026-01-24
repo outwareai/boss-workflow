@@ -96,21 +96,19 @@ class BossWorkflowTester:
                     "message_sent": text
                 }
 
-    def read_railway_logs(self, lines: int = 50, filter_text: str = None) -> list:
+    def read_railway_logs(self, lines: int = 200, filter_text: str = None) -> list:
         """Read Railway logs to see bot responses."""
         try:
             # Use shell=True on Windows to find railway in PATH
+            # Increased default from 50 to 200 to capture routing logs in test-all runs
             result = subprocess.run(
-                "railway logs -s boss-workflow",
+                f"railway logs -s boss-workflow --lines {lines}",
                 capture_output=True,
                 text=True,
                 timeout=30,
                 shell=True
             )
             logs = result.stdout.strip().split('\n')
-
-            # Get last N lines
-            logs = logs[-lines:] if len(logs) > lines else logs
 
             # Filter if specified
             if filter_text:

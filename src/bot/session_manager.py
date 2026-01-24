@@ -19,6 +19,7 @@ Session Types:
 5. batch_tasks - Batch task creation sessions (user_id -> data)
 6. spec_sessions - Spec generation sessions (user_id -> data)
 7. recent_messages - Recent message context (user_id -> data)
+8. active_handler - Active handler for multi-turn routing (user_id -> data)
 
 v2.4: Initial implementation for handler refactoring
 """
@@ -55,6 +56,7 @@ class SessionManager:
         "batch": "session:batch",
         "spec": "session:spec",
         "message": "session:message",
+        "active_handler": "session:active_handler",
     }
 
     def __init__(self, redis_client: Optional[Any] = None):

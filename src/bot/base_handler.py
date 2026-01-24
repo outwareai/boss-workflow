@@ -102,6 +102,7 @@ class BaseHandler(ABC):
             "batch": self.session_manager.get_batch_task,
             "spec": self.session_manager.get_spec_session,
             "message": self.session_manager.get_recent_message,
+            "active_handler": self.session_manager.get_active_handler_session,
         }
         method = method_map.get(session_type)
         if method:
@@ -118,6 +119,7 @@ class BaseHandler(ABC):
             "batch": self.session_manager.set_batch_task,
             "spec": self.session_manager.set_spec_session,
             "message": self.session_manager.set_recent_message,
+            "active_handler": self.session_manager.set_active_handler_session,
         }
         method = method_map.get(session_type)
         if method:
@@ -134,6 +136,7 @@ class BaseHandler(ABC):
             "batch": self.session_manager.clear_batch_task,
             "spec": self.session_manager.clear_spec_session,
             "message": self.session_manager.clear_recent_message,
+            "active_handler": self.session_manager.clear_active_handler_session,
         }
         method = method_map.get(session_type)
         if method:

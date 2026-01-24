@@ -9,8 +9,8 @@
     {
       "name": "complex",
       "passed": false,
-      "complexity": null,
-      "questions": null
+      "complexity": 3,
+      "questions": 0
     },
     {
       "name": "routing",
@@ -19,5 +19,5 @@
       "zea": false
     }
   ],
-  "timestamp": "2026-01-24T04:24:45.493654"
+  "timestamp": "2026-01-24T05:32:25.626741"
 }

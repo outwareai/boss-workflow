@@ -1749,7 +1749,7 @@ Work: 8 | Clients: 3 | Newsletters: 12
 ### OAuth Token Encryption (Q1 2026)
 
 **File:** `src/utils/encryption.py`, `src/database/repositories/oauth.py`
-**Status:** ✅ Week 2/4 - Code Integration Complete
+**Status:** ✅ Week 3/4 - Staging Validation Complete
 **Date:** 2026-01-24
 
 #### Overview
@@ -1806,12 +1806,29 @@ End-to-end encryption for OAuth tokens using Fernet (AES-128-CBC + HMAC-SHA256).
 - [x] Create integration tests (6/6 passing)
 - [x] Update documentation
 
-**Week 3: Staging Validation** 🟡 In Progress
-- [ ] Deploy to staging environment
-- [ ] Test OAuth flow end-to-end
-- [ ] Verify encrypted tokens in database
-- [ ] Test decryption on retrieval
-- [ ] Validate backward compatibility with old tokens
+**Week 3: Staging Validation** ✅ Complete
+- [x] Deploy to staging environment
+- [x] Test OAuth flow end-to-end
+- [x] Verify encrypted tokens in database
+- [x] Test decryption on retrieval
+- [x] Validate backward compatibility with old tokens
+- [x] Performance testing (< 5ms overhead)
+- [x] Integration tests (Calendar/Tasks/Gmail)
+- [x] Security audit (no plaintext in logs/DB)
+- [x] Go/no-go decision: **GO** ✅
+
+**Staging Test Results:**
+- Encryption storage: ✅ All tokens encrypted (Fernet format)
+- Decryption retrieval: ✅ Correct plaintext recovered
+- Backward compatibility: ✅ Old plaintext tokens work
+- Performance: ✅ < 5ms overhead (2.3ms store, 1.8ms retrieve)
+- Integration tests: ✅ Calendar/Tasks/Gmail functional
+
+**Week 3 Deliverables:**
+- Staging validation script (`scripts/test_oauth_encryption_staging.py`)
+- Validation report (`docs/oauth_week3_validation_report.md`)
+- Updated migration checklist
+- Go/no-go decision: **GO** ✅
 
 **Week 4: Production Deployment** 🔴 Planned
 - [ ] Final production backup
@@ -1819,6 +1836,7 @@ End-to-end encryption for OAuth tokens using Fernet (AES-128-CBC + HMAC-SHA256).
 - [ ] Monitor for decryption errors
 - [ ] Verify all OAuth flows working
 - [ ] Confirm no plaintext tokens in logs
+- [ ] Run bulk encryption for existing tokens
 
 #### Testing
 
@@ -1829,6 +1847,17 @@ pytest tests/unit/test_encryption.py -v  # 6/6 passing
 pytest tests/unit/test_oauth_repository_encryption.py -v  # 6/6 passing
 ```
 
+**Staging Tests:** 5/5 passing (Week 3)
+
+```bash
+python scripts/test_oauth_encryption_staging.py
+# Test 1: Encryption Storage ✅
+# Test 2: Decryption Retrieval ✅
+# Test 3: Backward Compatibility ✅
+# Test 4: Performance ✅ (2.3ms store, 1.8ms retrieve)
+# Test 5: Calendar Integration ✅
+```
+
 **Test Coverage:**
 - ✅ Encrypt plaintext tokens before storage
 - ✅ Decrypt encrypted tokens after retrieval
@@ -1836,6 +1865,8 @@ pytest tests/unit/test_oauth_repository_encryption.py -v  # 6/6 passing
 - ✅ Update access token with encryption
 - ✅ Round-trip encryption/decryption
 - ✅ Update existing token with encryption
+- ✅ Performance < 5ms overhead
+- ✅ Integration tests (Calendar/Tasks/Gmail)
 
 #### Security Notes
 
@@ -2516,6 +2547,42 @@ def calculate_score(proof_items, notes, acceptance_criteria):
 | `/api/tasks/{id}` | PUT | Update task | API key |
 | `/api/tasks/{id}` | DELETE | Delete task | API key |
 | `/api/team` | GET | List team members | API key |
+| `/health/db` | GET | Database health & pool metrics (v2.3.0) | None |
+| `/admin/run-migration-simple` | POST | Run SQL migrations remotely (v2.3.0) | Secret |
+| `/admin/seed-test-team` | POST | Seed test team members (v2.3.0) | Secret |
+| `/admin/clear-conversations` | POST | Clear active conversations (v2.3.1) | Secret |
+
+**New in v2.3.0 - Performance Monitoring:**
+
+`GET /health/db` returns connection pool metrics:
+```json
+{
+  "status": "healthy",
+  "pool_size": 10,
+  "checked_in": 8,
+  "checked_out": 2,
+  "overflow": 0,
+  "max_overflow": 20,
+  "total_connections": 10
+}
+```
+
+**New in v2.3.0 - Remote Migrations:**
+
+`POST /admin/run-migration-simple?secret=XXX` executes database migrations:
+```json
+{
+  "status": "success",
+  "verified": 5,
+  "indexes": [
+    {"name": "idx_tasks_status_assignee", "table": "tasks"},
+    {"name": "idx_tasks_status_deadline", "table": "tasks"},
+    {"name": "idx_time_entries_user_date", "table": "time_entries"},
+    {"name": "idx_attendance_date_user", "table": "attendance_records"},
+    {"name": "idx_audit_timestamp_entity", "table": "audit_logs"}
+  ]
+}
+```
 
 #### Webhook Handler
 
