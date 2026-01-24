@@ -1400,21 +1400,41 @@ Make the changes and submit again when ready!"""
             if any(w in message.lower() for w in ["yes", "confirm", "do it", "proceed"]):
                 # Actually delete the tasks
                 try:
-                    # Get all tasks from Sheets
-                    tasks = await self.sheets.get_all_tasks()
-                    tasks_to_delete = []
-
-                    for task in tasks:
-                        status = task.get("Status", task.get("status", ""))
-                        task_id = task.get("ID", task.get("id", ""))
-                        if status.lower() not in ["completed", "cancelled"] and task_id:
-                            tasks_to_delete.append(task_id)
-
-                    # Get Discord message IDs and thread IDs from database
                     task_repo = get_task_repository()
                     from ..database.repositories.staff_context import get_staff_context_repository
                     staff_repo = get_staff_context_repository()
 
+                    # Get tasks from BOTH Sheets AND Database to catch orphans
+                    tasks_to_delete = set()  # Use set to avoid duplicates
+
+                    # 1. Get tasks from Sheets
+                    try:
+                        sheets_tasks = await self.sheets.get_all_tasks()
+                        for task in sheets_tasks:
+                            status = task.get("Status", task.get("status", ""))
+                            task_id = task.get("ID", task.get("id", ""))
+                            if status.lower() not in ["completed", "cancelled"] and task_id:
+                                tasks_to_delete.add(task_id)
+                        logger.info(f"Found {len(tasks_to_delete)} tasks in Sheets")
+                    except Exception as e:
+                        logger.warning(f"Could not get Sheets tasks: {e}")
+
+                    # 2. ALSO get tasks from Database (catches orphaned tasks)
+                    try:
+                        db_tasks = await task_repo.get_all()
+                        db_task_ids = set()
+                        for task in db_tasks:
+                            if task.status and task.status.lower() not in ["completed", "cancelled"]:
+                                db_task_ids.add(task.id)
+                        logger.info(f"Found {len(db_task_ids)} tasks in Database")
+                        tasks_to_delete.update(db_task_ids)
+                    except Exception as e:
+                        logger.warning(f"Could not get DB tasks: {e}")
+
+                    tasks_to_delete = list(tasks_to_delete)
+                    logger.info(f"Total unique tasks to delete: {len(tasks_to_delete)}")
+
+                    # Get Discord thread/message IDs for ALL tasks
                     discord_items = []  # (task_id, id, is_thread)
                     for task_id in tasks_to_delete:
                         try:
@@ -1434,9 +1454,11 @@ Make the changes and submit again when ready!"""
                     deleted, failed = await self.sheets.delete_tasks(tasks_to_delete)
 
                     # Delete from database
+                    db_deleted = 0
                     for task_id in tasks_to_delete:
                         try:
                             await task_repo.delete(task_id)
+                            db_deleted += 1
                         except Exception:
                             pass
 
@@ -1458,15 +1480,15 @@ Make the changes and submit again when ready!"""
 
                     await self.discord.post_alert(
                         title="Tasks Deleted",
-                        message=f"{deleted} task(s) permanently deleted by {user_name}",
+                        message=f"{len(tasks_to_delete)} task(s) permanently deleted by {user_name}",
                         alert_type="warning"
                     )
 
-                    response = f"✅ Deleted {deleted} task(s) from Sheets"
+                    response = f"✅ Deleted {deleted} from Sheets, {db_deleted} from Database"
                     if discord_deleted > 0:
-                        response += f" and {discord_deleted} Discord message(s)"
+                        response += f", {discord_deleted} Discord thread(s)"
                     if failed > 0:
-                        response += f"\n⚠️ {failed} task(s) could not be deleted"
+                        response += f"\n⚠️ {failed} task(s) could not be deleted from Sheets"
                     return response, None
 
                 except Exception as e:
@@ -1477,18 +1499,29 @@ Make the changes and submit again when ready!"""
                 del self._pending_actions[user_id]
                 return "Cancelled. No tasks were deleted.", None
 
-        # First time - ask for confirmation
+        # First time - ask for confirmation (count from both Sheets AND DB)
+        sheets_count = 0
+        db_count = 0
         try:
             tasks = await self.sheets.get_all_tasks()
-            active_count = sum(1 for t in tasks if t.get("Status", t.get("status", "")).lower() not in ["completed", "cancelled"])
+            sheets_count = sum(1 for t in tasks if t.get("Status", t.get("status", "")).lower() not in ["completed", "cancelled"])
         except Exception:
-            active_count = "unknown number of"
+            pass
+
+        try:
+            task_repo = get_task_repository()
+            db_tasks = await task_repo.get_all()
+            db_count = sum(1 for t in db_tasks if t.status and t.status.lower() not in ["completed", "cancelled"])
+        except Exception:
+            pass
+
+        total_count = max(sheets_count, db_count) if sheets_count or db_count else "unknown number of"
 
         self._pending_actions[user_id] = {"type": "clear_tasks"}
 
         return f"""⚠️ **Delete All Tasks?**
 
-This will **permanently delete** {active_count} active task(s) from Sheets and Discord.
+This will **permanently delete** {total_count} active task(s) from Sheets, Database, and Discord.
 
 **This action cannot be undone.**
 
