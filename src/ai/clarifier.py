@@ -110,9 +110,13 @@ class TaskClarifier:
         if any(word in message_lower for word in tech_keywords):
             score += 1
 
-        # Decrease for simplicity signals
-        simple_keywords = ['fix', 'typo', 'small', 'quick', 'simple', 'minor', 'update', 'change']
-        if any(word in message_lower for word in simple_keywords):
+        # Decrease for simplicity signals ONLY if no strong complexity indicators
+        # Don't let "fix" or "update" override genuinely complex tasks
+        simple_keywords = ['fix', 'typo', 'small', 'quick', 'simple', 'minor']
+        has_simple_only = any(word in message_lower for word in simple_keywords)
+        has_strong_complexity = complex_matches >= 1 or scope_matches >= 1 or len(message) > 150
+
+        if has_simple_only and not has_strong_complexity:
             score -= 2
 
         skip_keywords = ['no questions', 'just do', 'straightforward', 'no need to ask', 'dont ask']
@@ -146,19 +150,36 @@ class TaskClarifier:
         return self.role_defaults["developer"]
 
     def _lookup_assignee_role(self, assignee: str) -> Optional[str]:
-        """Look up assignee's role from team configuration."""
+        """Look up assignee's role from team sheet."""
         if not assignee:
             return None
 
         try:
-            # Try to get from team config
-            from ..config.team import TEAM_MEMBERS
+            # Get team members from Google Sheets
+            from ..integrations.sheets import get_sheets_integration
+            import asyncio
+
+            sheets = get_sheets_integration()
             assignee_lower = assignee.lower()
-            for member in TEAM_MEMBERS:
-                if member.get("name", "").lower() == assignee_lower:
-                    return member.get("role", "")
-        except Exception:
-            pass
+
+            # Run async function in sync context
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            team_members = loop.run_until_complete(sheets.get_all_team_members())
+
+            for member in team_members:
+                name = member.get("Name", "")
+                if name.lower() == assignee_lower:
+                    return member.get("Role", "")
+        except Exception as e:
+            # Log but don't crash if sheets lookup fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Could not lookup role for {assignee}: {e}")
 
         return None
 
