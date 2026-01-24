@@ -19,7 +19,7 @@ import json
 import time
 import asyncio
 import aiohttp
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -224,7 +224,7 @@ async def main(test_message: str = None):
     print()
 
     # Step 3: Record timestamp
-    timestamp_before = datetime.utcnow()
+    timestamp_before = datetime.now(UTC)
     print_step(3, f"Recording timestamp: {timestamp_before.isoformat()}")
 
     print()

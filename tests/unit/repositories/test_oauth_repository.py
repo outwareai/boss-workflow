@@ -10,7 +10,7 @@ Target coverage: 75%+
 
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from src.database.repositories.oauth import OAuthTokenRepository
 from src.database.models import OAuthTokenDB
@@ -56,10 +56,10 @@ def sample_oauth_token():
         service="calendar",
         refresh_token="gAAAAA_encrypted_refresh_token_12345",
         access_token="gAAAAA_encrypted_access_token_67890",
-        expires_at=datetime.utcnow() + timedelta(hours=1),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
         scopes="https://www.googleapis.com/auth/calendar",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
     )
 
 
@@ -136,7 +136,7 @@ async def test_store_token_handles_expiry(oauth_repository):
         mock_encryption.encrypt = Mock(return_value=b"gAAAAA_encrypted")
         mock_enc.return_value = mock_encryption
 
-        before = datetime.utcnow()
+        before = datetime.now(UTC)
 
         result = await repo.store_token(
             email="test@example.com",
@@ -145,7 +145,7 @@ async def test_store_token_handles_expiry(oauth_repository):
             expires_in=3600  # 1 hour
         )
 
-        after = datetime.utcnow() + timedelta(seconds=3600)
+        after = datetime.now(UTC) + timedelta(seconds=3600)
 
         assert result == True
         # Verify expiry was set (check via session.add call)
@@ -211,7 +211,7 @@ async def test_get_token_backward_compatibility_plaintext(oauth_repository):
         service="calendar",
         refresh_token="plaintext_refresh_token",  # No encryption
         access_token="plaintext_access_token",
-        expires_at=datetime.utcnow() + timedelta(hours=1)
+        expires_at=datetime.now(UTC) + timedelta(hours=1)
     )
 
     mock_result = Mock()

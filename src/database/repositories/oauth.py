@@ -8,7 +8,7 @@ Q1 2026: Integrated token encryption using Fernet (AES-128).
 
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,7 +66,7 @@ class OAuthTokenRepository:
 
                 expires_at = None
                 if expires_in:
-                    expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+                    expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
 
                 if existing:
                     # Update existing token
@@ -77,7 +77,7 @@ class OAuthTokenRepository:
                         existing.expires_at = expires_at
                     if scopes:
                         existing.scopes = scopes
-                    existing.updated_at = datetime.utcnow()
+                    existing.updated_at = datetime.now(UTC)
                     logger.info(f"Updated encrypted {service} token for {email}")
                 else:
                     # Create new token
@@ -197,8 +197,8 @@ class OAuthTokenRepository:
 
                 token.access_token = encrypted_access
                 if expires_in:
-                    token.expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
-                token.updated_at = datetime.utcnow()
+                    token.expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+                token.updated_at = datetime.now(UTC)
 
                 await session.commit()
 

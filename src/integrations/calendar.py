@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -215,7 +215,7 @@ class GoogleCalendarIntegration:
             return []
 
         try:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             time_max = now + timedelta(hours=hours)
 
             events_result = await asyncio.wait_for(

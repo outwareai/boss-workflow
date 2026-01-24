@@ -45,7 +45,7 @@ import re
 import subprocess
 import asyncio
 import aiohttp
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -64,7 +64,7 @@ class BossWorkflowTester:
 
     def __init__(self):
         self.message_counter = int(time.time()) % 100000
-        self.session_start = datetime.utcnow()
+        self.session_start = datetime.now(UTC)
 
     async def send_telegram_message(self, text: str) -> dict:
         """Send a message to the bot via Railway webhook."""
@@ -197,7 +197,7 @@ class BossWorkflowTester:
         """
         results = {
             "input": message,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "steps": []
         }
 
@@ -767,7 +767,7 @@ async def main():
         print(" RUNNING ALL TESTS ")
         print("=" * 70)
 
-        results_summary = {"tests": [], "timestamp": datetime.utcnow().isoformat()}
+        results_summary = {"tests": [], "timestamp": datetime.now(UTC).isoformat()}
 
         # Test 1: Simple
         print("\n[1/3] SIMPLE TASK TEST")
@@ -968,7 +968,7 @@ async def main():
         progress_file = "session_progress.json"
 
         progress = {
-            "saved_at": datetime.utcnow().isoformat(),
+            "saved_at": datetime.now(UTC).isoformat(),
             "task": task_desc,
             "last_tests": [],
             "notes": []

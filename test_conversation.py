@@ -23,7 +23,7 @@ import json
 import asyncio
 import aiohttp
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -216,7 +216,7 @@ class ConversationTester:
 
         # Step 0: Clear any previous conversation state
         await self.clear_conversation()
-        self.test_start_time = datetime.utcnow()
+        self.test_start_time = datetime.now(UTC)
         log(f"Test started at: {self.test_start_time.isoformat()}", "debug")
 
         # Step 1: Send initial message

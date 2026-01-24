@@ -22,7 +22,7 @@ import sys
 import json
 import asyncio
 import aiohttp
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -142,7 +142,7 @@ class BotTester:
         """Find a task whose title contains the given fragment, created recently."""
         tasks = await self.get_recent_tasks(limit)
         title_lower = title_fragment.lower()
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         for task in tasks:
             # Check if task matches title

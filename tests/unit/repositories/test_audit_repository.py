@@ -10,7 +10,7 @@ Target coverage: 75%+
 
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from src.database.repositories.audit import AuditRepository
 from src.database.models import AuditLogDB, TaskDB
@@ -63,7 +63,7 @@ def sample_audit_log():
         changed_by_id="123456",
         reason=None,
         source="telegram",
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(UTC)
     )
 
 
@@ -78,7 +78,7 @@ def sample_task():
         status="pending",
         priority="high",
         assignee="John Doe",
-        deadline=datetime.utcnow() + timedelta(days=7)
+        deadline=datetime.now(UTC) + timedelta(days=7)
     )
 
 

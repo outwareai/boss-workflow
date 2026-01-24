@@ -8,7 +8,7 @@ blocked task resolution, or team syncs.
 import asyncio
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import json
 import uuid
 
@@ -97,7 +97,7 @@ class GoogleMeetIntegration:
             return None
 
         try:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             end = now + timedelta(minutes=duration_minutes)
 
             event = {
