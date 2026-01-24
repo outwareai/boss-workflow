@@ -1065,6 +1065,67 @@ async def encrypt_oauth_tokens_api(mode: str = "gradual"):
         }
 
 
+@app.get("/api/admin/verify-oauth-encryption")
+async def verify_oauth_encryption_api():
+    """
+    Verify OAuth token encryption coverage.
+
+    Checks all tokens in database to ensure they are encrypted
+    (Fernet tokens start with "gAAAAA").
+
+    Returns:
+        JSON with encryption statistics and list of plaintext tokens
+    """
+    try:
+        from sqlalchemy import select
+        from .database.models import OAuthTokenDB
+
+        logger.info("[VERIFY] Checking OAuth token encryption coverage...")
+
+        db = get_database()
+
+        stats = {
+            "total": 0,
+            "encrypted": 0,
+            "plaintext": 0
+        }
+        plaintext_tokens = []
+
+        async with db.session() as session:
+            stmt = select(OAuthTokenDB)
+            result = await session.execute(stmt)
+            tokens = result.scalars().all()
+
+            for token in tokens:
+                stats["total"] += 1
+
+                # Check if encrypted (Fernet tokens start with "gAAAAA")
+                if token.refresh_token and token.refresh_token.startswith("gAAAAA"):
+                    stats["encrypted"] += 1
+                else:
+                    stats["plaintext"] += 1
+                    plaintext_tokens.append(f"{token.email}/{token.service}")
+
+            coverage = (stats["encrypted"] / stats["total"] * 100) if stats["total"] > 0 else 0
+
+            logger.info(f"[VERIFY] Coverage: {coverage:.1f}% ({stats['encrypted']}/{stats['total']})")
+
+            return {
+                "status": "success",
+                "coverage_percent": coverage,
+                "stats": stats,
+                "plaintext_tokens": plaintext_tokens if plaintext_tokens else None,
+                "message": "100% encrypted" if coverage >= 100 else f"{stats['plaintext']} tokens remain plaintext"
+            }
+
+    except Exception as e:
+        logger.error(f"[ERROR] Verification failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 # Track processed update IDs to prevent duplicate processing from Telegram retries
 _processed_updates: set = set()
 _max_processed_updates = 1000
