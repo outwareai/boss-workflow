@@ -48,25 +48,16 @@ def task_repository(mock_database):
 
 @pytest.fixture
 def sample_task():
-    """Sample task for testing."""
+    """Create a sample TaskDB instance for testing."""
     return TaskDB(
-        id=1,
         task_id="TASK-001",
-        title="Fix login bug",
-        description="Login page has a typo",
-        assignee="John",
-        priority="high",
+        title="Test Task",
+        description="Test Description",
         status="pending",
-        task_type="bug",
-        deadline=None,
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        effort="1h",
-        progress="0%",
-        tags="backend,urgent",
-        created_by="Boss",
-        notes_count=0,
-        blocked_by="",
+        priority="high",
+        assignee="John Doe",
+        estimated_effort="2 hours",
+        tags=["test", "unit-test"]
     )
 
 
@@ -133,7 +124,7 @@ async def test_get_by_task_id_found(task_repository, sample_task):
     # Mock the result
     session.execute.return_value.scalar_one_or_none = AsyncMock(return_value=sample_task)
 
-    result = await repo.get_by_task_id("TASK-001")
+    result = await repo.get_by_id("TASK-001")
 
     assert result == sample_task
     assert result.task_id == "TASK-001"
@@ -147,7 +138,7 @@ async def test_get_by_task_id_not_found(task_repository):
     # Mock no result
     session.execute.return_value.scalar_one_or_none = AsyncMock(return_value=None)
 
-    result = await repo.get_by_task_id("TASK-999")
+    result = await repo.get_by_id("TASK-999")
 
     assert result is None
 

@@ -209,7 +209,8 @@ class TaskRepository:
                 .where(TaskDB.status == status)
                 .options(
                     selectinload(TaskDB.subtasks),
-                    selectinload(TaskDB.dependencies)
+                    selectinload(TaskDB.dependencies_in),
+                    selectinload(TaskDB.dependencies_out)
                 )
                 .order_by(TaskDB.created_at.desc())
             )
@@ -229,7 +230,8 @@ class TaskRepository:
                 .where(TaskDB.assignee.ilike(f"%{assignee}%"))
                 .options(
                     selectinload(TaskDB.subtasks),
-                    selectinload(TaskDB.dependencies)
+                    selectinload(TaskDB.dependencies_in),
+                    selectinload(TaskDB.dependencies_out)
                 )
                 .order_by(TaskDB.created_at.desc())
             )
