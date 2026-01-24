@@ -105,10 +105,16 @@ class BossWorkflowTester:
                 f"railway logs -s boss-workflow --lines {lines}",
                 capture_output=True,
                 text=True,
+                encoding='utf-8',  # Force UTF-8 encoding to avoid cp874 errors on Windows
+                errors='replace',  # Replace decode errors with ? instead of crashing
                 timeout=30,
                 shell=True
             )
-            logs = result.stdout.strip().split('\n')
+            if result.stdout:
+                logs = result.stdout.strip().split('\n')
+            else:
+                # Handle case where stdout is None
+                logs = []
 
             # Filter if specified
             if filter_text:
