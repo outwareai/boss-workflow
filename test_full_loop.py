@@ -284,16 +284,24 @@ def extract_implementation_details(logs: list) -> dict:
                 details["role_lookup"] = match.group(1)
                 details["role_found"] = match.group(2)
 
-        # Channel routing
-        if "routing task" in log_lower:
-            if "dev channel" in log_lower or "to dev" in log_lower:
+        # Channel routing - check for both "routing task" and actual channel names
+        if "routing task" in log_lower or "routing to" in log_lower:
+            if "dev channel" in log_lower or "to dev" in log_lower or " dev " in log_lower:
                 details["channel_routed"] = "DEV"
-            elif "admin channel" in log_lower or "to admin" in log_lower:
+            elif "admin channel" in log_lower or "to admin" in log_lower or " admin " in log_lower:
                 details["channel_routed"] = "ADMIN"
             elif "marketing" in log_lower:
                 details["channel_routed"] = "MARKETING"
             elif "design" in log_lower:
                 details["channel_routed"] = "DESIGN"
+
+        # Also detect from assignee role lookup
+        if details["role_found"] and not details["channel_routed"]:
+            role = details["role_found"].upper()
+            if "DEV" in role or "ENGINEER" in role:
+                details["channel_routed"] = "DEV"
+            elif "ADMIN" in role or "MANAGER" in role:
+                details["channel_routed"] = "ADMIN"
 
         # Keyword inference
         if "inferred role" in log_lower or "keyword inference" in log_lower:

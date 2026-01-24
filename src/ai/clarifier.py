@@ -279,12 +279,33 @@ Only include tasks that are clearly related. Return empty array if no dependenci
             )
 
             import json
-            result = json.loads(response.choices[0].message.content)
+            content = response.choices[0].message.content.strip()
+
+            # Validate response is not empty
+            if not content:
+                logger.warning("AI returned empty response for dependency check")
+                return []
+
+            # Try to extract JSON if wrapped in markdown code blocks
+            if content.startswith("```"):
+                # Extract JSON from code block
+                import re
+                json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', content, re.DOTALL)
+                if json_match:
+                    content = json_match.group(1)
+                else:
+                    # Remove code block markers
+                    content = content.replace("```json", "").replace("```", "").strip()
+
+            result = json.loads(content)
             dependencies = result.get("potential_dependencies", [])
 
             logger.info(f"Found {len(dependencies)} potential dependencies for new task")
             return dependencies
 
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing dependencies JSON: {e}. Content: {content[:200]}")
+            return []
         except Exception as e:
             logger.error(f"Error finding dependencies: {e}")
             return []
