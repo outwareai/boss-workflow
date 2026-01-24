@@ -15,22 +15,50 @@ from telegram.ext import (
 )
 
 from config import settings
-from .handler import get_unified_handler
+from .handlers import (
+    RoutingHandler,
+    ValidationHandler,
+    ApprovalHandler,
+    QueryHandler,
+    ModificationHandler,
+    CommandHandler
+)
 
 logger = logging.getLogger(__name__)
 
 
 class TelegramBotSimple:
     """
-    Simple conversational Telegram bot.
+    Simple conversational Telegram bot with modular handler architecture.
 
-    No commands - just natural conversation.
+    Uses specialized handlers for different message types:
+    - CommandHandler: Slash commands (/task, /status, etc.)
+    - ApprovalHandler: Yes/no confirmations
+    - ValidationHandler: Task validation flows
+    - QueryHandler: Status queries
+    - ModificationHandler: Task updates
+    - RoutingHandler: Routes messages to appropriate handler
     """
 
     def __init__(self):
         self.token = settings.telegram_bot_token
         self.webhook_url = f"{settings.webhook_base_url}/webhook/telegram"
-        self.handler = get_unified_handler()
+
+        # Initialize all specialized handlers
+        self.validation_handler = ValidationHandler()
+        self.approval_handler = ApprovalHandler()
+        self.query_handler = QueryHandler()
+        self.modification_handler = ModificationHandler()
+        self.command_handler = CommandHandler()
+
+        # Initialize routing handler and register all handlers
+        self.router = RoutingHandler()
+        self.router.register_handler(self.command_handler)      # First priority - slash commands
+        self.router.register_handler(self.approval_handler)     # Second - yes/no responses
+        self.router.register_handler(self.validation_handler)   # Third - task validation
+        self.router.register_handler(self.query_handler)        # Fourth - status queries
+        self.router.register_handler(self.modification_handler) # Fifth - task updates
+
         self.boss_chat_id = settings.telegram_boss_chat_id
         self.app: Optional[Application] = None
 
@@ -53,20 +81,23 @@ class TelegramBotSimple:
         logger.info("Telegram bot initialized (conversational mode)")
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle all text messages."""
-        user_id = str(update.effective_user.id)
-        chat_id = str(update.effective_chat.id)
-        message = update.message.text
-        user_name = update.effective_user.first_name or update.effective_user.username or "User"
+        """
+        Handle all text messages using the new modular handler architecture.
 
-        # Check if this is from the boss
-        is_boss = str(chat_id) == str(self.boss_chat_id)
-
+        The router will automatically:
+        1. Check for active sessions (multi-turn conversations)
+        2. Try specialized handlers in priority order
+        3. Fall back to AI intent detection if needed
+        """
         try:
+            # Check if this is from the boss
+            chat_id = str(update.effective_chat.id)
+            is_boss = str(chat_id) == str(self.boss_chat_id)
+
             # Check if this is a reply to an escalation message (boss reply routing)
             if is_boss and update.message.reply_to_message:
                 reply_to_msg_id = str(update.message.reply_to_message.message_id)
-                result = await self._handle_boss_reply_to_escalation(reply_to_msg_id, message)
+                result = await self._handle_boss_reply_to_escalation(reply_to_msg_id, update.message.text)
                 if result.get("handled"):
                     # Successfully routed to Discord
                     task_id = result.get("task_id", "")
@@ -77,18 +108,9 @@ class TelegramBotSimple:
                     return
                 # If not handled (not a reply to escalation), continue with normal processing
 
-            response, action = await self.handler.handle_message(
-                user_id=user_id,
-                message=message,
-                user_name=user_name,
-                is_boss=is_boss
-            )
-
-            await update.message.reply_text(response, parse_mode='Markdown')
-
-            # Handle any follow-up actions
-            if action:
-                await self._handle_action(action, context)
+            # Route message through the new handler architecture
+            # The router will handle everything: detection, routing, and response
+            await self.router.handle(update, context)
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
@@ -153,20 +175,18 @@ class TelegramBotSimple:
                 else:
                     message_with_analysis = caption or "[Photo received]"
 
-            response, action = await self.handler.handle_message(
-                user_id=user_id,
-                message=message_with_analysis,
-                photo_file_id=file_id,
-                photo_caption=caption,
-                photo_analysis=analysis,  # Pass vision analysis
-                user_name=user_name,
-                is_boss=is_boss
-            )
+            # Create a temporary text-based update with the analysis for the router
+            # TODO: Enhance router to handle photo context natively
+            class PhotoUpdate:
+                """Temporary wrapper to pass photo analysis through router."""
+                def __init__(self, original_update, analysis_text):
+                    self.message = original_update.message
+                    self.message.text = analysis_text  # Override text with analysis
+                    self.effective_user = original_update.effective_user
+                    self.effective_chat = original_update.effective_chat
 
-            await update.message.reply_text(response, parse_mode='Markdown')
-
-            if action:
-                await self._handle_action(action, context)
+            photo_update = PhotoUpdate(update, message_with_analysis)
+            await self.router.handle(photo_update, context)
 
         except Exception as e:
             logger.error(f"Error handling photo: {e}", exc_info=True)
@@ -197,19 +217,18 @@ class TelegramBotSimple:
             if transcription and not transcription.startswith("["):
                 await update.message.reply_text(f"📝 \"{transcription}\"")
 
-                # Process as text
-                is_boss = str(update.effective_chat.id) == str(self.boss_chat_id)
-                response, action = await self.handler.handle_message(
-                    user_id=user_id,
-                    message=transcription,
-                    user_name=user_name,
-                    is_boss=is_boss
-                )
+                # Process transcription through router
+                # TODO: Enhance router to handle voice context natively
+                class VoiceUpdate:
+                    """Temporary wrapper to pass transcription through router."""
+                    def __init__(self, original_update, transcription_text):
+                        self.message = original_update.message
+                        self.message.text = transcription_text  # Override text with transcription
+                        self.effective_user = original_update.effective_user
+                        self.effective_chat = original_update.effective_chat
 
-                await update.message.reply_text(response, parse_mode='Markdown')
-
-                if action:
-                    await self._handle_action(action, context)
+                voice_update = VoiceUpdate(update, transcription)
+                await self.router.handle(voice_update, context)
             else:
                 await update.message.reply_text("Couldn't catch that. Try typing instead?\n\n_Voice transcription requires OPENAI_API_KEY to be set._", parse_mode='Markdown')
 
