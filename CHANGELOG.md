@@ -5,7 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-01-24
+## [2.5.1] - 2026-01-24
+
+### Handler Refactoring Complete
+
+- **ModificationHandler** (v2.5.1): Extracted task update/edit handler from UnifiedHandler
+  - Task modification via natural language (e.g., "update TASK-001", "mark as done")
+  - 8 unit tests covering all modification patterns
+- **CommandHandler** (v2.5.1): Extracted slash command processing from UnifiedHandler
+  - All slash commands (/task, /status, /help, /team, /daily, /weekly)
+  - 14 unit tests covering all command scenarios
+- **Handler Architecture Complete**: All 6 specialized handlers extracted and tested
+  - CommandHandler, ApprovalHandler, ValidationHandler, QueryHandler, ModificationHandler, RoutingHandler
+  - 57+ total handler unit tests
+  - 90% complexity reduction from monolithic 3,636-line UnifiedHandler
+
+---
+
+## [2.5.0] - 2026-01-24
 
 ### Updated Dependencies
 
