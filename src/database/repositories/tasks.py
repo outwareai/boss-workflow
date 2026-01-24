@@ -20,6 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..connection import get_database
 from ..models import TaskDB, SubtaskDB, TaskDependencyDB, ProjectDB
+from ..exceptions import (
+    DatabaseConstraintError,
+    DatabaseOperationError,
+    EntityNotFoundError,
+)
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +38,7 @@ class TaskRepository:
 
     # ==================== TASK CRUD ====================
 
-    async def create(self, task_data: Dict[str, Any]) -> Optional[TaskDB]:
+    async def create(self, task_data: Dict[str, Any]) -> TaskDB:
         """Create a new task."""
         async with self.db.session() as session:
             try:
@@ -62,9 +68,15 @@ class TaskRepository:
                 logger.info(f"Created task {task.task_id} in database")
                 return task
 
+            except IntegrityError as e:
+                logger.error(f"Constraint violation creating task: {e}")
+                raise DatabaseConstraintError(
+                    f"Cannot create task {task_data.get('task_id') or task_data.get('id')}: duplicate or constraint violation"
+                )
+
             except Exception as e:
-                logger.error(f"Error creating task: {e}")
-                return None
+                logger.error(f"CRITICAL: Task creation failed: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to create task: {e}")
 
     async def get_by_id(self, task_id: str) -> Optional[TaskDB]:
         """Get task by task_id (TASK-XXXXXX-XXX format)."""
@@ -92,54 +104,82 @@ class TaskRepository:
             )
             return result.scalar_one_or_none()
 
-    async def update(self, task_id: str, updates: Dict[str, Any]) -> Optional[TaskDB]:
+    async def update(self, task_id: str, updates: Dict[str, Any]) -> TaskDB:
         """Update a task."""
         async with self.db.session() as session:
-            # Mark for sheet sync
-            updates["needs_sheet_sync"] = True
-            updates["updated_at"] = datetime.now()
+            try:
+                # Mark for sheet sync
+                updates["needs_sheet_sync"] = True
+                updates["updated_at"] = datetime.now()
 
-            await session.execute(
-                update(TaskDB)
-                .where(TaskDB.task_id == task_id)
-                .values(**updates)
-            )
+                await session.execute(
+                    update(TaskDB)
+                    .where(TaskDB.task_id == task_id)
+                    .values(**updates)
+                )
 
-            # Fetch and return updated task
-            result = await session.execute(
-                select(TaskDB).where(TaskDB.task_id == task_id)
-            )
-            return result.scalar_one_or_none()
+                # Fetch and return updated task
+                result = await session.execute(
+                    select(TaskDB).where(TaskDB.task_id == task_id)
+                )
+                task = result.scalar_one_or_none()
+
+                if not task:
+                    raise EntityNotFoundError(f"Task {task_id} not found for update")
+
+                return task
+
+            except EntityNotFoundError:
+                raise
+
+            except IntegrityError as e:
+                logger.error(f"Constraint violation updating task {task_id}: {e}")
+                raise DatabaseConstraintError(f"Cannot update task {task_id}: constraint violation")
+
+            except Exception as e:
+                logger.error(f"CRITICAL: Task update failed for {task_id}: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to update task {task_id}: {e}")
 
     async def delete(self, task_id: str) -> bool:
         """
         Delete a task.
-        
+
         Q2 2026: Added audit logging for task deletion.
         """
         async with self.db.session() as session:
-            # Get task info before deletion
-            result = await session.execute(
-                select(TaskDB).where(TaskDB.task_id == task_id)
-            )
-            task = result.scalar_one_or_none()
-            
-            await session.execute(
-                delete(TaskDB).where(TaskDB.task_id == task_id)
-            )
-            
-            if task:
-                # Q2 2026: Audit log task deletion
-                from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
-                await log_audit_event(
-                    action=AuditAction.TASK_DELETE,
-                    entity_type="task",
-                    entity_id=task_id,
-                    details={"title": task.title, "assignee": task.assignee},
-                    level=AuditLevel.WARNING
+            try:
+                # Get task info before deletion
+                result = await session.execute(
+                    select(TaskDB).where(TaskDB.task_id == task_id)
                 )
-            
-            return True
+                task = result.scalar_one_or_none()
+
+                if not task:
+                    raise EntityNotFoundError(f"Task {task_id} not found for deletion")
+
+                await session.execute(
+                    delete(TaskDB).where(TaskDB.task_id == task_id)
+                )
+
+                if task:
+                    # Q2 2026: Audit log task deletion
+                    from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
+                    await log_audit_event(
+                        action=AuditAction.TASK_DELETE,
+                        entity_type="task",
+                        entity_id=task_id,
+                        details={"title": task.title, "assignee": task.assignee},
+                        level=AuditLevel.WARNING
+                    )
+
+                return True
+
+            except EntityNotFoundError:
+                raise
+
+            except Exception as e:
+                logger.error(f"CRITICAL: Task deletion failed for {task_id}: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to delete task {task_id}: {e}")
 
     async def change_status(
         self,

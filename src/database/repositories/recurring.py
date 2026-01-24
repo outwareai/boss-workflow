@@ -11,6 +11,8 @@ import re
 
 from ..connection import get_database
 from ..models import RecurringTaskDB
+from ..exceptions import DatabaseConstraintError, DatabaseOperationError, EntityNotFoundError
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -208,48 +210,61 @@ class RecurringTaskRepository:
     def __init__(self):
         self.db = get_database()
 
-    async def create(self, data: Dict[str, Any]) -> Optional[RecurringTaskDB]:
-        """Create a new recurring task."""
+    async def create(self, data: Dict[str, Any]) -> RecurringTaskDB:
+        """Create a new recurring task.
+
+        Raises:
+            DatabaseConstraintError: If duplicate recurring_id or constraint violation
+            DatabaseOperationError: If database operation fails
+        """
         from sqlalchemy import select, func
 
-        async with self.db.session() as session:
-            # Generate recurring_id
-            today = datetime.now().strftime("%Y%m%d")
-            result = await session.execute(
-                select(func.count()).select_from(RecurringTaskDB).where(
-                    RecurringTaskDB.recurring_id.like(f"REC-{today}%")
+        try:
+            async with self.db.session() as session:
+                # Generate recurring_id
+                today = datetime.now().strftime("%Y%m%d")
+                result = await session.execute(
+                    select(func.count()).select_from(RecurringTaskDB).where(
+                        RecurringTaskDB.recurring_id.like(f"REC-{today}%")
+                    )
                 )
-            )
-            count = result.scalar() or 0
-            recurring_id = f"REC-{today}-{count + 1:03d}"
+                count = result.scalar() or 0
+                recurring_id = f"REC-{today}-{count + 1:03d}"
 
-            # Calculate next run
-            pattern = data.get("pattern", "every:day")
-            time_str = data.get("time", "09:00")
-            next_run = RecurrenceCalculator.calculate_next_run(pattern, time_str)
+                # Calculate next run
+                pattern = data.get("pattern", "every:day")
+                time_str = data.get("time", "09:00")
+                next_run = RecurrenceCalculator.calculate_next_run(pattern, time_str)
 
-            recurring = RecurringTaskDB(
-                recurring_id=recurring_id,
-                title=data.get("title"),
-                description=data.get("description"),
-                assignee=data.get("assignee"),
-                priority=data.get("priority", "medium"),
-                task_type=data.get("task_type", "task"),
-                estimated_effort=data.get("estimated_effort"),
-                tags=data.get("tags"),
-                pattern=pattern,
-                time=time_str,
-                timezone=data.get("timezone", "Asia/Bangkok"),
-                is_active=True,
-                next_run=next_run,
-                created_by=data.get("created_by"),
-            )
+                recurring = RecurringTaskDB(
+                    recurring_id=recurring_id,
+                    title=data.get("title"),
+                    description=data.get("description"),
+                    assignee=data.get("assignee"),
+                    priority=data.get("priority", "medium"),
+                    task_type=data.get("task_type", "task"),
+                    estimated_effort=data.get("estimated_effort"),
+                    tags=data.get("tags"),
+                    pattern=pattern,
+                    time=time_str,
+                    timezone=data.get("timezone", "Asia/Bangkok"),
+                    is_active=True,
+                    next_run=next_run,
+                    created_by=data.get("created_by"),
+                )
 
-            session.add(recurring)
-            await session.flush()
+                session.add(recurring)
+                await session.flush()
 
-            logger.info(f"Created recurring task {recurring_id}")
-            return recurring
+                logger.info(f"Created recurring task {recurring_id}")
+                return recurring
+
+        except IntegrityError as e:
+            logger.error(f"Constraint violation creating recurring task: {e}", exc_info=True)
+            raise DatabaseConstraintError(f"Duplicate or constraint violation: {e}") from e
+        except Exception as e:
+            logger.error(f"Failed to create recurring task: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to create recurring task: {e}") from e
 
     async def get_by_id(self, recurring_id: str) -> Optional[RecurringTaskDB]:
         """Get a recurring task by ID."""
@@ -262,121 +277,199 @@ class RecurringTaskRepository:
             return result.scalar_one_or_none()
 
     async def get_active(self) -> List[RecurringTaskDB]:
-        """Get all active recurring tasks."""
+        """Get all active recurring tasks.
+
+        Raises:
+            DatabaseOperationError: If database query fails
+        """
         from sqlalchemy import select
 
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(RecurringTaskDB).where(RecurringTaskDB.is_active == True).order_by(RecurringTaskDB.next_run)
-            )
-            return list(result.scalars().all())
+        try:
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(RecurringTaskDB).where(RecurringTaskDB.is_active == True).order_by(RecurringTaskDB.next_run)
+                )
+                return list(result.scalars().all())
+
+        except Exception as e:
+            logger.error(f"Failed to get active recurring tasks: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to get active recurring tasks: {e}") from e
 
     async def get_due_now(self) -> List[RecurringTaskDB]:
-        """Get recurring tasks that are due to run."""
+        """Get recurring tasks that are due to run.
+
+        Raises:
+            DatabaseOperationError: If database query fails
+        """
         from sqlalchemy import select
 
-        now = datetime.now()
-
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(RecurringTaskDB).where(
-                    RecurringTaskDB.is_active == True,
-                    RecurringTaskDB.next_run <= now
-                ).order_by(RecurringTaskDB.next_run)
-            )
-            return list(result.scalars().all())
-
-    async def update_after_run(self, recurring_id: str) -> bool:
-        """Update recurring task after it runs."""
-        from sqlalchemy import select
-
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
-            )
-            recurring = result.scalar_one_or_none()
-
-            if not recurring:
-                return False
-
+        try:
             now = datetime.now()
-            recurring.last_run = now
-            recurring.instances_created += 1
-            recurring.next_run = RecurrenceCalculator.calculate_next_run(
-                recurring.pattern, recurring.time, now
-            )
 
-            await session.flush()
-            logger.info(f"Updated recurring task {recurring_id}, next run: {recurring.next_run}")
-            return True
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(RecurringTaskDB).where(
+                        RecurringTaskDB.is_active == True,
+                        RecurringTaskDB.next_run <= now
+                    ).order_by(RecurringTaskDB.next_run)
+                )
+                return list(result.scalars().all())
 
-    async def pause(self, recurring_id: str) -> bool:
-        """Pause a recurring task."""
+        except Exception as e:
+            logger.error(f"Failed to get due recurring tasks: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+
+    async def update_after_run(self, recurring_id: str) -> RecurringTaskDB:
+        """Update recurring task after it runs.
+
+        Raises:
+            EntityNotFoundError: If recurring task not found
+            DatabaseOperationError: If update fails
+        """
         from sqlalchemy import select
 
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
-            )
-            recurring = result.scalar_one_or_none()
+        try:
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
+                )
+                recurring = result.scalar_one_or_none()
 
-            if not recurring:
-                return False
+                if not recurring:
+                    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
 
-            recurring.is_active = False
-            await session.flush()
-            logger.info(f"Paused recurring task {recurring_id}")
-            return True
+                now = datetime.now()
+                recurring.last_run = now
+                recurring.instances_created += 1
+                recurring.next_run = RecurrenceCalculator.calculate_next_run(
+                    recurring.pattern, recurring.time, now
+                )
 
-    async def resume(self, recurring_id: str) -> bool:
-        """Resume a paused recurring task."""
+                await session.flush()
+                logger.info(f"Updated recurring task {recurring_id}, next run: {recurring.next_run}")
+                return recurring
+
+        except EntityNotFoundError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to update recurring task {recurring_id}: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to update recurring task: {e}") from e
+
+    async def pause(self, recurring_id: str) -> RecurringTaskDB:
+        """Pause a recurring task.
+
+        Raises:
+            EntityNotFoundError: If recurring task not found
+            DatabaseOperationError: If pause fails
+        """
         from sqlalchemy import select
 
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
-            )
-            recurring = result.scalar_one_or_none()
+        try:
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
+                )
+                recurring = result.scalar_one_or_none()
 
-            if not recurring:
-                return False
+                if not recurring:
+                    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
 
-            recurring.is_active = True
-            # Recalculate next run from now
-            recurring.next_run = RecurrenceCalculator.calculate_next_run(
-                recurring.pattern, recurring.time
-            )
-            await session.flush()
-            logger.info(f"Resumed recurring task {recurring_id}")
-            return True
+                recurring.is_active = False
+                await session.flush()
+                logger.info(f"Paused recurring task {recurring_id}")
+                return recurring
+
+        except EntityNotFoundError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to pause recurring task {recurring_id}: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to pause recurring task: {e}") from e
+
+    async def resume(self, recurring_id: str) -> RecurringTaskDB:
+        """Resume a paused recurring task.
+
+        Raises:
+            EntityNotFoundError: If recurring task not found
+            DatabaseOperationError: If resume fails
+        """
+        from sqlalchemy import select
+
+        try:
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
+                )
+                recurring = result.scalar_one_or_none()
+
+                if not recurring:
+                    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
+
+                recurring.is_active = True
+                # Recalculate next run from now
+                recurring.next_run = RecurrenceCalculator.calculate_next_run(
+                    recurring.pattern, recurring.time
+                )
+                await session.flush()
+                logger.info(f"Resumed recurring task {recurring_id}")
+                return recurring
+
+        except EntityNotFoundError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to resume recurring task {recurring_id}: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to resume recurring task: {e}") from e
 
     async def delete(self, recurring_id: str) -> bool:
-        """Delete a recurring task."""
+        """Delete a recurring task.
+
+        Returns:
+            bool: True if deleted successfully
+
+        Raises:
+            EntityNotFoundError: If recurring task not found
+            DatabaseOperationError: If deletion fails
+        """
         from sqlalchemy import select, delete
 
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
-            )
-            recurring = result.scalar_one_or_none()
+        try:
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(RecurringTaskDB).where(RecurringTaskDB.recurring_id == recurring_id)
+                )
+                recurring = result.scalar_one_or_none()
 
-            if not recurring:
-                return False
+                if not recurring:
+                    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
 
-            await session.delete(recurring)
-            await session.flush()
-            logger.info(f"Deleted recurring task {recurring_id}")
-            return True
+                await session.delete(recurring)
+                await session.flush()
+                logger.info(f"Deleted recurring task {recurring_id}")
+                return True
+
+        except EntityNotFoundError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to delete recurring task {recurring_id}: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to delete recurring task: {e}") from e
 
     async def get_all(self) -> List[RecurringTaskDB]:
-        """Get all recurring tasks."""
+        """Get all recurring tasks.
+
+        Raises:
+            DatabaseOperationError: If database query fails
+        """
         from sqlalchemy import select
 
-        async with self.db.session() as session:
-            result = await session.execute(
-                select(RecurringTaskDB).order_by(RecurringTaskDB.created_at.desc())
-            )
-            return list(result.scalars().all())
+        try:
+            async with self.db.session() as session:
+                result = await session.execute(
+                    select(RecurringTaskDB).order_by(RecurringTaskDB.created_at.desc())
+                )
+                return list(result.scalars().all())
+
+        except Exception as e:
+            logger.error(f"Failed to get all recurring tasks: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to get all recurring tasks: {e}") from e
 
 
 # Singleton

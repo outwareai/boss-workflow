@@ -46,6 +46,8 @@ pytz==2025.2  # Updated from 2024.1 - Latest timezone database
 
 # Logging and monitoring
 structlog==25.5.0  # Updated from 24.1.0 - Performance improvements, new features
+prometheus-client==0.19.0  # Q3 2026: Metrics collection
+prometheus-fastapi-instrumentator==7.0.0  # Q3 2026: FastAPI auto-instrumentation
 
 # Rate limiting (Q1 2026 - Alternative implementation with feature flag)
 slowapi==0.1.9
@@ -60,3 +62,6 @@ cryptography==43.0.0  # Already at latest - Security standard library
 pytest==8.4.2  # Updated from 8.0.0 - Bug fixes, stability improvements
 pytest-asyncio==0.24.0  # Updated from 0.23.0 - Async test improvements
 pytest-cov==5.0.0  # Updated from 4.1.0 - Coverage improvements
+
+# Load testing (Q3 2026 - Production hardening)
+locust==2.20.0  # Load testing framework for validating 1,000 req/min capacity

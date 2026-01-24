@@ -13,9 +13,11 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, date, timedelta
 
 from sqlalchemy import select, update, func, and_, or_, cast, Date
+from sqlalchemy.exc import IntegrityError
 
 from ..connection import get_database
 from ..models import AttendanceRecordDB, AttendanceEventTypeEnum
+from ..exceptions import DatabaseConstraintError, DatabaseOperationError, EntityNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +71,12 @@ class AttendanceRepository:
                 logger.info(f"Recorded attendance: {user_name} {event_type} at {event_time}")
                 return record
 
+            except IntegrityError as e:
+                logger.error(f"Duplicate attendance record: {e}", exc_info=True)
+                raise DatabaseConstraintError(f"Duplicate attendance record for {user_name} at {event_time}") from e
             except Exception as e:
-                logger.error(f"Error recording attendance: {e}")
-                return None
+                logger.error(f"Error recording attendance: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to record attendance for {user_name}") from e
 
     async def record_boss_reported_event(
         self,
@@ -125,9 +130,12 @@ class AttendanceRepository:
                 logger.info(f"Recorded boss-reported attendance: {user_name} {event_type} for {affected_date}")
                 return record
 
+            except IntegrityError as e:
+                logger.error(f"Duplicate boss-reported attendance: {e}", exc_info=True)
+                raise DatabaseConstraintError(f"Duplicate boss-reported attendance for {user_name} on {affected_date}") from e
             except Exception as e:
-                logger.error(f"Error recording boss-reported attendance: {e}")
-                return None
+                logger.error(f"Error recording boss-reported attendance: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to record boss-reported attendance for {user_name}") from e
 
     async def get_user_events_for_date(
         self,
@@ -136,21 +144,25 @@ class AttendanceRepository:
     ) -> List[AttendanceRecordDB]:
         """Get all events for a user on a specific date."""
         async with self.db.session() as session:
-            start_of_day = datetime.combine(target_date, datetime.min.time())
-            end_of_day = datetime.combine(target_date, datetime.max.time())
+            try:
+                start_of_day = datetime.combine(target_date, datetime.min.time())
+                end_of_day = datetime.combine(target_date, datetime.max.time())
 
-            result = await session.execute(
-                select(AttendanceRecordDB)
-                .where(
-                    and_(
-                        AttendanceRecordDB.user_id == user_id,
-                        AttendanceRecordDB.event_time >= start_of_day,
-                        AttendanceRecordDB.event_time <= end_of_day,
+                result = await session.execute(
+                    select(AttendanceRecordDB)
+                    .where(
+                        and_(
+                            AttendanceRecordDB.user_id == user_id,
+                            AttendanceRecordDB.event_time >= start_of_day,
+                            AttendanceRecordDB.event_time <= end_of_day,
+                        )
                     )
+                    .order_by(AttendanceRecordDB.event_time)
                 )
-                .order_by(AttendanceRecordDB.event_time)
-            )
-            return list(result.scalars().all())
+                return list(result.scalars().all())
+            except Exception as e:
+                logger.error(f"Error fetching events for user {user_id} on {target_date}: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to fetch events for {user_id}") from e
 
     async def get_user_last_event(
         self,
@@ -235,22 +247,26 @@ class AttendanceRepository:
     ) -> Dict[str, Any]:
         """Get weekly attendance summary for a user."""
         async with self.db.session() as session:
-            week_end = week_start + timedelta(days=6)
-            start_dt = datetime.combine(week_start, datetime.min.time())
-            end_dt = datetime.combine(week_end, datetime.max.time())
+            try:
+                week_end = week_start + timedelta(days=6)
+                start_dt = datetime.combine(week_start, datetime.min.time())
+                end_dt = datetime.combine(week_end, datetime.max.time())
 
-            result = await session.execute(
-                select(AttendanceRecordDB)
-                .where(
-                    and_(
-                        AttendanceRecordDB.user_id == user_id,
-                        AttendanceRecordDB.event_time >= start_dt,
-                        AttendanceRecordDB.event_time <= end_dt,
+                result = await session.execute(
+                    select(AttendanceRecordDB)
+                    .where(
+                        and_(
+                            AttendanceRecordDB.user_id == user_id,
+                            AttendanceRecordDB.event_time >= start_dt,
+                            AttendanceRecordDB.event_time <= end_dt,
+                        )
                     )
+                    .order_by(AttendanceRecordDB.event_time)
                 )
-                .order_by(AttendanceRecordDB.event_time)
-            )
-            events = list(result.scalars().all())
+                events = list(result.scalars().all())
+            except Exception as e:
+                logger.error(f"Error fetching weekly summary for {user_id}: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to fetch weekly summary for {user_id}") from e
 
             # Calculate stats
             days_worked = set()
@@ -325,41 +341,49 @@ class AttendanceRepository:
     ) -> List[Dict[str, Any]]:
         """Get weekly attendance summary for all users."""
         async with self.db.session() as session:
-            week_end = week_start + timedelta(days=6)
-            start_dt = datetime.combine(week_start, datetime.min.time())
-            end_dt = datetime.combine(week_end, datetime.max.time())
+            try:
+                week_end = week_start + timedelta(days=6)
+                start_dt = datetime.combine(week_start, datetime.min.time())
+                end_dt = datetime.combine(week_end, datetime.max.time())
 
-            # Get unique users who have records in this week
-            result = await session.execute(
-                select(AttendanceRecordDB.user_id, AttendanceRecordDB.user_name)
-                .where(
-                    and_(
-                        AttendanceRecordDB.event_time >= start_dt,
-                        AttendanceRecordDB.event_time <= end_dt,
+                # Get unique users who have records in this week
+                result = await session.execute(
+                    select(AttendanceRecordDB.user_id, AttendanceRecordDB.user_name)
+                    .where(
+                        and_(
+                            AttendanceRecordDB.event_time >= start_dt,
+                            AttendanceRecordDB.event_time <= end_dt,
+                        )
                     )
+                    .distinct()
                 )
-                .distinct()
-            )
-            users = result.all()
+                users = result.all()
 
-            summaries = []
-            for user_id, user_name in users:
-                summary = await self.get_weekly_summary(user_id, week_start)
-                summary["user_name"] = user_name
-                summaries.append(summary)
+                summaries = []
+                for user_id, user_name in users:
+                    summary = await self.get_weekly_summary(user_id, week_start)
+                    summary["user_name"] = user_name
+                    summaries.append(summary)
 
-            return summaries
+                return summaries
+            except Exception as e:
+                logger.error(f"Error fetching team weekly summary: {e}", exc_info=True)
+                raise DatabaseOperationError("Failed to fetch team weekly summary") from e
 
     async def get_unsynced_records(self, limit: int = 100) -> List[AttendanceRecordDB]:
         """Get records that haven't been synced to Sheets."""
         async with self.db.session() as session:
-            result = await session.execute(
-                select(AttendanceRecordDB)
-                .where(AttendanceRecordDB.synced_to_sheets == False)
-                .order_by(AttendanceRecordDB.event_time)
-                .limit(limit)
-            )
-            return list(result.scalars().all())
+            try:
+                result = await session.execute(
+                    select(AttendanceRecordDB)
+                    .where(AttendanceRecordDB.synced_to_sheets == False)
+                    .order_by(AttendanceRecordDB.event_time)
+                    .limit(limit)
+                )
+                return list(result.scalars().all())
+            except Exception as e:
+                logger.error(f"Error fetching unsynced records: {e}", exc_info=True)
+                raise DatabaseOperationError("Failed to fetch unsynced attendance records") from e
 
     async def mark_synced(self, record_ids: List[int]) -> int:
         """Mark records as synced to Sheets."""
@@ -367,30 +391,46 @@ class AttendanceRepository:
             return 0
 
         async with self.db.session() as session:
-            result = await session.execute(
-                update(AttendanceRecordDB)
-                .where(AttendanceRecordDB.id.in_(record_ids))
-                .values(synced_to_sheets=True)
-            )
-            return result.rowcount
+            try:
+                result = await session.execute(
+                    update(AttendanceRecordDB)
+                    .where(AttendanceRecordDB.id.in_(record_ids))
+                    .values(synced_to_sheets=True)
+                )
+
+                if result.rowcount == 0:
+                    logger.warning(f"No records updated when marking as synced: {record_ids}")
+                    raise EntityNotFoundError(f"No attendance records found with IDs: {record_ids}")
+
+                logger.info(f"Marked {result.rowcount} attendance records as synced")
+                return result.rowcount
+            except EntityNotFoundError:
+                raise
+            except Exception as e:
+                logger.error(f"Error marking records as synced: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to mark attendance records as synced") from e
 
     async def get_daily_report(self, target_date: date) -> Dict[str, Any]:
         """Get daily attendance report."""
         async with self.db.session() as session:
-            start_dt = datetime.combine(target_date, datetime.min.time())
-            end_dt = datetime.combine(target_date, datetime.max.time())
+            try:
+                start_dt = datetime.combine(target_date, datetime.min.time())
+                end_dt = datetime.combine(target_date, datetime.max.time())
 
-            result = await session.execute(
-                select(AttendanceRecordDB)
-                .where(
-                    and_(
-                        AttendanceRecordDB.event_time >= start_dt,
-                        AttendanceRecordDB.event_time <= end_dt,
+                result = await session.execute(
+                    select(AttendanceRecordDB)
+                    .where(
+                        and_(
+                            AttendanceRecordDB.event_time >= start_dt,
+                            AttendanceRecordDB.event_time <= end_dt,
+                        )
                     )
+                    .order_by(AttendanceRecordDB.event_time)
                 )
-                .order_by(AttendanceRecordDB.event_time)
-            )
-            events = list(result.scalars().all())
+                events = list(result.scalars().all())
+            except Exception as e:
+                logger.error(f"Error fetching daily report for {target_date}: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to fetch daily report for {target_date}") from e
 
             # Group by user
             by_user = {}

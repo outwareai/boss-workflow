@@ -1,0 +1,8 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\User\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow
+configfile: pytest.ini
+plugins: anyio-4.12.1, asyncio-0.24.0, cov-5.0.0
+asyncio: mode=Mode.AUTO, default_loop_scope=None
+collecting ... 

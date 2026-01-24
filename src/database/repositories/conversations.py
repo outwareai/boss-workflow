@@ -15,9 +15,11 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select, update, func, and_
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 
 from ..connection import get_database
 from ..models import ConversationDB, MessageDB
+from ..exceptions import DatabaseConstraintError, DatabaseOperationError, EntityNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +38,13 @@ class ConversationRepository:
         user_name: Optional[str] = None,
         chat_id: Optional[str] = None,
         intent: Optional[str] = None,
-    ) -> Optional[ConversationDB]:
-        """Create a new conversation."""
+    ) -> ConversationDB:
+        """Create a new conversation.
+
+        Raises:
+            DatabaseConstraintError: If conversation_id already exists
+            DatabaseOperationError: If database operation fails
+        """
         async with self.db.session() as session:
             try:
                 conv_id = f"CONV-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
@@ -56,9 +63,14 @@ class ConversationRepository:
                 logger.info(f"Created conversation {conv_id} for user {user_id}")
                 return conversation
 
+            except IntegrityError as e:
+                logger.error(f"Constraint violation creating conversation: {e}", exc_info=True)
+                raise DatabaseConstraintError(
+                    f"Conversation {conv_id} already exists or constraint violation"
+                ) from e
             except Exception as e:
-                logger.error(f"Error creating conversation: {e}")
-                return None
+                logger.error(f"Error creating conversation: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to create conversation: {e}") from e
 
     async def get_by_id(self, conversation_id: str) -> Optional[ConversationDB]:
         """Get conversation by ID."""
@@ -93,72 +105,121 @@ class ConversationRepository:
         stage: str,
         context: Optional[Dict] = None,
         generated_spec: Optional[Dict] = None,
-    ) -> Optional[ConversationDB]:
-        """Update conversation stage and context."""
+    ) -> ConversationDB:
+        """Update conversation stage and context.
+
+        Raises:
+            EntityNotFoundError: If conversation not found
+            DatabaseOperationError: If update fails
+        """
         async with self.db.session() as session:
-            updates = {
-                "stage": stage,
-                "updated_at": datetime.now(),
-            }
-            if context is not None:
-                updates["context"] = context
-            if generated_spec is not None:
-                updates["generated_spec"] = generated_spec
+            try:
+                updates = {
+                    "stage": stage,
+                    "updated_at": datetime.now(),
+                }
+                if context is not None:
+                    updates["context"] = context
+                if generated_spec is not None:
+                    updates["generated_spec"] = generated_spec
 
-            await session.execute(
-                update(ConversationDB)
-                .where(ConversationDB.conversation_id == conversation_id)
-                .values(**updates)
-            )
+                result = await session.execute(
+                    update(ConversationDB)
+                    .where(ConversationDB.conversation_id == conversation_id)
+                    .values(**updates)
+                )
 
-            result = await session.execute(
-                select(ConversationDB)
-                .where(ConversationDB.conversation_id == conversation_id)
-            )
-            return result.scalar_one_or_none()
+                if result.rowcount == 0:
+                    raise EntityNotFoundError(f"Conversation {conversation_id} not found")
+
+                result = await session.execute(
+                    select(ConversationDB)
+                    .where(ConversationDB.conversation_id == conversation_id)
+                )
+                conversation = result.scalar_one_or_none()
+
+                if not conversation:
+                    raise EntityNotFoundError(f"Conversation {conversation_id} not found after update")
+
+                return conversation
+
+            except EntityNotFoundError:
+                raise
+            except Exception as e:
+                logger.error(f"Error updating conversation stage: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to update conversation stage: {e}") from e
 
     async def complete(
         self,
         conversation_id: str,
         outcome: str,
         task_id: Optional[str] = None,
-    ) -> Optional[ConversationDB]:
-        """Mark conversation as completed."""
-        async with self.db.session() as session:
-            await session.execute(
-                update(ConversationDB)
-                .where(ConversationDB.conversation_id == conversation_id)
-                .values(
-                    outcome=outcome,
-                    task_id=task_id,
-                    completed_at=datetime.now(),
-                    stage="completed",
-                )
-            )
+    ) -> ConversationDB:
+        """Mark conversation as completed.
 
-            result = await session.execute(
-                select(ConversationDB)
-                .where(ConversationDB.conversation_id == conversation_id)
-            )
-            return result.scalar_one_or_none()
-
-    async def clear_user_conversations(self, user_id: str) -> int:
-        """Clear all active conversations for a user (mark as cancelled)."""
+        Raises:
+            EntityNotFoundError: If conversation not found
+            DatabaseOperationError: If update fails
+        """
         async with self.db.session() as session:
-            result = await session.execute(
-                update(ConversationDB)
-                .where(
-                    and_(
-                        ConversationDB.user_id == user_id,
-                        ConversationDB.outcome.is_(None),
+            try:
+                result = await session.execute(
+                    update(ConversationDB)
+                    .where(ConversationDB.conversation_id == conversation_id)
+                    .values(
+                        outcome=outcome,
+                        task_id=task_id,
+                        completed_at=datetime.now(),
+                        stage="completed",
                     )
                 )
-                .values(
-                    outcome="cancelled",
-                    completed_at=datetime.now(),
+
+                if result.rowcount == 0:
+                    raise EntityNotFoundError(f"Conversation {conversation_id} not found")
+
+                result = await session.execute(
+                    select(ConversationDB)
+                    .where(ConversationDB.conversation_id == conversation_id)
                 )
-            )
-            return result.rowcount
+                conversation = result.scalar_one_or_none()
+
+                if not conversation:
+                    raise EntityNotFoundError(f"Conversation {conversation_id} not found after completion")
+
+                return conversation
+
+            except EntityNotFoundError:
+                raise
+            except Exception as e:
+                logger.error(f"Error completing conversation: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to complete conversation: {e}") from e
+
+    async def clear_user_conversations(self, user_id: str) -> int:
+        """Clear all active conversations for a user (mark as cancelled).
+
+        Raises:
+            DatabaseOperationError: If operation fails
+        """
+        async with self.db.session() as session:
+            try:
+                result = await session.execute(
+                    update(ConversationDB)
+                    .where(
+                        and_(
+                            ConversationDB.user_id == user_id,
+                            ConversationDB.outcome.is_(None),
+                        )
+                    )
+                    .values(
+                        outcome="cancelled",
+                        completed_at=datetime.now(),
+                    )
+                )
+                return result.rowcount
+
+            except Exception as e:
+                logger.error(f"Error clearing user conversations: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to clear conversations for user {user_id}: {e}") from e
 
     # ==================== MESSAGES ====================
 
@@ -171,36 +232,47 @@ class ConversationRepository:
         file_id: Optional[str] = None,
         intent_detected: Optional[str] = None,
         confidence: Optional[float] = None,
-    ) -> Optional[MessageDB]:
-        """Add a message to a conversation."""
+    ) -> MessageDB:
+        """Add a message to a conversation.
+
+        Raises:
+            EntityNotFoundError: If conversation not found
+            DatabaseOperationError: If operation fails
+        """
         async with self.db.session() as session:
-            # Get conversation
-            conv_result = await session.execute(
-                select(ConversationDB)
-                .where(ConversationDB.conversation_id == conversation_id)
-            )
-            conversation = conv_result.scalar_one_or_none()
+            try:
+                # Get conversation
+                conv_result = await session.execute(
+                    select(ConversationDB)
+                    .where(ConversationDB.conversation_id == conversation_id)
+                )
+                conversation = conv_result.scalar_one_or_none()
 
-            if not conversation:
-                logger.warning(f"Conversation {conversation_id} not found")
-                return None
+                if not conversation:
+                    raise EntityNotFoundError(f"Conversation {conversation_id} not found")
 
-            message = MessageDB(
-                conversation_id=conversation.id,
-                role=role,
-                content=content,
-                message_type=message_type,
-                file_id=file_id,
-                intent_detected=intent_detected,
-                confidence=int(confidence * 100) if confidence else None,
-            )
-            session.add(message)
-            await session.flush()
+                message = MessageDB(
+                    conversation_id=conversation.id,
+                    role=role,
+                    content=content,
+                    message_type=message_type,
+                    file_id=file_id,
+                    intent_detected=intent_detected,
+                    confidence=int(confidence * 100) if confidence else None,
+                )
+                session.add(message)
+                await session.flush()
 
-            # Update conversation timestamp
-            conversation.updated_at = datetime.now()
+                # Update conversation timestamp
+                conversation.updated_at = datetime.now()
 
-            return message
+                return message
+
+            except EntityNotFoundError:
+                raise
+            except Exception as e:
+                logger.error(f"Error adding message to conversation: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to add message to conversation {conversation_id}: {e}") from e
 
     async def get_messages(self, conversation_id: str) -> List[MessageDB]:
         """Get all messages in a conversation."""
@@ -269,27 +341,36 @@ class ConversationRepository:
             return list(result.scalars().all())
 
     async def cleanup_stale(self, timeout_minutes: int = 30) -> int:
-        """Mark stale conversations as timed out."""
+        """Mark stale conversations as timed out.
+
+        Raises:
+            DatabaseOperationError: If cleanup fails
+        """
         cutoff = datetime.now() - timedelta(minutes=timeout_minutes)
 
         async with self.db.session() as session:
-            result = await session.execute(
-                update(ConversationDB)
-                .where(
-                    and_(
-                        ConversationDB.updated_at < cutoff,
-                        ConversationDB.outcome.is_(None),
+            try:
+                result = await session.execute(
+                    update(ConversationDB)
+                    .where(
+                        and_(
+                            ConversationDB.updated_at < cutoff,
+                            ConversationDB.outcome.is_(None),
+                        )
+                    )
+                    .values(
+                        outcome="timeout",
+                        completed_at=datetime.now(),
                     )
                 )
-                .values(
-                    outcome="timeout",
-                    completed_at=datetime.now(),
-                )
-            )
-            count = result.rowcount
-            if count > 0:
-                logger.info(f"Cleaned up {count} stale conversations")
-            return count
+                count = result.rowcount
+                if count > 0:
+                    logger.info(f"Cleaned up {count} stale conversations")
+                return count
+
+            except Exception as e:
+                logger.error(f"Error cleaning up stale conversations: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to cleanup stale conversations: {e}") from e
 
     async def get_stats(self, days: int = 7) -> Dict[str, Any]:
         """Get conversation statistics."""
