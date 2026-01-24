@@ -893,7 +893,7 @@ async def backup_oauth_tokens_api():
                     "updated_at": token.updated_at.isoformat() if token.updated_at else None
                 })
 
-            # Save backup file
+            # Save backup file locally AND return data
             backup_dir = Path("/tmp/oauth_backups")
             backup_dir.mkdir(exist_ok=True)
             filename = f"oauth_tokens_backup_{timestamp}.json"
@@ -910,7 +910,8 @@ async def backup_oauth_tokens_api():
                 "filename": str(filepath),
                 "token_count": len(tokens),
                 "timestamp": timestamp,
-                "message": "Backup complete - download from Railway logs and store in 1Password"
+                "message": "Backup complete - download from Railway logs and store in 1Password",
+                "backup_data": backup_data  # Include full backup in response
             }
 
     except Exception as e:

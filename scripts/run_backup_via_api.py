@@ -32,11 +32,29 @@ def trigger_backup():
             print(f"Backup file: {data.get('filename', 'N/A')}")
             print(f"Token count: {data.get('token_count', 'N/A')}")
             print(f"Timestamp: {data.get('timestamp', 'N/A')}")
+
+            # Save backup data locally
+            if 'backup_data' in data:
+                import json
+                from pathlib import Path
+
+                backup_dir = Path.cwd() / "backups"
+                backup_dir.mkdir(exist_ok=True)
+                local_file = backup_dir / f"oauth_tokens_backup_{data['timestamp']}.json"
+
+                with open(local_file, 'w') as f:
+                    json.dump(data['backup_data'], f, indent=2)
+
+                print()
+                print(f"[SAVED] Backup saved locally to: {local_file}")
+
             print()
             print("[CRITICAL] Next steps:")
-            print("1. Download backup from Railway logs")
-            print("2. Store in 1Password vault: 'Boss Workflow Backups'")
-            print("3. Do NOT commit to git")
+            print(f"1. Store {local_file} in 1Password vault: 'Boss Workflow Backups'")
+            print("2. Item name: 'OAuth Token Backup - {}'".format(data.get('timestamp', 'N/A')))
+            print("3. Add tags: 'oauth', 'backup', 'encryption-migration'")
+            print("4. Do NOT commit to git")
+            print(f"5. Delete local copy after uploading: {local_file}")
             return True
         else:
             print(f"[ERROR] Backup failed: HTTP {response.status_code}")
