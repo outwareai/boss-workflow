@@ -1007,13 +1007,24 @@ async def encrypt_oauth_tokens_api(mode: str = "gradual"):
                         logger.warning(f"[WARNING] Token disappeared: {email}/{service}")
                         continue
 
+                    # Calculate expires_in from expires_at if present
+                    expires_in = None
+                    if current.get("expires_at"):
+                        from datetime import datetime
+                        expires_at = current["expires_at"]
+                        if isinstance(expires_at, str):
+                            expires_at = datetime.fromisoformat(expires_at)
+                        now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.now()
+                        delta = expires_at - now
+                        expires_in = int(delta.total_seconds())
+
                     # Re-save (will auto-encrypt via repository)
                     await repo.store_token(
                         email=email,
                         service=service,
                         refresh_token=current["refresh_token"],
                         access_token=current.get("access_token", ""),
-                        expires_at=current.get("expires_at")
+                        expires_in=expires_in
                     )
 
                     results["success"] += 1
