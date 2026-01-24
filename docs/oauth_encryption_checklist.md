@@ -369,17 +369,18 @@ Complete checklist for the 4-week OAuth token encryption migration plan. This ch
 
 ---
 
-## Week 4: Production Deployment (Final)
+## Week 4: Production Deployment (Final) ⏳ READY TO DEPLOY
 
 **Objective:** Deploy encryption to production
 **Duration:** 2026-02-15 to 2026-02-21
-**Status:** Pending
+**Status:** Ready - Awaiting Boss Approval
+**Start Date:** 2026-01-24
 
 ### 4.1 Pre-Deployment
 
 - [ ] Final staging verification
   - [ ] Zero errors in last 24 hours of staging logs
-  - [ ] All tests passing
+  - [ ] All tests passing (5/5) ✅
   - [ ] Team approval obtained
 
 - [ ] Production backup (CRITICAL)
@@ -387,25 +388,28 @@ Complete checklist for the 4-week OAuth token encryption migration plan. This ch
   railway run -s boss-workflow "python scripts/backup_oauth_tokens.py"
   ```
   - [ ] Backup file created
-  - [ ] Stored in 1Password
+  - [ ] Stored in 1Password vault "Boss Workflow Production"
   - [ ] Verified backup integrity
 
-- [ ] Announce maintenance window (optional)
+- [ ] Verify ENCRYPTION_KEY in Railway production
+  ```bash
+  railway variables -s boss-workflow | grep ENCRYPTION_KEY
+  ```
+  - [ ] Key exists and is set
+  - [ ] Key is base64-encoded (44 characters)
+
+- [ ] Announce deployment window
   - [ ] Notify team via Telegram/Discord
   - [ ] Expected downtime: 0 minutes (zero-downtime deploy)
   - [ ] Rollback plan communicated
 
 ### 4.2 Deployment
 
-- [ ] Merge to production branch
+- [ ] Deploy code to production
   ```bash
-  git checkout master
-  git merge feat/oauth-encryption-week2
   git push origin master
   ```
-
-- [ ] Deploy to Railway production
-  - [ ] Auto-deploy from GitHub (or manual)
+  - [ ] Railway auto-deploy triggered
   - [ ] Monitor deployment logs
   - [ ] Verify deployment successful
 
@@ -416,87 +420,122 @@ Complete checklist for the 4-week OAuth token encryption migration plan. This ch
   - [ ] Log shows: "Token encryption initialized successfully"
   - [ ] No errors in logs
 
-### 4.3 Gradual Migration
+### 4.3 Gradual Migration (Recommended)
 
-- [ ] Monitor new token creation
-  - [ ] New tokens automatically encrypted on creation
-  - [ ] Check database: new tokens start with "gAAAAA"
-
-- [ ] Run bulk encryption for existing tokens
+- [ ] Run gradual encryption script
   ```bash
-  # Create migration script
-  railway run -s boss-workflow "python scripts/encrypt_existing_tokens.py"
+  railway run -s boss-workflow "python scripts/deploy_oauth_encryption_production.py --mode gradual"
   ```
-  - [ ] Script encrypts all plaintext tokens
-  - [ ] Progress logged (10%, 20%, ..., 100%)
+  - [ ] Script checks prerequisites (backup, key, tests)
+  - [ ] Script encrypts in 10% batches
+  - [ ] 10-second wait between batches for monitoring
+  - [ ] Progress logged for each batch
   - [ ] No errors during migration
 
+- [ ] Monitor each batch
+  - [ ] Check Railway logs every 10 seconds
+  - [ ] Verify no encryption errors
+  - [ ] Verify no integration failures
+
 - [ ] Verify 100% encryption coverage
-  ```sql
-  SELECT COUNT(*) as total,
-         SUM(CASE WHEN refresh_token LIKE 'gAAAAA%' THEN 1 ELSE 0 END) as encrypted
-  FROM oauth_tokens;
+  - [ ] Script validates all tokens encrypted
+  - [ ] Coverage report shows 100%
+  - [ ] No plaintext tokens remaining
+
+### 4.4 Alternative: Full Migration
+
+- [ ] Run full encryption script (if low token count)
+  ```bash
+  railway run -s boss-workflow "python scripts/deploy_oauth_encryption_production.py --mode full"
   ```
-  - [ ] `encrypted` = `total` (100% coverage)
+  - [ ] All tokens encrypted at once
+  - [ ] Verify 100% coverage
 
-### 4.4 Post-Deployment Monitoring
+### 4.5 Post-Deployment Verification
 
-- [ ] Monitor for 24 hours
-  - [ ] Check logs every 4 hours
-  - [ ] No encryption/decryption errors
-  - [ ] All integrations working (Calendar, Tasks, Gmail)
+- [ ] Run integration tests
+  ```bash
+  railway run -s boss-workflow "python scripts/test_oauth_encryption_staging.py"
+  ```
+  - [ ] Test 1: Encryption Storage - PASS
+  - [ ] Test 2: Decryption Retrieval - PASS
+  - [ ] Test 3: Backward Compatibility - PASS
+  - [ ] Test 4: Performance - PASS
+  - [ ] Test 5: Integration Tests - PASS
 
-- [ ] Verify no regressions
-  - [ ] Users can still use OAuth features
+- [ ] Manual verification
+  - [ ] Calendar OAuth still works
+  - [ ] Tasks OAuth still works
+  - [ ] Gmail OAuth still works
   - [ ] Token refresh works
-  - [ ] No reported issues
 
-- [ ] Performance check
-  - [ ] No noticeable slowdown
-  - [ ] API response times unchanged
-  - [ ] Database queries unchanged
+### 4.6 24-Hour Monitoring
 
-### 4.5 Bulk Encryption Script
+- [ ] **Hour 0 (Deployment):**
+  - [ ] Deployment successful
+  - [ ] All tests passing
+  - [ ] No errors in logs
 
-- [ ] Create `scripts/encrypt_existing_tokens.py`
-  ```python
-  # Fetch all plaintext tokens
-  # Encrypt each token
-  # Update database
-  # Log progress
-  ```
+- [ ] **Hour 4:**
+  - [ ] Check Railway logs for encryption errors
+  - [ ] Verify Calendar/Tasks/Gmail still working
+  - [ ] Check error rate dashboard
 
-- [ ] Test in staging first
-  - [ ] Run on staging database
-  - [ ] Verify all tokens encrypted
-  - [ ] No errors
+- [ ] **Hour 8:**
+  - [ ] Review audit logs for unusual activity
+  - [ ] Check performance metrics
+  - [ ] Verify no user complaints
 
-- [ ] Run in production
-  - [ ] Execute during low-traffic period
-  - [ ] Monitor progress
-  - [ ] Verify completion
+- [ ] **Hour 12:**
+  - [ ] Mid-day check - all systems nominal
+  - [ ] Review error logs
 
-### 4.6 Week 4 Deliverables
+- [ ] **Hour 24:**
+  - [ ] Final verification - deployment successful
+  - [ ] Update runbook with lessons learned
+  - [ ] Close deployment ticket
+
+### 4.7 Post-Deployment Tasks
+
+- [ ] Update documentation
+  - [ ] Update FEATURES.md (OAuth → PRODUCTION)
+  - [ ] Fill out `docs/oauth_week4_deployment_report.md`
+  - [ ] Document lessons learned
+
+- [ ] Archive and cleanup
+  - [ ] Archive backup in long-term storage
+  - [ ] Keep backup in 1Password for 90 days
+  - [ ] Update security documentation
+
+- [ ] Training and handoff
+  - [ ] Train team on encrypted token management
+  - [ ] Document recovery procedures
+  - [ ] Schedule Q2 2026 security audit
+
+### 4.8 Week 4 Deliverables
+
+- [x] **Scripts Created:**
+  - [x] `scripts/deploy_oauth_encryption_production.py` (gradual + full modes)
+  - [x] Includes prerequisites checker
+  - [x] Includes plaintext scanner
+  - [x] Includes encryption migrator
+  - [x] Includes coverage verifier
+
+- [x] **Documentation:**
+  - [x] `docs/oauth_week4_deployment_report.md` (template)
+  - [x] Includes 24-hour monitoring plan
+  - [x] Includes rollback procedures
 
 - [ ] **Production Deployment:**
   - [ ] Code deployed successfully
   - [ ] All new tokens encrypted
   - [ ] All existing tokens encrypted (via migration script)
-
-- [ ] **Monitoring:**
-  - [ ] 24-hour monitoring complete
-  - [ ] Zero encryption errors
-  - [ ] Zero user-reported issues
-
-- [ ] **Documentation:**
-  - [ ] Deployment report created
-  - [ ] Migration metrics recorded
-  - [ ] Lessons learned documented
+  - [ ] 100% coverage verified
 
 - [ ] **Final Commit:**
   ```bash
-  git add scripts/encrypt_existing_tokens.py docs/
-  git commit -m "feat(oauth): Week 4 - Production deployment complete, all tokens encrypted"
+  git add FEATURES.md docs/oauth_week4_deployment_report.md
+  git commit -m "feat(oauth): Week 4 - Production deployment successful, 100% encrypted"
   git push
   ```
 
