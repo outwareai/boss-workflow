@@ -141,6 +141,9 @@ class Settings(BaseSettings):
     # Attendance sync settings
     attendance_sync_interval_minutes: int = Field(default=15, env="ATTENDANCE_SYNC_INTERVAL_MINUTES")
 
+    # OAuth Token Encryption (Q1 2026)
+    encryption_key: str = Field(default="", env="ENCRYPTION_KEY")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
