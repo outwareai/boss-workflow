@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 import httpx
+import aiofiles
 
 logger = logging.getLogger(__name__)
 
@@ -47,23 +48,26 @@ class VoiceTranscriber:
             return None
 
         try:
-            # Save to temp file
+            # Save to temp file (async)
             suffix = Path(filename).suffix or ".ogg"
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-                f.write(audio_data)
                 temp_path = Path(f.name)
+
+            async with aiofiles.open(temp_path, "wb") as f:
+                await f.write(audio_data)
 
             try:
                 # Call Whisper API
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    with open(temp_path, "rb") as audio_file:
+                    async with aiofiles.open(temp_path, "rb") as audio_file:
+                        audio_bytes = await audio_file.read()
                         response = await client.post(
                             f"{self.base_url}/audio/transcriptions",
                             headers={
                                 "Authorization": f"Bearer {self.api_key}",
                             },
                             files={
-                                "file": (filename, audio_file, "audio/ogg"),
+                                "file": (filename, audio_bytes, "audio/ogg"),
                             },
                             data={
                                 "model": "whisper-1",
@@ -112,12 +116,15 @@ class VoiceTranscriber:
         try:
             suffix = Path(filename).suffix or ".ogg"
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-                f.write(audio_data)
                 temp_path = Path(f.name)
+
+            async with aiofiles.open(temp_path, "wb") as f:
+                await f.write(audio_data)
 
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    with open(temp_path, "rb") as audio_file:
+                    async with aiofiles.open(temp_path, "rb") as audio_file:
+                        audio_bytes = await audio_file.read()
                         data = {
                             "model": "whisper-1",
                             "response_format": "text",
@@ -131,7 +138,7 @@ class VoiceTranscriber:
                                 "Authorization": f"Bearer {self.api_key}",
                             },
                             files={
-                                "file": (filename, audio_file, "audio/ogg"),
+                                "file": (filename, audio_bytes, "audio/ogg"),
                             },
                             data=data,
                         )

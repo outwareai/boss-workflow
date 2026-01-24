@@ -144,7 +144,8 @@ async def test_google_sheets():
             for w in worksheets:
                 try:
                     titles.append(w.title.encode('ascii', 'replace').decode())
-                except:
+                except (UnicodeEncodeError, UnicodeDecodeError, AttributeError) as e:
+                    # Fallback to raw title if encoding fails
                     titles.append(w.title)
             log_result("Google Sheets", True, f"Connected! Found {len(worksheets)} worksheets")
             return True

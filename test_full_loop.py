@@ -803,8 +803,9 @@ async def main():
                     with open(test_file) as f:
                         data = json.load(f)
                         progress["last_tests"].append({"file": test_file, "data": data})
-                except:
-                    pass
+                except (json.JSONDecodeError, IOError, ValueError) as e:
+                    # Skip corrupted or unreadable test result files
+                    print(f"Warning: Could not read {test_file}: {e}")
 
         # Save
         with open(progress_file, "w") as f:

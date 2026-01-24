@@ -20,6 +20,7 @@ from email.utils import parsedate_to_datetime
 import json
 import re
 from pathlib import Path
+import aiofiles
 
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google.oauth2.credentials import Credentials as OAuth2Credentials
@@ -185,7 +186,7 @@ class GmailIntegration:
             # First, check for token in environment variable (Railway deployment)
             if settings.gmail_oauth_token:
                 try:
-                    token_data = json.loads(settings.gmail_oauth_token)
+                    token_data = await asyncio.to_thread(json.loads, settings.gmail_oauth_token)
                     creds = OAuth2Credentials.from_authorized_user_info(
                         token_data, self.SCOPES
                     )
@@ -211,8 +212,8 @@ class GmailIntegration:
                         # Try to create from environment
                         if settings.gmail_oauth_credentials:
                             CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-                            with open(CREDENTIALS_PATH, 'w') as f:
-                                f.write(settings.gmail_oauth_credentials)
+                            async with aiofiles.open(CREDENTIALS_PATH, 'w') as f:
+                                await f.write(settings.gmail_oauth_credentials)
                         else:
                             logger.info("No OAuth2 credentials found. Run setup_gmail_oauth() first.")
                             return False
@@ -225,8 +226,8 @@ class GmailIntegration:
                 # Save token for next time (local file)
                 try:
                     TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-                    with open(TOKEN_PATH, 'w') as f:
-                        f.write(creds.to_json())
+                    async with aiofiles.open(TOKEN_PATH, 'w') as f:
+                        await f.write(creds.to_json())
                 except Exception as e:
                     logger.warning(f"Could not save token to file: {e}")
 
@@ -248,12 +249,14 @@ class GmailIntegration:
             return False
 
         try:
-            # Parse credentials
+            # Parse credentials (async)
             if settings.google_credentials_json.startswith('{'):
-                creds_dict = json.loads(settings.google_credentials_json)
+                creds_dict = await asyncio.to_thread(json.loads, settings.google_credentials_json)
             else:
-                with open(settings.google_credentials_json, 'r') as f:
-                    creds_dict = json.load(f)
+                def _read_creds_file(path):
+                    with open(path, 'r') as f:
+                        return json.load(f)
+                creds_dict = await asyncio.to_thread(_read_creds_file, settings.google_credentials_json)
 
             # Create credentials with domain-wide delegation
             credentials = ServiceAccountCredentials.from_service_account_info(

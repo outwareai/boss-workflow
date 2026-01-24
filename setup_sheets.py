@@ -119,8 +119,9 @@ def setup_advanced_sheets(spreadsheet):
             old_sheet = spreadsheet.worksheet(old_name)
             spreadsheet.del_worksheet(old_sheet)
             print(f"  Removed old sheet: {old_name}")
-        except:
-            pass
+        except Exception as e:
+            # Sheet might not exist, which is fine
+            print(f"  Skipped {old_name} (not found or already deleted): {e}")
 
     # ========================================
     # 1. DAILY TASKS - Main Task Tracker

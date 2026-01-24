@@ -52,12 +52,14 @@ class GoogleDriveIntegration:
             return False
 
         try:
-            # Parse credentials
+            # Parse credentials (async)
             if settings.google_credentials_json.startswith('{'):
-                creds_dict = json.loads(settings.google_credentials_json)
+                creds_dict = await asyncio.to_thread(json.loads, settings.google_credentials_json)
             else:
-                with open(settings.google_credentials_json, 'r') as f:
-                    creds_dict = json.load(f)
+                def _read_creds_file(path):
+                    with open(path, 'r') as f:
+                        return json.load(f)
+                creds_dict = await asyncio.to_thread(_read_creds_file, settings.google_credentials_json)
 
             credentials = Credentials.from_service_account_info(
                 creds_dict,
