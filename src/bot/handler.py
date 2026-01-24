@@ -154,6 +154,57 @@ class UnifiedHandler:
                 else:
                     return "Got the photo! What's this for?", None
 
+        # CRITICAL: Check for slash commands FIRST, before any conversation state handling
+        # This ensures commands like /task always start a new action, never treated as responses
+        if message.strip().startswith('/'):
+            command_parts = message.strip().split(maxsplit=1)
+            command = command_parts[0].lower()
+            command_text = command_parts[1] if len(command_parts) > 1 else ""
+
+            logger.info(f"[COMMAND] Detected command: {command}, text: {command_text[:50]}...")
+
+            # Clear any active conversation when starting a new command
+            # This prevents /task from being treated as a PREVIEW stage response
+            active_conv = await self.context.get_active_conversation(user_id)
+            if active_conv:
+                logger.info(f"[COMMAND] Clearing active conversation (stage: {active_conv.stage}) for new command: {command}")
+                await self.context.clear_active_conversation(user_id)
+
+            # Route to command handlers
+            if command == '/task':
+                # Start new task creation with the command text
+                response, _ = await self.context.start_conversation(
+                    user_id=user_id,
+                    chat_id=user_id,  # For Telegram, chat_id = user_id
+                    message=command_text if command_text else "Create a new task",
+                    is_urgent=False
+                )
+                return response, None
+            elif command == '/urgent':
+                response, _ = await self.context.start_conversation(
+                    user_id=user_id,
+                    chat_id=user_id,
+                    message=command_text if command_text else "Create an urgent task",
+                    is_urgent=True
+                )
+                return response, None
+            elif command == '/cancel':
+                await self.context.clear_active_conversation(user_id)
+                return "Cancelled. What would you like to do?", None
+            elif command == '/help':
+                from .commands import UnifiedCommands
+                commands = UnifiedCommands()
+                return await commands.handle_help(user_id), None
+            elif command == '/status':
+                from .commands import UnifiedCommands
+                commands = UnifiedCommands()
+                return await commands.handle_status(user_id), None
+            # Add more command handlers as needed
+            else:
+                # Unknown command - treat as regular message
+                logger.warning(f"[COMMAND] Unknown command: {command}, treating as regular message")
+                # Fall through to regular message handling
+
         # Check for pending dangerous actions first (like clear tasks confirmation)
         pending_action = self._pending_actions.get(user_id)
         if pending_action:
