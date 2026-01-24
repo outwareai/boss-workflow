@@ -84,3 +84,11 @@ data/
 *_results.json
 test_*_results.json
 conversation_test_results.json
+
+# Load test reports (Q3 2026)
+tests/load/reports/
+*.html
+*.csv
+*_stats.csv
+*_failures.csv
+*_exceptions.csv

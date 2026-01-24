@@ -444,8 +444,52 @@ try:
     if settings.use_slowapi_rate_limiting:
         # Use slowapi implementation
         from .middleware.slowapi_limiter import setup_rate_limiting
+        from slowapi.errors import RateLimitExceeded
+
         limiter = setup_rate_limiting(app, settings.redis_url)
         logger.info("Slowapi rate limiting enabled (via feature flag)")
+
+        # Import monitoring metrics
+        from .monitoring import rate_limit_violations_total
+
+        # Add custom exception handler for slowapi rate limit exceeded
+        @app.exception_handler(RateLimitExceeded)
+        async def slowapi_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+            """Handle slowapi rate limit exceeded with custom response."""
+            endpoint = request.url.path
+            client_ip = request.client.host if request.client else 'unknown'
+
+            logger.warning(
+                f"Rate limit exceeded: {client_ip} "
+                f"on {endpoint}"
+            )
+
+            # Record metric
+            try:
+                rate_limit_violations_total.labels(
+                    endpoint=endpoint,
+                    limiter="slowapi",
+                    client_type="api"
+                ).inc()
+            except Exception as me:
+                logger.warning(f"Failed to record rate limit metric: {me}")
+
+            # Extract retry_after from exception if available
+            retry_after = getattr(exc, 'retry_after', None)
+
+            return JSONResponse(
+                status_code=429,
+                headers={"Retry-After": str(int(retry_after)) if retry_after else "60"},
+                content={
+                    "error": "Rate limit exceeded",
+                    "message": "Too many requests. Please try again later.",
+                    "retry_after": retry_after or 60,
+                    "rate_limit": {
+                        "authenticated": settings.rate_limit_authenticated,
+                        "public": settings.rate_limit_public,
+                    }
+                }
+            )
     else:
         # Use existing custom middleware (default)
         from .middleware.rate_limit import RateLimitMiddleware
@@ -456,6 +500,26 @@ try:
         logger.info("Custom rate limiting middleware enabled (default)")
 except Exception as e:
     logger.warning(f"Rate limiting middleware disabled: {e}")
+
+# Q3 2026: Add Prometheus metrics middleware and endpoint
+try:
+    from prometheus_client import make_asgi_app
+    from prometheus_fastapi_instrumentator import Instrumentator
+    from .monitoring.middleware import metrics_middleware
+
+    # Add custom metrics middleware
+    app.middleware("http")(metrics_middleware)
+
+    # Mount Prometheus metrics endpoint
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
+
+    # Instrument FastAPI with default metrics
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics/default")
+
+    logger.info("Prometheus metrics enabled at /metrics")
+except ImportError as e:
+    logger.warning(f"Prometheus metrics disabled: {e}")
 
 # Register web routes (onboarding, OAuth, team management)
 from .web.routes import router as web_router
@@ -507,6 +571,8 @@ async def health_check():
 @app.get("/health/db")
 async def db_health():
     """Database connection pool health check."""
+    from .database.connection import get_pool_status
+
     try:
         db = get_database()
 
@@ -517,28 +583,38 @@ async def db_health():
                 "error": "Database not yet initialized"
             }
 
-        # Get pool statistics
-        engine = db.engine
-        if engine:
-            pool = engine.pool
-            return {
-                "status": "healthy",
-                "timestamp": __import__('datetime').datetime.now().isoformat(),
-                "pool_size": pool.size(),
-                "checked_in": pool.checkedin(),
-                "checked_out": pool.checkedout(),
-                "overflow": pool.overflow(),
-                "total_connections": pool.size() + pool.overflow(),
-                "max_connections": pool.size() + pool._max_overflow,
-            }
-        else:
-            return {
-                "status": "error",
-                "error": "Engine not available"
-            }
+        # Get pool status using new helper
+        pool_status = await get_pool_status()
+
+        return {
+            "timestamp": __import__('datetime').datetime.now().isoformat(),
+            **pool_status
+        }
 
     except Exception as e:
         logger.error(f"Error checking database health: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }
+
+
+@app.get("/api/admin/pool-status")
+async def get_admin_pool_status():
+    """
+    Get detailed database connection pool status with health checks.
+
+    Q3 2026: Pool monitoring and leak detection endpoint.
+    """
+    from .database.health import get_detailed_health_report
+
+    try:
+        report = await get_detailed_health_report()
+        return report
+
+    except Exception as e:
+        logger.error(f"Error getting pool status: {e}")
         return {
             "status": "error",
             "error": str(e),

@@ -93,6 +93,44 @@ errors_total = Counter(
     ['type', 'severity']
 )
 
+# Rate Limiting Metrics (Q1 2026 - Slowapi production rollout)
+rate_limit_violations_total = Counter(
+    'rate_limit_violations_total',
+    'Total rate limit violations by endpoint and limiter',
+    ['endpoint', 'limiter', 'client_type'],
+    help='Tracks rate limit violations (slowapi vs custom middleware)'
+)
+
+rate_limit_near_limit = Gauge(
+    'rate_limit_near_limit',
+    'Number of clients approaching rate limit (80% of limit)',
+    ['endpoint'],
+    help='Gauge of clients about to hit rate limit'
+)
+
+redis_connection_errors = Counter(
+    'redis_connection_errors_total',
+    'Total Redis connection errors for slowapi backend',
+    ['operation'],
+    help='Redis backend connectivity issues (connect, get, set)'
+)
+
+redis_operation_duration_seconds = Histogram(
+    'redis_operation_duration_seconds',
+    'Redis operation duration in seconds',
+    ['operation'],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1),
+    help='Slowapi rate limiter Redis backend performance'
+)
+
+# Feature Flag Metrics (Q1 2026)
+feature_flag_status = Gauge(
+    'feature_flag_status',
+    'Current feature flag status (0=disabled, 1=enabled)',
+    ['feature_name'],
+    help='Tracks which experimental features are enabled'
+)
+
 # System Info
 app_info = Info('app', 'Application information')
 app_info.info({

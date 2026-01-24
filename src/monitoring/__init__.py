@@ -17,11 +17,16 @@ from .prometheus import (
     cache_operations_total,
     discord_messages_sent,
     errors_total,
+    rate_limit_violations_total,
+    rate_limit_near_limit,
+    redis_connection_errors,
+    redis_operation_duration_seconds,
     update_db_pool_metrics,
     record_task_status_counts,
 )
 
 from .middleware import metrics_middleware
+from .alerts import alert_manager, AlertManager, AlertSeverity
 
 __all__ = [
     'http_requests_total',
@@ -37,7 +42,14 @@ __all__ = [
     'cache_operations_total',
     'discord_messages_sent',
     'errors_total',
+    'rate_limit_violations_total',
+    'rate_limit_near_limit',
+    'redis_connection_errors',
+    'redis_operation_duration_seconds',
     'update_db_pool_metrics',
     'record_task_status_counts',
     'metrics_middleware',
+    'alert_manager',
+    'AlertManager',
+    'AlertSeverity',
 ]

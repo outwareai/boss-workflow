@@ -572,4 +572,746 @@ tests/unit/test_session_manager.py::test_singleton_pattern PASSED        [ 92%]
 tests/unit/test_session_manager.py::test_init_session_manager PASSED     [ 92%]
 tests/unit/test_session_manager.py::test_full_workflow PASSED            [ 92%]
 tests/unit/test_session_manager.py::test_message_context_short_ttl PASSED [ 93%]
-tests/unit/test_session_manager.py::test_high_volume_operations 
+tests/unit/test_session_manager.py::test_high_volume_operations PASSED   [ 93%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_initialize_success PASSED [ 93%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_initialize_failure PASSED [ 93%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_add_task_success PASSED [ 93%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_add_task_not_initialized PASSED [ 93%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_update_task_success PASSED [ 94%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_update_task_not_found PASSED [ 94%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_get_task_success PASSED [ 94%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_get_task_not_found PASSED [ 94%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_delete_task_success PASSED [ 94%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_delete_task_header_protection PASSED [ 94%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_get_all_tasks PASSED [ 95%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_get_tasks_by_status PASSED [ 95%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_get_tasks_by_assignee PASSED [ 95%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_add_note PASSED [ 95%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_update_team_member PASSED [ 95%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_get_all_team_members PASSED [ 95%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_delete_team_member PASSED [ 96%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_generate_weekly_report PASSED [ 96%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_generate_monthly_report PASSED [ 96%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_archive_task PASSED [ 96%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_get_overdue_tasks PASSED [ 96%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_search_tasks_by_query PASSED [ 96%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_bulk_update_status PASSED [ 97%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_bulk_assign PASSED [ 97%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_delete_tasks_batch PASSED [ 97%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_add_attendance_log PASSED [ 97%]
+tests/unit/test_sheets_integration.py::TestGoogleSheetsIntegration::test_clear_team_sheet PASSED [ 97%]
+tests/unit/test_slowapi_limiter.py::test_create_limiter_with_redis PASSED [ 97%]
+tests/unit/test_slowapi_limiter.py::test_create_limiter_without_redis PASSED [ 98%]
+tests/unit/test_slowapi_limiter.py::test_setup_rate_limiting PASSED      [ 98%]
+tests/unit/test_slowapi_limiter.py::test_limiter_enabled_by_default PASSED [ 98%]
+tests/unit/test_slowapi_limiter.py::test_limiter_has_default_limits PASSED [ 98%]
+tests/unit/test_validation_handler.py::test_can_handle_approve PASSED    [ 98%]
+tests/unit/test_validation_handler.py::test_can_handle_reject PASSED     [ 98%]
+tests/unit/test_validation_handler.py::test_can_handle_normal_message PASSED [ 99%]
+tests/unit/test_validation_handler.py::test_handle_approve PASSED        [ 99%]
+tests/unit/test_validation_handler.py::test_handle_approve_no_pending PASSED [ 99%]
+tests/unit/test_validation_handler.py::test_request_validation PASSED    [ 99%]
+tests/unit/test_validation_handler.py::test_handle_reject PASSED         [ 99%]
+tests/unit/test_validation_handler.py::test_get_pending_validations PASSED [ 99%]
+tests/unit/test_validation_handler.py::test_get_validation_count PASSED  [100%]
+
+================================== FAILURES ===================================
+___________________ test_create_conversation_error_handling ___________________
+src\database\repositories\conversations.py:61: in create
+    await session.flush()
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py:2291: in _execute_mock_call
+    raise effect
+E   Exception: Database error
+
+The above exception was the direct cause of the following exception:
+tests\unit\repositories\test_conversations_repository.py:126: in test_create_conversation_error_handling
+    result = await repo.create(user_id="123456789")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\conversations.py:73: in create
+    raise DatabaseOperationError(f"Failed to create conversation: {e}") from e
+E   src.database.exceptions.DatabaseOperationError: Failed to create conversation: Database error
+------------------------------ Captured log call ------------------------------
+ERROR    src.database.repositories.conversations:conversations.py:72 Error creating conversation: Database error
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\conversations.py", line 61, in create
+    await session.flush()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 2291, in _execute_mock_call
+    raise effect
+Exception: Database error
+___________________ test_add_message_conversation_not_found ___________________
+tests\unit\repositories\test_conversations_repository.py:464: in test_add_message_conversation_not_found
+    result = await repo.add_message(
+src\database\repositories\conversations.py:252: in add_message
+    raise EntityNotFoundError(f"Conversation {conversation_id} not found")
+E   src.database.exceptions.EntityNotFoundError: Conversation CONV-nonexistent not found
+____________________________ test_update_after_run ____________________________
+tests\unit\repositories\test_recurring_repository.py:494: in test_update_after_run
+    assert result is True
+E   assert <src.database.models.RecurringTaskDB object at 0x00000277615DF9E0> is True
+_______________________ test_update_after_run_not_found _______________________
+tests\unit\repositories\test_recurring_repository.py:509: in test_update_after_run_not_found
+    result = await repo.update_after_run("REC-nonexistent")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:339: in update_after_run
+    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
+E   src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+__________________________ test_pause_recurring_task __________________________
+tests\unit\repositories\test_recurring_repository.py:530: in test_pause_recurring_task
+    assert result is True
+E   assert <src.database.models.RecurringTaskDB object at 0x00000277615CAB40> is True
+____________________________ test_pause_not_found _____________________________
+tests\unit\repositories\test_recurring_repository.py:544: in test_pause_not_found
+    result = await repo.pause("REC-nonexistent")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:375: in pause
+    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
+E   src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+_________________________ test_resume_recurring_task __________________________
+tests\unit\repositories\test_recurring_repository.py:562: in test_resume_recurring_task
+    assert result is True
+E   assert <src.database.models.RecurringTaskDB object at 0x000002776157BB30> is True
+____________________________ test_resume_not_found ____________________________
+tests\unit\repositories\test_recurring_repository.py:594: in test_resume_not_found
+    result = await repo.resume("REC-nonexistent")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:405: in resume
+    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
+E   src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+____________________________ test_delete_not_found ____________________________
+tests\unit\repositories\test_recurring_repository.py:629: in test_delete_not_found
+    result = await repo.delete("REC-nonexistent")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:442: in delete
+    raise EntityNotFoundError(f"Recurring task {recurring_id} not found")
+E   src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+________________________ test_create_task_duplicate_id ________________________
+src\database\repositories\tasks.py:66: in create
+    await session.flush()
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py:2291: in _execute_mock_call
+    raise effect
+E   Exception: Duplicate key
+
+During handling of the above exception, another exception occurred:
+tests\unit\repositories\test_task_repository.py:123: in test_create_task_duplicate_id
+    result = await repo.create(task_data)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\tasks.py:79: in create
+    raise DatabaseOperationError(f"Failed to create task: {e}")
+E   src.database.exceptions.DatabaseOperationError: Failed to create task: Duplicate key
+------------------------------ Captured log call ------------------------------
+ERROR    src.database.repositories.tasks:tasks.py:78 CRITICAL: Task creation failed: Duplicate key
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\tasks.py", line 66, in create
+    await session.flush()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py", line 2291, in _execute_mock_call
+    raise effect
+Exception: Duplicate key
+_________________________ test_update_task_not_found __________________________
+tests\unit\repositories\test_task_repository.py:251: in test_update_task_not_found
+    result = await repo.update("TASK-999", {"title": "New title"})
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\tasks.py:128: in update
+    raise EntityNotFoundError(f"Task {task_id} not found for update")
+E   src.database.exceptions.EntityNotFoundError: Task TASK-999 not found for update
+_________________________ test_delete_task_not_found __________________________
+tests\unit\repositories\test_task_repository.py:304: in test_delete_task_not_found
+    result = await repo.delete("TASK-999")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\tasks.py:158: in delete
+    raise EntityNotFoundError(f"Task {task_id} not found for deletion")
+E   src.database.exceptions.EntityNotFoundError: Task TASK-999 not found for deletion
+________________________ test_recurring_tasks_success _________________________
+src\database\repositories\recurring.py:309: in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_scheduler_jobs.py:564: in test_recurring_tasks_success
+    await scheduler_manager._recurring_tasks_job()
+src\scheduler\jobs.py:573: in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:320: in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+E   src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.database.repositories.recurring:recurring.py:319 Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+ERROR    src.scheduler.jobs:jobs.py:621 CRITICAL: Recurring Tasks failed: Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 573, in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 320, in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+_________________________ test_recurring_tasks_no_due _________________________
+src\database\repositories\recurring.py:309: in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_scheduler_jobs.py:575: in test_recurring_tasks_no_due
+    await scheduler_manager._recurring_tasks_job()
+src\scheduler\jobs.py:573: in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:320: in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+E   src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.database.repositories.recurring:recurring.py:319 Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+ERROR    src.scheduler.jobs:jobs.py:621 CRITICAL: Recurring Tasks failed: Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 573, in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 320, in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+________________________ test_recurring_tasks_multiple ________________________
+src\database\repositories\recurring.py:309: in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_scheduler_jobs.py:603: in test_recurring_tasks_multiple
+    await scheduler_manager._recurring_tasks_job()
+src\scheduler\jobs.py:573: in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:320: in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+E   src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.database.repositories.recurring:recurring.py:319 Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+ERROR    src.scheduler.jobs:jobs.py:621 CRITICAL: Recurring Tasks failed: Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 573, in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 320, in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+____________________ test_recurring_tasks_creation_failure ____________________
+src\database\repositories\recurring.py:309: in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_scheduler_jobs.py:629: in test_recurring_tasks_creation_failure
+    await scheduler_manager._recurring_tasks_job()
+src\scheduler\jobs.py:573: in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:320: in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+E   src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.database.repositories.recurring:recurring.py:319 Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+ERROR    src.scheduler.jobs:jobs.py:621 CRITICAL: Recurring Tasks failed: Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 573, in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 320, in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+______________________ test_recurring_tasks_discord_post ______________________
+src\database\repositories\recurring.py:309: in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+tests\unit\test_scheduler_jobs.py:652: in test_recurring_tasks_discord_post
+    await scheduler_manager._recurring_tasks_job()
+src\scheduler\jobs.py:573: in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\recurring.py:320: in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+E   src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.database.repositories.recurring:recurring.py:319 Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+ERROR    src.scheduler.jobs:jobs.py:621 CRITICAL: Recurring Tasks failed: Failed to get due recurring tasks: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 309, in get_due_now
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 573, in _recurring_tasks_job
+    due_tasks = await recurring_repo.get_due_now()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\recurring.py", line 320, in get_due_now
+    raise DatabaseOperationError(f"Failed to get due recurring tasks: {e}") from e
+src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+________________________ test_attendance_sync_success _________________________
+tests\unit\test_scheduler_jobs.py:786: in test_attendance_sync_success
+    await scheduler_manager._sync_attendance_job()
+src\scheduler\jobs.py:735: in _sync_attendance_job
+    unsynced = await attendance_repo.get_unsynced_records(limit=100)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\attendance.py:375: in get_unsynced_records
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.scheduler.jobs:jobs.py:775 CRITICAL: Attendance Sync failed: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 735, in _sync_attendance_job
+    unsynced = await attendance_repo.get_unsynced_records(limit=100)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\attendance.py", line 375, in get_unsynced_records
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+_______________________ test_attendance_sync_no_records _______________________
+tests\unit\test_scheduler_jobs.py:799: in test_attendance_sync_no_records
+    await scheduler_manager._sync_attendance_job()
+src\scheduler\jobs.py:735: in _sync_attendance_job
+    unsynced = await attendance_repo.get_unsynced_records(limit=100)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\attendance.py:375: in get_unsynced_records
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.scheduler.jobs:jobs.py:775 CRITICAL: Attendance Sync failed: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 735, in _sync_attendance_job
+    unsynced = await attendance_repo.get_unsynced_records(limit=100)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\attendance.py", line 375, in get_unsynced_records
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+____________________ test_attendance_sync_multiple_records ____________________
+tests\unit\test_scheduler_jobs.py:828: in test_attendance_sync_multiple_records
+    await scheduler_manager._sync_attendance_job()
+src\scheduler\jobs.py:735: in _sync_attendance_job
+    unsynced = await attendance_repo.get_unsynced_records(limit=100)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\attendance.py:375: in get_unsynced_records
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.scheduler.jobs:jobs.py:775 CRITICAL: Attendance Sync failed: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 735, in _sync_attendance_job
+    unsynced = await attendance_repo.get_unsynced_records(limit=100)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\attendance.py", line 375, in get_unsynced_records
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+_______________________ test_weekly_time_report_success _______________________
+tests\unit\test_scheduler_jobs.py:874: in test_weekly_time_report_success
+    await scheduler_manager._weekly_time_report_job()
+src\scheduler\jobs.py:796: in _weekly_time_report_job
+    summaries = await attendance_repo.get_team_weekly_summary(last_monday)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\attendance.py:343: in get_team_weekly_summary
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.scheduler.jobs:jobs.py:857 CRITICAL: Weekly Time Report failed: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 796, in _weekly_time_report_job
+    summaries = await attendance_repo.get_team_weekly_summary(last_monday)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\attendance.py", line 343, in get_team_weekly_summary
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+_______________________ test_weekly_time_report_no_data _______________________
+tests\unit\test_scheduler_jobs.py:888: in test_weekly_time_report_no_data
+    await scheduler_manager._weekly_time_report_job()
+src\scheduler\jobs.py:796: in _weekly_time_report_job
+    summaries = await attendance_repo.get_team_weekly_summary(last_monday)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\attendance.py:343: in get_team_weekly_summary
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.scheduler.jobs:jobs.py:857 CRITICAL: Weekly Time Report failed: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 796, in _weekly_time_report_job
+    summaries = await attendance_repo.get_team_weekly_summary(last_monday)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\attendance.py", line 343, in get_team_weekly_summary
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+___________________ test_weekly_time_report_with_late_days ____________________
+tests\unit\test_scheduler_jobs.py:915: in test_weekly_time_report_with_late_days
+    await scheduler_manager._weekly_time_report_job()
+src\scheduler\jobs.py:796: in _weekly_time_report_job
+    summaries = await attendance_repo.get_team_weekly_summary(last_monday)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\database\repositories\attendance.py:343: in get_team_weekly_summary
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src\database\connection.py:153: in session
+    ???
+E   RuntimeError: Database not initialized
+------------------------------ Captured log call ------------------------------
+WARNING  src.database.connection:connection.py:39 DATABASE_URL not configured
+ERROR    src.scheduler.jobs:jobs.py:857 CRITICAL: Weekly Time Report failed: Database not initialized
+Traceback (most recent call last):
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\scheduler\jobs.py", line 796, in _weekly_time_report_job
+    summaries = await attendance_repo.get_team_weekly_summary(last_monday)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\repositories\attendance.py", line 343, in get_team_weekly_summary
+    async with self.db.session() as session:
+               ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\ACCWARE.AI\AUTOMATION\boss-workflow\src\database\connection.py", line 153, in session
+RuntimeError: Database not initialized
+_______________________ test_proactive_checkin_success ________________________
+tests\unit\test_scheduler_jobs.py:961: in test_proactive_checkin_success
+    scheduler_manager.discord.post_alert.assert_called()
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\unittest\mock.py:918: in assert_called
+    raise AssertionError(msg)
+E   AssertionError: Expected 'post_alert' to have been called.
+------------------------------ Captured log call ------------------------------
+ERROR    src.scheduler.jobs:jobs.py:1008 Error sending check-in for TASK-001: object NoneType can't be used in 'await' expression
+ERROR    src.scheduler.jobs:jobs.py:1008 Error sending check-in for TASK-001: object NoneType can't be used in 'await' expression
+____________________ test_proactive_checkin_limits_to_five ____________________
+tests\unit\test_scheduler_jobs.py:1024: in test_proactive_checkin_limits_to_five
+    assert scheduler_manager.discord.post_alert.call_count == 5
+E   AssertionError: assert 0 == 5
+E    +  where 0 = <AsyncMock name='mock.post_alert' id='2711759925616'>.call_count
+E    +    where <AsyncMock name='mock.post_alert' id='2711759925616'> = <AsyncMock id='2711765025184'>.post_alert
+E    +      where <AsyncMock id='2711765025184'> = <src.scheduler.jobs.SchedulerManager object at 0x0000027762DD18E0>.discord
+------------------------------ Captured log call ------------------------------
+ERROR    src.scheduler.jobs:jobs.py:1008 Error sending check-in for TASK-000: object NoneType can't be used in 'await' expression
+ERROR    src.scheduler.jobs:jobs.py:1008 Error sending check-in for TASK-001: object NoneType can't be used in 'await' expression
+ERROR    src.scheduler.jobs:jobs.py:1008 Error sending check-in for TASK-002: object NoneType can't be used in 'await' expression
+ERROR    src.scheduler.jobs:jobs.py:1008 Error sending check-in for TASK-003: object NoneType can't be used in 'await' expression
+ERROR    src.scheduler.jobs:jobs.py:1008 Error sending check-in for TASK-004: object NoneType can't be used in 'await' expression
+
+---------- coverage: platform win32, python 3.12.10-final-0 ----------
+Name                                         Stmts   Miss  Cover
+----------------------------------------------------------------
+src\__init__.py                                  1      0   100%
+src\ai\__init__.py                               7      0   100%
+src\ai\clarifier.py                            538    501     7%
+src\ai\deepseek.py                             107     12    89%
+src\ai\email_summarizer.py                     114     86    25%
+src\ai\intent.py                               293    224    24%
+src\ai\prompts.py                               55      4    93%
+src\ai\reviewer.py                             136     99    27%
+src\ai\staff_assistant.py                      193    193     0%
+src\ai\task_processor.py                       206    206     0%
+src\ai\transcriber.py                           78     78     0%
+src\ai\vision.py                                60     60     0%
+src\bot\__init__.py                              5      0   100%
+src\bot\base_handler.py                         74      7    91%
+src\bot\commands.py                            639    639     0%
+src\bot\conversation.py                        180    146    19%
+src\bot\handler.py                            1713   1601     7%
+src\bot\handlers\__init__.py                     8      0   100%
+src\bot\handlers\approval_handler.py           158     43    73%
+src\bot\handlers\command_handler.py             75     11    85%
+src\bot\handlers\modification_handler.py        50     19    62%
+src\bot\handlers\query_handler.py              305    209    31%
+src\bot\handlers\routing_handler.py            119     48    60%
+src\bot\handlers\unified_wrapper.py             39     24    38%
+src\bot\handlers\validation_handler.py         191     65    66%
+src\bot\session_manager.py                     407    111    73%
+src\bot\staff_handler.py                       181    181     0%
+src\bot\telegram.py                            362    362     0%
+src\bot\telegram_simple.py                     161    125    22%
+src\bot\validation.py                          214    165    23%
+src\cache\__init__.py                            4      4     0%
+src\cache\decorators.py                         70     70     0%
+src\cache\redis_client.py                      128    128     0%
+src\database\__init__.py                         3      0   100%
+src\database\connection.py                     144    125    13%
+src\database\exceptions.py                      12      0   100%
+src\database\models.py                         384      0   100%
+src\database\repositories\__init__.py           10      0   100%
+src\database\repositories\ai_memory.py         131     18    86%
+src\database\repositories\attendance.py        204    170    17%
+src\database\repositories\audit.py             118     10    92%
+src\database\repositories\conversations.py     148     25    83%
+src\database\repositories\oauth.py             112     45    60%
+src\database\repositories\projects.py          110     28    75%
+src\database\repositories\recurring.py         268     53    80%
+src\database\repositories\staff_context.py     176    138    22%
+src\database\repositories\tasks.py             282    114    60%
+src\database\repositories\team.py              113     38    66%
+src\database\repositories\time_tracking.py     181    181     0%
+src\database\sync.py                            95     74    22%
+src\integrations\__init__.py                     8      0   100%
+src\integrations\calendar.py                   238     50    79%
+src\integrations\discord.py                    654    272    58%
+src\integrations\discord_bot.py                501    456     9%
+src\integrations\drive.py                      151    121    20%
+src\integrations\gmail.py                      268    193    28%
+src\integrations\meet.py                        99     75    24%
+src\integrations\sheets.py                     678    303    55%
+src\integrations\tasks.py                      233    196    16%
+src\main.py                                    797    450    44%
+src\memory\__init__.py                           4      0   100%
+src\memory\context.py                          164    131    20%
+src\memory\learning.py                         145    121    17%
+src\memory\pattern_learning.py                 188    188     0%
+src\memory\preferences.py                      196    122    38%
+src\memory\task_context.py                     280    218    22%
+src\middleware\rate_limit.py                   104     42    60%
+src\middleware\slowapi_limiter.py               31     11    65%
+src\models\__init__.py                           4      0   100%
+src\models\api_validation.py                   132      4    97%
+src\models\conversation.py                      90     26    71%
+src\models\task.py                             148     47    68%
+src\models\validation.py                       129     59    54%
+src\monitoring\__init__.py                       3      3     0%
+src\monitoring\alerts.py                        67     67     0%
+src\monitoring\middleware.py                    24     24     0%
+src\monitoring\prometheus.py                    28     28     0%
+src\scheduler\__init__.py                        3      0   100%
+src\scheduler\health_checks.py                  71     71     0%
+src\scheduler\jobs.py                          442    151    66%
+src\scheduler\reminders.py                     166    135    19%
+src\services\__init__.py                         2      0   100%
+src\services\attendance.py                     302    273    10%
+src\services\message_queue.py                  157    157     0%
+src\services\rate_limiter.py                   110    110     0%
+src\utils\__init__.py                            4      0   100%
+src\utils\audit_logger.py                       70     33    53%
+src\utils\background_tasks.py                   26     10    62%
+src\utils\datetime_utils.py                     69     57    17%
+src\utils\encryption.py                         56      8    86%
+src\utils\retry.py                              58     22    62%
+src\utils\team_utils.py                         77     61    21%
+src\utils\validation.py                         78     55    29%
+src\web\__init__.py                              2      0   100%
+src\web\routes.py                              199    158    21%
+----------------------------------------------------------------
+TOTAL                                        16618  10948    34%
+Coverage HTML written to dir htmlcov
+
+=========================== short test summary info ===========================
+FAILED tests/unit/repositories/test_conversations_repository.py::test_create_conversation_error_handling - src.database.exceptions.DatabaseOperationError: Failed to create conversation: Database error
+FAILED tests/unit/repositories/test_conversations_repository.py::test_add_message_conversation_not_found - src.database.exceptions.EntityNotFoundError: Conversation CONV-nonexistent not found
+FAILED tests/unit/repositories/test_recurring_repository.py::test_update_after_run - assert <src.database.models.RecurringTaskDB object at 0x00000277615DF9E0> is True
+FAILED tests/unit/repositories/test_recurring_repository.py::test_update_after_run_not_found - src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+FAILED tests/unit/repositories/test_recurring_repository.py::test_pause_recurring_task - assert <src.database.models.RecurringTaskDB object at 0x00000277615CAB40> is True
+FAILED tests/unit/repositories/test_recurring_repository.py::test_pause_not_found - src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+FAILED tests/unit/repositories/test_recurring_repository.py::test_resume_recurring_task - assert <src.database.models.RecurringTaskDB object at 0x000002776157BB30> is True
+FAILED tests/unit/repositories/test_recurring_repository.py::test_resume_not_found - src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+FAILED tests/unit/repositories/test_recurring_repository.py::test_delete_not_found - src.database.exceptions.EntityNotFoundError: Recurring task REC-nonexistent not found
+FAILED tests/unit/repositories/test_task_repository.py::test_create_task_duplicate_id - src.database.exceptions.DatabaseOperationError: Failed to create task: Duplicate key
+FAILED tests/unit/repositories/test_task_repository.py::test_update_task_not_found - src.database.exceptions.EntityNotFoundError: Task TASK-999 not found for update
+FAILED tests/unit/repositories/test_task_repository.py::test_delete_task_not_found - src.database.exceptions.EntityNotFoundError: Task TASK-999 not found for deletion
+FAILED tests/unit/test_scheduler_jobs.py::test_recurring_tasks_success - src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_recurring_tasks_no_due - src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_recurring_tasks_multiple - src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_recurring_tasks_creation_failure - src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_recurring_tasks_discord_post - src.database.exceptions.DatabaseOperationError: Failed to get due recurring tasks: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_attendance_sync_success - RuntimeError: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_attendance_sync_no_records - RuntimeError: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_attendance_sync_multiple_records - RuntimeError: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_weekly_time_report_success - RuntimeError: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_weekly_time_report_no_data - RuntimeError: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_weekly_time_report_with_late_days - RuntimeError: Database not initialized
+FAILED tests/unit/test_scheduler_jobs.py::test_proactive_checkin_success - AssertionError: Expected 'post_alert' to have been called.
+FAILED tests/unit/test_scheduler_jobs.py::test_proactive_checkin_limits_to_five - AssertionError: assert 0 == 5
+ +  where 0 = <AsyncMock name='mock.post_alert' id='2711759925616'>.call_count
+ +    where <AsyncMock name='mock.post_alert' id='2711759925616'> = <AsyncMock id='2711765025184'>.post_alert
+ +      where <AsyncMock id='2711765025184'> = <src.scheduler.jobs.SchedulerManager object at 0x0000027762DD18E0>.discord
+=========== 25 failed, 582 passed, 83 warnings in 81.30s (0:01:21) ============

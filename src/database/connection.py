@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncEngine,
 )
-from sqlalchemy.pool import NullPool, QueuePool
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 
 from config import settings
 from .models import Base
@@ -63,7 +63,7 @@ class Database:
             else:
                 # Production pool configuration (configurable via settings)
                 pool_config = {
-                    "poolclass": QueuePool,
+                    "poolclass": AsyncAdaptedQueuePool,
                     "pool_size": settings.db_pool_size,          # Persistent connections
                     "max_overflow": settings.db_max_overflow,    # Burst connections
                     "pool_timeout": settings.db_pool_timeout,    # Wait time for connection
@@ -334,3 +334,9 @@ async def check_pool_health() -> bool:
         )
 
     return True
+
+
+def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Get a database session context manager (helper for async with)."""
+    db = get_database()
+    return db.session()

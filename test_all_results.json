@@ -11,7 +11,7 @@
     {
       "name": "complex",
       "passed": true,
-      "complexity": 5,
+      "complexity": null,
       "questions": null,
       "task_created": false,
       "intent_detected": true
@@ -23,5 +23,5 @@
       "zea": true
     }
   ],
-  "timestamp": "2026-01-24T12:34:47.347889"
+  "timestamp": "2026-01-24T17:58:08.932072+00:00"
 }

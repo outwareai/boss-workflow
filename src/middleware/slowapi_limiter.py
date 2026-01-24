@@ -85,5 +85,14 @@ def setup_rate_limiting(app, redis_url: str = None):
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+    # Set feature flag metric
+    try:
+        from ..monitoring import feature_flag_status
+        feature_flag_status.labels(feature_name="slowapi_rate_limiting").set(1)
+    except ImportError:
+        logger.warning("Monitoring module not available for metrics")
+    except Exception as e:
+        logger.warning(f"Failed to set feature flag metric: {e}")
+
     logger.info("Slowapi rate limiting enabled")
     return limiter

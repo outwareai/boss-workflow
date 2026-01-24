@@ -40,6 +40,10 @@ try:
 except ImportError:
     METRICS_ENABLED = False
 
+# Q3 2026: Import Redis caching
+from ...cache.decorators import cached, cache_invalidate
+from ...cache.redis_client import cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +57,8 @@ class TaskRepository:
 
     async def create(self, task_data: Dict[str, Any]) -> TaskDB:
         """Create a new task."""
+        start_time = time.time()
+
         async with self.db.session() as session:
             try:
                 task = TaskDB(
@@ -79,6 +85,21 @@ class TaskRepository:
                 await session.flush()
 
                 logger.info(f"Created task {task.task_id} in database")
+
+                # Q3 2026: Record metrics
+                if METRICS_ENABLED:
+                    try:
+                        tasks_created_total.labels(
+                            assignee=task.assignee or 'unassigned',
+                            priority=task.priority
+                        ).inc()
+
+                        duration = time.time() - start_time
+                        db_query_duration.labels(operation='create_task').observe(duration)
+                        db_queries_total.labels(operation='create_task').inc()
+                    except Exception as e:
+                        logger.warning(f"Failed to record task creation metrics: {e}")
+
                 return task
 
             except IntegrityError as e:
@@ -202,6 +223,8 @@ class TaskRepository:
         reason: Optional[str] = None
     ) -> Optional[TaskDB]:
         """Change task status with proper tracking."""
+        start_time = time.time()
+
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB).where(TaskDB.task_id == task_id)
@@ -221,6 +244,16 @@ class TaskRepository:
                 task.started_at = datetime.now()
             elif new_status == "completed":
                 task.completed_at = datetime.now()
+
+                # Q3 2026: Record completion metric
+                if METRICS_ENABLED:
+                    try:
+                        tasks_completed_total.labels(
+                            assignee=task.assignee or 'unassigned'
+                        ).inc()
+                    except Exception as e:
+                        logger.warning(f"Failed to record task completion metric: {e}")
+
             elif new_status == "delayed":
                 if task.deadline and not task.original_deadline:
                     task.original_deadline = task.deadline
@@ -229,16 +262,35 @@ class TaskRepository:
 
             await session.flush()
             logger.info(f"Task {task_id} status changed: {old_status} -> {new_status}")
+
+            # Q3 2026: Record query metrics
+            if METRICS_ENABLED:
+                try:
+                    duration = time.time() - start_time
+                    db_query_duration.labels(operation='change_status').observe(duration)
+                    db_queries_total.labels(operation='change_status').inc()
+                except Exception as e:
+                    logger.warning(f"Failed to record status change metrics: {e}")
+
             return task
 
     # ==================== QUERY METHODS ====================
 
     async def get_all(self, limit: int = 100, offset: int = 0) -> List[TaskDB]:
-        """Get all tasks with pagination support."""
+        """
+        Get all tasks with pagination support.
+        
+        Q3 2026: Added comprehensive eager loading.
+        """
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
-                .options(selectinload(TaskDB.subtasks))
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.dependencies_in),
+                    selectinload(TaskDB.dependencies_out),
+                    selectinload(TaskDB.project)
+                )
                 .order_by(TaskDB.created_at.desc())
                 .limit(limit)
                 .offset(offset)
@@ -298,7 +350,11 @@ class TaskRepository:
             return list(result.scalars().all())
 
     async def get_overdue(self) -> List[TaskDB]:
-        """Get overdue tasks."""
+        """
+        Get overdue tasks.
+        
+        Q3 2026: Added eager loading to prevent N+1 queries.
+        """
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
@@ -308,12 +364,22 @@ class TaskRepository:
                         TaskDB.status.notin_(["completed", "cancelled"]),
                     )
                 )
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.dependencies_in),
+                    selectinload(TaskDB.dependencies_out),
+                    selectinload(TaskDB.project)
+                )
                 .order_by(TaskDB.deadline.asc())
             )
             return list(result.scalars().all())
 
     async def get_due_soon(self, hours: int = 24) -> List[TaskDB]:
-        """Get tasks due within X hours."""
+        """
+        Get tasks due within X hours.
+        
+        Q3 2026: Added eager loading to prevent N+1 queries.
+        """
         deadline_threshold = datetime.now() + timedelta(hours=hours)
         async with self.db.session() as session:
             result = await session.execute(
@@ -325,18 +391,101 @@ class TaskRepository:
                         TaskDB.status.notin_(["completed", "cancelled"]),
                     )
                 )
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.dependencies_in),
+                    selectinload(TaskDB.dependencies_out),
+                    selectinload(TaskDB.project)
+                )
                 .order_by(TaskDB.deadline.asc())
             )
             return list(result.scalars().all())
 
     async def get_by_project(self, project_id: int) -> List[TaskDB]:
-        """Get tasks in a project."""
+        """
+        Get tasks in a project.
+        
+        Q3 2026: Added eager loading to prevent N+1 queries.
+        """
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
                 .where(TaskDB.project_id == project_id)
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.dependencies_in),
+                    selectinload(TaskDB.dependencies_out),
+                    selectinload(TaskDB.project)
+                )
                 .order_by(TaskDB.created_at.desc())
             )
+            return list(result.scalars().all())
+
+    async def search(
+        self,
+        query: str,
+        limit: int = 50,
+        offset: int = 0,
+        status_filter: Optional[List[str]] = None,
+        assignee_filter: Optional[str] = None,
+        priority_filter: Optional[List[str]] = None,
+    ) -> List[TaskDB]:
+        """
+        Full-text search tasks by title and description.
+        
+        Q3 2026: Added full-text search using PostgreSQL GIN indexes.
+        
+        Args:
+            query: Search query (natural language)
+            limit: Maximum results to return
+            offset: Pagination offset
+            status_filter: Filter by status(es)
+            assignee_filter: Filter by assignee
+            priority_filter: Filter by priority/priorities
+        
+        Returns:
+            List of matching tasks, ranked by relevance
+        """
+        from sqlalchemy import text, func
+        
+        async with self.db.session() as session:
+            # Build WHERE conditions
+            conditions = []
+            
+            # Full-text search condition
+            search_vector = func.to_tsvector('english', TaskDB.title + ' ' + func.coalesce(TaskDB.description, ''))
+            search_query = func.plainto_tsquery('english', query)
+            conditions.append(search_vector.op('@@')(search_query))
+            
+            # Optional filters
+            if status_filter:
+                conditions.append(TaskDB.status.in_(status_filter))
+            
+            if assignee_filter:
+                conditions.append(TaskDB.assignee.ilike(f"%{assignee_filter}%"))
+            
+            if priority_filter:
+                conditions.append(TaskDB.priority.in_(priority_filter))
+            
+            # Execute search with ranking
+            result = await session.execute(
+                select(TaskDB)
+                .where(and_(*conditions))
+                .options(
+                    selectinload(TaskDB.subtasks),
+                    selectinload(TaskDB.dependencies_in),
+                    selectinload(TaskDB.dependencies_out),
+                    selectinload(TaskDB.project)
+                )
+                .order_by(
+                    # Rank by relevance
+                    func.ts_rank(search_vector, search_query).desc(),
+                    TaskDB.created_at.desc()
+                )
+                .limit(limit)
+                .offset(offset)
+            )
+            
             return list(result.scalars().all())
 
     async def get_pending_sync(self, limit: int = 50) -> List[TaskDB]:

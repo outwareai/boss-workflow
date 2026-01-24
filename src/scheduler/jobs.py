@@ -248,6 +248,34 @@ Check logs for full details."""
         )
         logger.info("Proactive check-ins scheduled: every 1 hour")
 
+        # Health check jobs (Q3 2026)
+        self.scheduler.add_job(
+            self._critical_services_check_job,
+            IntervalTrigger(minutes=1),
+            id="critical_services_check",
+            name="Critical Services Health Check",
+            replace_existing=True
+        )
+        logger.info("Critical services check scheduled: every 1 minute")
+
+        self.scheduler.add_job(
+            self._system_health_check_job,
+            IntervalTrigger(minutes=5),
+            id="system_health_check",
+            name="System Health Check",
+            replace_existing=True
+        )
+        logger.info("System health check scheduled: every 5 minutes")
+
+        self.scheduler.add_job(
+            self._scheduled_jobs_check_job,
+            IntervalTrigger(minutes=30),
+            id="scheduled_jobs_check",
+            name="Scheduler Health Check",
+            replace_existing=True
+        )
+        logger.info("Scheduler health check scheduled: every 30 minutes")
+
         self.scheduler.start()
         logger.info("Scheduler started with all jobs")
 
@@ -1013,6 +1041,30 @@ _Reply in this thread with your update!_"""
             logger.error(f"CRITICAL: Proactive Check-in failed: {e}", exc_info=True)
             await self._notify_boss_of_failure("Proactive Task Check-in", e)
             raise
+
+    async def _critical_services_check_job(self) -> None:
+        """Check if critical services are responsive."""
+        try:
+            from .health_checks import check_critical_services
+            await check_critical_services()
+        except Exception as e:
+            logger.error(f"Critical services check failed: {e}", exc_info=True)
+
+    async def _system_health_check_job(self) -> None:
+        """Run system health checks."""
+        try:
+            from .health_checks import check_system_health
+            await check_system_health()
+        except Exception as e:
+            logger.error(f"System health check failed: {e}", exc_info=True)
+
+    async def _scheduled_jobs_check_job(self) -> None:
+        """Check that scheduled jobs are running."""
+        try:
+            from .health_checks import check_scheduled_jobs
+            await check_scheduled_jobs()
+        except Exception as e:
+            logger.error(f"Scheduled jobs check failed: {e}", exc_info=True)
 
     def trigger_job(self, job_id: str) -> bool:
         """Manually trigger a job."""

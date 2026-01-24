@@ -157,6 +157,13 @@ class Settings(BaseSettings):
     rate_limit_authenticated: str = Field(default="100/minute", env="RATE_LIMIT_AUTHENTICATED")
     rate_limit_public: str = Field(default="20/minute", env="RATE_LIMIT_PUBLIC")
 
+    # Alerting (Q3 2026)
+    slack_alert_webhook: Optional[str] = Field(default=None, env="SLACK_ALERT_WEBHOOK")
+    discord_alert_webhook: Optional[str] = Field(default=None, env="DISCORD_ALERT_WEBHOOK")
+    enable_alerting: bool = Field(default=True, env="ENABLE_ALERTING")
+    alert_error_rate_threshold: float = Field(default=0.05, env="ALERT_ERROR_RATE_THRESHOLD")
+    alert_response_time_threshold: float = Field(default=2.0, env="ALERT_RESPONSE_TIME_THRESHOLD")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
