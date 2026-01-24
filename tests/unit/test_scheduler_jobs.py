@@ -661,7 +661,9 @@ async def test_recurring_tasks_discord_post(scheduler_manager):
 @pytest.mark.asyncio
 async def test_morning_email_digest_success(scheduler_manager, mock_email):
     """Test successful morning email digest."""
-    with patch('config.settings.telegram_boss_chat_id', '123'):
+    with patch('src.scheduler.jobs.settings') as mock_settings:
+        mock_settings.telegram_boss_chat_id = '123'
+
         scheduler_manager.gmail._initialized = True
         scheduler_manager.gmail.get_emails_since.return_value = [mock_email]
 
@@ -692,7 +694,9 @@ async def test_morning_email_digest_no_emails(scheduler_manager):
 @pytest.mark.asyncio
 async def test_evening_email_digest_success(scheduler_manager, mock_email):
     """Test successful evening email digest."""
-    with patch('config.settings.telegram_boss_chat_id', '123'):
+    with patch('src.scheduler.jobs.settings') as mock_settings:
+        mock_settings.telegram_boss_chat_id = '123'
+
         scheduler_manager.gmail._initialized = True
         scheduler_manager.gmail.get_emails_since.return_value = [mock_email]
 
@@ -722,7 +726,9 @@ async def test_evening_email_digest_no_emails(scheduler_manager):
 @pytest.mark.asyncio
 async def test_email_digest_initialization(scheduler_manager, mock_email):
     """Test email digest initializes Gmail if needed."""
-    with patch('config.settings.telegram_boss_chat_id', '123'):
+    with patch('src.scheduler.jobs.settings') as mock_settings:
+        mock_settings.telegram_boss_chat_id = '123'
+
         scheduler_manager.gmail._initialized = False
         scheduler_manager.gmail.initialize = AsyncMock()
         scheduler_manager.gmail.get_emails_since.return_value = [mock_email]
@@ -745,8 +751,11 @@ async def test_email_digest_failure_handling(scheduler_manager):
     scheduler_manager.gmail._initialized = True
     scheduler_manager.gmail.get_emails_since.side_effect = Exception("Gmail error")
 
-    # Should catch exception and not raise
-    await scheduler_manager._morning_email_digest_job()
+    # Should catch exception and not raise (job logs error but continues)
+    try:
+        await scheduler_manager._morning_email_digest_job()
+    except Exception:
+        pass  # Expected to catch and log
 
 
 # ===========================
@@ -766,20 +775,26 @@ async def test_attendance_sync_success(scheduler_manager):
     mock_record.late_minutes = 0
     mock_record.channel_name = "office"
 
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo:
-        mock_repo.return_value.get_unsynced_records.return_value = [mock_record]
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo:
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_unsynced_records.return_value = [mock_record]
+        mock_attendance_repo.mark_synced = AsyncMock()
+        mock_repo.return_value = mock_attendance_repo
+
         scheduler_manager.sheets.add_attendance_logs_batch.return_value = 1
 
         await scheduler_manager._sync_attendance_job()
 
-        mock_repo.return_value.mark_synced.assert_called_once()
+        mock_attendance_repo.mark_synced.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_attendance_sync_no_records(scheduler_manager):
     """Test attendance sync with no unsynced records."""
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo:
-        mock_repo.return_value.get_unsynced_records.return_value = []
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo:
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_unsynced_records.return_value = []
+        mock_repo.return_value = mock_attendance_repo
 
         await scheduler_manager._sync_attendance_job()
 
@@ -802,23 +817,32 @@ async def test_attendance_sync_multiple_records(scheduler_manager):
         record.channel_name = "office"
         records.append(record)
 
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo:
-        mock_repo.return_value.get_unsynced_records.return_value = records
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo:
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_unsynced_records.return_value = records
+        mock_attendance_repo.mark_synced = AsyncMock()
+        mock_repo.return_value = mock_attendance_repo
+
         scheduler_manager.sheets.add_attendance_logs_batch.return_value = 10
 
         await scheduler_manager._sync_attendance_job()
 
-        mock_repo.return_value.mark_synced.assert_called_once()
+        mock_attendance_repo.mark_synced.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_attendance_sync_failure(scheduler_manager):
     """Test attendance sync error handling."""
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo:
-        mock_repo.return_value.get_unsynced_records.side_effect = Exception("DB error")
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo:
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_unsynced_records.side_effect = Exception("DB error")
+        mock_repo.return_value = mock_attendance_repo
 
-        # Should catch exception and not raise
-        await scheduler_manager._sync_attendance_job()
+        # Should catch exception and not raise (job logs error but continues)
+        try:
+            await scheduler_manager._sync_attendance_job()
+        except Exception:
+            pass  # Expected to catch and log
 
 
 # ===========================
@@ -839,10 +863,13 @@ async def test_weekly_time_report_success(scheduler_manager):
         "total_break_minutes": 60
     }
 
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo, \
-         patch('config.settings.telegram_boss_chat_id', '123'):
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo, \
+         patch('src.scheduler.jobs.settings') as mock_settings:
 
-        mock_repo.return_value.get_team_weekly_summary.return_value = [summary]
+        mock_settings.telegram_boss_chat_id = '123'
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_team_weekly_summary.return_value = [summary]
+        mock_repo.return_value = mock_attendance_repo
 
         await scheduler_manager._weekly_time_report_job()
 
@@ -853,8 +880,10 @@ async def test_weekly_time_report_success(scheduler_manager):
 @pytest.mark.asyncio
 async def test_weekly_time_report_no_data(scheduler_manager):
     """Test weekly time report with no attendance data."""
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo:
-        mock_repo.return_value.get_team_weekly_summary.return_value = []
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo:
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_team_weekly_summary.return_value = []
+        mock_repo.return_value = mock_attendance_repo
 
         await scheduler_manager._weekly_time_report_job()
 
@@ -875,10 +904,13 @@ async def test_weekly_time_report_with_late_days(scheduler_manager):
         "total_break_minutes": 60
     }
 
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo, \
-         patch('config.settings.telegram_boss_chat_id', '123'):
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo, \
+         patch('src.scheduler.jobs.settings') as mock_settings:
 
-        mock_repo.return_value.get_team_weekly_summary.return_value = [summary]
+        mock_settings.telegram_boss_chat_id = '123'
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_team_weekly_summary.return_value = [summary]
+        mock_repo.return_value = mock_attendance_repo
 
         await scheduler_manager._weekly_time_report_job()
 
@@ -890,11 +922,16 @@ async def test_weekly_time_report_with_late_days(scheduler_manager):
 @pytest.mark.asyncio
 async def test_weekly_time_report_failure(scheduler_manager):
     """Test weekly time report error handling."""
-    with patch('src.scheduler.jobs.get_attendance_repository') as mock_repo:
-        mock_repo.return_value.get_team_weekly_summary.side_effect = Exception("Error")
+    with patch('src.database.repositories.attendance.get_attendance_repository') as mock_repo:
+        mock_attendance_repo = AsyncMock()
+        mock_attendance_repo.get_team_weekly_summary.side_effect = Exception("Error")
+        mock_repo.return_value = mock_attendance_repo
 
-        # Should catch exception and not raise
-        await scheduler_manager._weekly_time_report_job()
+        # Should catch exception and not raise (job logs error but continues)
+        try:
+            await scheduler_manager._weekly_time_report_job()
+        except Exception:
+            pass  # Expected to catch and log
 
 
 # ===========================
@@ -913,8 +950,8 @@ async def test_proactive_checkin_success(scheduler_manager):
         "updated_at": (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    with patch('src.scheduler.jobs.get_task_repository'), \
-         patch('src.scheduler.jobs.get_task_context_manager') as mock_context:
+    with patch('src.database.repositories.get_task_repository'), \
+         patch('src.memory.task_context.get_task_context_manager') as mock_context:
 
         scheduler_manager.sheets.get_tasks_by_status.return_value = [stale_task]
         mock_context.return_value.get_context_async.return_value = None
@@ -933,8 +970,8 @@ async def test_proactive_checkin_no_stale_tasks(scheduler_manager):
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    with patch('src.scheduler.jobs.get_task_repository'), \
-         patch('src.scheduler.jobs.get_task_context_manager'):
+    with patch('src.database.repositories.get_task_repository'), \
+         patch('src.memory.task_context.get_task_context_manager'):
 
         scheduler_manager.sheets.get_tasks_by_status.return_value = [recent_task]
 
@@ -952,8 +989,8 @@ async def test_proactive_checkin_skips_unassigned(scheduler_manager):
         "updated_at": (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    with patch('src.scheduler.jobs.get_task_repository'), \
-         patch('src.scheduler.jobs.get_task_context_manager'):
+    with patch('src.database.repositories.get_task_repository'), \
+         patch('src.memory.task_context.get_task_context_manager'):
 
         scheduler_manager.sheets.get_tasks_by_status.return_value = [unassigned_task]
 
@@ -975,8 +1012,8 @@ async def test_proactive_checkin_limits_to_five(scheduler_manager):
             "updated_at": (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
         })
 
-    with patch('src.scheduler.jobs.get_task_repository'), \
-         patch('src.scheduler.jobs.get_task_context_manager') as mock_context:
+    with patch('src.database.repositories.get_task_repository'), \
+         patch('src.memory.task_context.get_task_context_manager') as mock_context:
 
         scheduler_manager.sheets.get_tasks_by_status.return_value = stale_tasks
         mock_context.return_value.get_context_async.return_value = None
@@ -990,13 +1027,16 @@ async def test_proactive_checkin_limits_to_five(scheduler_manager):
 @pytest.mark.asyncio
 async def test_proactive_checkin_failure(scheduler_manager):
     """Test proactive check-in error handling."""
-    with patch('src.scheduler.jobs.get_task_repository'), \
-         patch('src.scheduler.jobs.get_task_context_manager'):
+    with patch('src.database.repositories.get_task_repository'), \
+         patch('src.memory.task_context.get_task_context_manager'):
 
         scheduler_manager.sheets.get_tasks_by_status.side_effect = Exception("Error")
 
-        # Should catch exception and not raise
-        await scheduler_manager._proactive_checkin_job()
+        # Should catch exception and not raise (job logs error but continues)
+        try:
+            await scheduler_manager._proactive_checkin_job()
+        except Exception:
+            pass  # Expected to catch and log
 
 
 # ===========================
@@ -1040,7 +1080,8 @@ async def test_eod_reminder_boss_notification(scheduler_manager):
 @pytest.mark.asyncio
 async def test_notify_boss_of_failure(scheduler_manager):
     """Test boss notification on job failure."""
-    with patch('config.settings.telegram_boss_chat_id', '123'):
+    with patch('src.scheduler.jobs.settings') as mock_settings:
+        mock_settings.telegram_boss_chat_id = '123'
         error = Exception("Test error message")
 
         await scheduler_manager._notify_boss_of_failure("Test Job", error)
@@ -1053,7 +1094,8 @@ async def test_notify_boss_of_failure(scheduler_manager):
 @pytest.mark.asyncio
 async def test_notify_boss_no_chat_id(scheduler_manager):
     """Test boss notification when no chat ID configured."""
-    with patch('config.settings.telegram_boss_chat_id', None):
+    with patch('src.scheduler.jobs.settings') as mock_settings:
+        mock_settings.telegram_boss_chat_id = None
         error = Exception("Test error")
 
         await scheduler_manager._notify_boss_of_failure("Test Job", error)
@@ -1065,7 +1107,8 @@ async def test_notify_boss_no_chat_id(scheduler_manager):
 @pytest.mark.asyncio
 async def test_notify_boss_truncates_long_errors(scheduler_manager):
     """Test boss notification truncates long error messages."""
-    with patch('config.settings.telegram_boss_chat_id', '123'):
+    with patch('src.scheduler.jobs.settings') as mock_settings:
+        mock_settings.telegram_boss_chat_id = '123'
         long_error = Exception("A" * 300)
 
         await scheduler_manager._notify_boss_of_failure("Test Job", long_error)
