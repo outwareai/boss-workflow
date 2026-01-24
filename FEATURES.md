@@ -21,6 +21,7 @@
 | **Google Sheets** | ✅ Production | 8 sheets, Auto-sync, Reports |
 | **Database** | ✅ Production | PostgreSQL with full relationships |
 | **Automation** | ✅ Production | Scheduled jobs, Reminders, Auto-review |
+| **Monitoring** | ✅ Production | Prometheus + Grafana, 40+ metrics, Alerts |
 | **Team Access** | 🔴 Planned | Multi-user bot access |
 | **Web Dashboard** | 🔴 Planned | React/Next.js UI |
 
@@ -4168,6 +4169,257 @@ DEPARTMENTS = {
 
 ---
 
+## Observability & Monitoring
+
+### Prometheus + Grafana Stack
+
+**Status:** ✅ Production (Q3 2026)
+**Priority:** P3 (Production hardening)
+**Files:** `src/monitoring/`, `monitoring/`, `docker-compose.monitoring.yml`
+
+#### Overview
+
+Complete monitoring infrastructure with Prometheus metrics collection, Grafana visualization, and AlertManager notifications.
+
+#### Metrics Exposed
+
+**HTTP Metrics:**
+- `http_requests_total`: Total requests (labels: method, endpoint, status)
+- `http_request_duration_seconds`: Request duration histogram (p50, p95, p99)
+
+**Task Metrics:**
+- `tasks_created_total`: Tasks created counter (labels: assignee, priority)
+- `tasks_completed_total`: Tasks completed counter (labels: assignee)
+- `tasks_by_status`: Current task count by status gauge
+
+**Database Metrics:**
+- `db_queries_total`: Database query counter (labels: operation)
+- `db_query_duration_seconds`: Query duration histogram
+- `db_pool_connections`: Connection pool status (labels: state)
+
+**AI Metrics:**
+- `ai_requests_total`: AI API requests (labels: operation, status)
+- `ai_request_duration_seconds`: AI request duration histogram
+
+**Cache Metrics:**
+- `cache_operations_total`: Cache operations (labels: operation, result)
+
+**Discord Metrics:**
+- `discord_messages_sent_total`: Discord messages sent (labels: channel, status)
+
+**Error Metrics:**
+- `errors_total`: Total errors (labels: type, severity)
+
+**Rate Limiting Metrics:**
+- `rate_limit_violations_total`: Rate limit violations (labels: endpoint)
+- `rate_limit_near_limit`: Clients approaching limit gauge
+- `redis_connection_errors`: Redis backend errors
+- `redis_operation_duration_seconds`: Redis latency histogram
+
+#### Endpoints
+
+```bash
+# Prometheus metrics
+GET /metrics
+
+# Default FastAPI metrics
+GET /metrics/default
+
+# Database health (updates pool metrics)
+GET /health/db
+```
+
+#### Grafana Dashboard
+
+**15 Visualization Panels:**
+1. HTTP Request Rate (req/s)
+2. HTTP Request Duration p95
+3. Tasks by Status (pie chart)
+4. Task Creation Rate (tasks/hour)
+5. Task Completion Rate (tasks/hour)
+6. Database Pool Status
+7. Database Query Duration p95
+8. Cache Hit Rate (%)
+9. Error Rate (errors/min)
+10. AI Request Duration p95
+11. Discord Messages Sent (msg/min)
+12. Total Tasks Created (cumulative)
+13. Total Tasks Completed (cumulative)
+14. DB Query Rate (queries/s)
+15. HTTP Error Rate (%)
+
+**Features:**
+- 30-second auto-refresh
+- Color-coded thresholds
+- Time range selection
+- Drill-down capabilities
+
+#### Alert Rules
+
+**Critical Alerts (Immediate notification):**
+- `ApplicationDown`: App unreachable >1 minute
+- `HighErrorRate`: >5% HTTP errors for 5 minutes
+
+**Warning Alerts (Batched, 30s delay):**
+- `SlowAPIResponses`: p95 response time >2 seconds
+- `DatabasePoolExhaustion`: >5 overflow connections
+- `HighDatabaseLatency`: p95 query time >1 second
+- `AIRequestFailures`: >10% AI request failures
+- `DiscordSendFailures`: Failed Discord messages detected
+
+**Info Alerts (12h repeat):**
+- `LowCacheHitRate`: <50% cache hit rate for 10 minutes
+
+#### AlertManager Integration
+
+**Features:**
+- Discord webhook notifications
+- Alert grouping by alertname/cluster/service
+- Inhibition rules (critical suppresses warning)
+- Configurable repeat intervals
+- Send resolved notifications
+
+**Configuration:**
+```yaml
+# monitoring/alertmanager.yml
+receivers:
+  - name: 'discord'
+    webhook_configs:
+      - url: '${DISCORD_WEBHOOK_URL}'
+```
+
+#### Deployment
+
+**Local Development:**
+```bash
+# Start monitoring stack
+docker-compose -f docker-compose.monitoring.yml up -d
+
+# Access dashboards
+# Grafana: http://localhost:3000 (admin/admin)
+# Prometheus: http://localhost:9090
+# AlertManager: http://localhost:9093
+# Metrics: http://localhost:8000/metrics
+```
+
+**Railway Production:**
+```bash
+# Option 1: Use Grafana Cloud (free tier)
+# Configure to scrape: https://boss-workflow-production.up.railway.app/metrics
+
+# Option 2: Deploy monitoring on VPS
+# Point Prometheus to Railway URL
+
+# Option 3: Managed APM (Datadog/New Relic)
+# Pull from /metrics endpoint
+```
+
+#### Metrics Integration
+
+**Automatic Tracking in Repositories:**
+```python
+# src/database/repositories/tasks.py
+async def create(self, task_data):
+    # Automatic metrics recording
+    tasks_created_total.labels(
+        assignee=task.assignee,
+        priority=task.priority
+    ).inc()
+
+    db_query_duration.labels(
+        operation='create_task'
+    ).observe(duration)
+```
+
+**Middleware Tracking:**
+```python
+# src/monitoring/middleware.py
+# All HTTP requests automatically tracked
+# - Request counts
+# - Response times
+# - Status codes
+```
+
+#### Configuration Files
+
+**Prometheus (`monitoring/prometheus.yml`):**
+- Scrape interval: 15 seconds
+- Retention: 30 days
+- Targets: Application, Prometheus, Grafana
+
+**Alerts (`monitoring/alerts.yml`):**
+- 8 alert rules (3 critical, 4 warning, 1 info)
+- PromQL expressions for thresholds
+- Severity labels and annotations
+
+**Docker Compose (`docker-compose.monitoring.yml`):**
+- Prometheus service (port 9090)
+- Grafana service (port 3000)
+- AlertManager service (port 9093)
+- Persistent volumes for data
+
+#### Troubleshooting
+
+**Prometheus can't reach app:**
+```bash
+# Check application health
+curl http://localhost:8000/health
+
+# Check metrics endpoint
+curl http://localhost:8000/metrics
+
+# For Docker: use host.docker.internal
+```
+
+**No data in Grafana:**
+```bash
+# Verify Prometheus is scraping
+open http://localhost:9090/targets
+
+# Check time range in Grafana
+# Ensure metrics exist: http://localhost:9090/graph
+```
+
+**Alerts not firing:**
+```bash
+# Check alert rules
+open http://localhost:9090/alerts
+
+# Verify AlertManager is running
+docker logs boss-workflow-alertmanager
+
+# Test Discord webhook
+POST /api/admin/test-alert?severity=warning
+```
+
+#### Documentation
+
+- **Setup Guide:** `monitoring/README.md`
+- **Implementation Summary:** `MONITORING_IMPLEMENTATION.md`
+- **Dashboard JSON:** `monitoring/grafana/boss-workflow-dashboard.json`
+- **Alert Rules:** `monitoring/alerts.yml`
+
+#### Best Practices
+
+1. **Review dashboards weekly** for trends and anomalies
+2. **Set up critical alerts** for production issues
+3. **Monitor p95/p99 latencies**, not just averages
+4. **Track error rates** and investigate spikes
+5. **Watch database pool** for connection exhaustion
+6. **Optimize cache** if hit rate drops below 70%
+7. **Export dashboards** regularly for backup
+
+#### Future Enhancements
+
+- [ ] Node exporter for system metrics (CPU, memory, disk)
+- [ ] PostgreSQL exporter for database internals
+- [ ] Redis exporter for cache performance
+- [ ] Custom business metrics (user signups, revenue)
+- [ ] Distributed tracing (Jaeger/Tempo)
+- [ ] Log aggregation (Loki)
+
+---
+
 ## Team Features
 
 ### Time Clock / Attendance System
@@ -4938,7 +5190,17 @@ Comprehensive documentation covering Q1-Q3 sprint work, monitoring, performance,
    - Testing & validation workflows
    - Useful Railway CLI commands
    - Database monitoring queries
-   - Future monitoring enhancements (Prometheus, Grafana)
+
+3. **MONITORING_IMPLEMENTATION.md** (NEW - Q3 2026)
+   - ✅ **Prometheus + Grafana monitoring COMPLETE**
+   - Full metrics infrastructure with 40+ metrics
+   - Grafana dashboard with 15 visualization panels
+   - Docker Compose monitoring stack
+   - Alert rules for critical/warning/info severity
+   - Production deployment guide (local + Railway)
+   - Metrics: HTTP, tasks, DB, AI, cache, Discord, errors
+   - `/metrics` endpoint for Prometheus scraping
+   - AlertManager with Discord integration
 
 3. **PERFORMANCE.md** (18KB)
    - Current performance benchmarks
