@@ -324,7 +324,9 @@ Reply with `/approve {task_ids[0]}` or `/reject {task_ids[0]} [reason]`"""
                 # AI assistant also responds in threads automatically
 
             # Start bot in background
-            discord_bot_task = asyncio.create_task(start_discord_bot())
+            # PHASE 2 FIX: Safe background task for Discord bot
+            from .utils.background_tasks import create_safe_task
+            discord_bot_task = create_safe_task(start_discord_bot(), "discord-bot-startup")
             logger.info("Discord bot starting in background (with AI assistant)...")
         else:
             logger.info("Discord bot token not configured, skipping bot startup")
@@ -1220,9 +1222,13 @@ async def telegram_webhook(request: Request):
             except Exception as e:
                 logger.error(f"[WEBHOOK-BG] Background processing error for update {update_id}: {e}", exc_info=True)
 
-        # Fire and forget - process in background
-        asyncio.create_task(process_in_background())
-        logger.debug(f"[WEBHOOK] Background task created for update {update_id}, returning OK")
+        # PHASE 2 FIX: Safe background task with error handling
+        from .utils.background_tasks import create_safe_task
+        create_safe_task(
+            process_in_background(),
+            f"webhook-telegram-{update_id}"
+        )
+        logger.debug(f"[WEBHOOK] Safe background task created for update {update_id}, returning OK")
 
         # Return immediately to prevent Telegram timeout
         return {"ok": True}

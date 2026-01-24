@@ -198,17 +198,22 @@ def audit_rate_limit_violation(ip_address: str, path: str, limit: int):
     """
     import asyncio
 
-    asyncio.create_task(log_audit_event(
-        action=AuditAction.RATE_LIMIT_VIOLATION,
-        entity_type="api_endpoint",
-        entity_id=path,
-        details={
-            "limit": limit,
-            "path": path,
-        },
-        level=AuditLevel.WARNING,
-        ip_address=ip_address,
-    ))
+    # PHASE 2 FIX: Safe background task for audit logging
+    from .background_tasks import create_safe_task
+    create_safe_task(
+        log_audit_event(
+            action=AuditAction.RATE_LIMIT_VIOLATION,
+            entity_type="api_endpoint",
+            entity_id=path,
+            details={
+                "limit": limit,
+                "path": path,
+            },
+            level=AuditLevel.WARNING,
+            ip_address=ip_address,
+        ),
+        f"audit-rate-limit-{ip_address}"
+    )
 
 
 def audit_auth_failure(user_id: Optional[str], reason: str, ip_address: Optional[str]):
@@ -222,10 +227,15 @@ def audit_auth_failure(user_id: Optional[str], reason: str, ip_address: Optional
     """
     import asyncio
 
-    asyncio.create_task(log_audit_event(
-        action=AuditAction.AUTH_FAILURE,
-        user_id=user_id,
-        details={"reason": reason},
-        level=AuditLevel.WARNING,
-        ip_address=ip_address,
-    ))
+    # PHASE 2 FIX: Safe background task for audit logging
+    from .background_tasks import create_safe_task
+    create_safe_task(
+        log_audit_event(
+            action=AuditAction.AUTH_FAILURE,
+            user_id=user_id,
+            details={"reason": reason},
+            level=AuditLevel.WARNING,
+            ip_address=ip_address,
+        ),
+        f"audit-auth-failure-{user_id or 'unknown'}"
+    )

@@ -261,7 +261,9 @@ class MessageQueueService:
             return
 
         self._running = True
-        self._worker_task = asyncio.create_task(self._worker_loop())
+        # PHASE 2 FIX: Safe background task for message queue worker
+        from ..utils.background_tasks import create_safe_task
+        self._worker_task = create_safe_task(self._worker_loop(), "message-queue-worker")
         logger.info("Message queue worker started")
 
     async def stop_worker(self) -> None:

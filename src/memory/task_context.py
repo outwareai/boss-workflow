@@ -162,7 +162,12 @@ class TaskContextManager:
             self._staff_active_task[staff_id] = task_id
 
         # Schedule async database save
-        asyncio.create_task(self._save_context_to_db(task_id, context, channel_id, staff_id))
+        # PHASE 2 FIX: Safe background task
+        from ..utils.background_tasks import create_safe_task
+        create_safe_task(
+            self._save_context_to_db(task_id, context, channel_id, staff_id),
+            f"save-context-{task_id}"
+        )
 
         logger.info(f"Created context for task {task_id}")
         return context
@@ -227,7 +232,12 @@ class TaskContextManager:
             context["conversation_history"] = context["conversation_history"][-50:]
 
         # Schedule async database save
-        asyncio.create_task(self._save_message_to_db(task_id, role, content, metadata))
+        # PHASE 2 FIX: Safe background task
+        from ..utils.background_tasks import create_safe_task
+        create_safe_task(
+            self._save_message_to_db(task_id, role, content, metadata),
+            f"save-message-{task_id}"
+        )
 
     async def _save_message_to_db(
         self,
@@ -298,7 +308,12 @@ class TaskContextManager:
             }
 
             # Schedule async database save
-            asyncio.create_task(self._save_submission_to_db(task_id, validation_result))
+            # PHASE 2 FIX: Safe background task
+            from ..utils.background_tasks import create_safe_task
+            create_safe_task(
+                self._save_submission_to_db(task_id, validation_result),
+                f"save-submission-{task_id}"
+            )
 
     async def _save_submission_to_db(self, task_id: str, validation_result: Dict[str, Any]):
         """Save submission to database asynchronously."""
@@ -448,7 +463,12 @@ class TaskContextManager:
                 del self._staff_active_task[staff_id]
 
             # Schedule async database save
-            asyncio.create_task(self._close_context_in_db(task_id))
+            # PHASE 2 FIX: Safe background task
+            from ..utils.background_tasks import create_safe_task
+            create_safe_task(
+                self._close_context_in_db(task_id),
+                f"close-context-{task_id}"
+            )
 
     async def _close_context_in_db(self, task_id: str):
         """Close context in database asynchronously."""
@@ -478,7 +498,12 @@ class TaskContextManager:
             logger.info(f"Cleaned up {len(to_remove)} old task contexts")
 
         # Also cleanup database
-        asyncio.create_task(self._cleanup_db_contexts(hours))
+        # PHASE 2 FIX: Safe background task
+        from ..utils.background_tasks import create_safe_task
+        create_safe_task(
+            self._cleanup_db_contexts(hours),
+            f"cleanup-contexts-{hours}h"
+        )
 
         return len(to_remove)
 

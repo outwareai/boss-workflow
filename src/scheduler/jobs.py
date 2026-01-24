@@ -50,6 +50,34 @@ class SchedulerManager:
         self.email_summarizer = get_email_summarizer()
         self.context = get_conversation_context()
 
+    async def _notify_boss_of_failure(self, job_name: str, error: Exception) -> None:
+        """Notify boss via Telegram when a scheduled job fails."""
+        try:
+            if not settings.telegram_boss_chat_id:
+                logger.warning(f"Cannot notify boss of {job_name} failure: no chat ID configured")
+                return
+
+            error_message = str(error)
+            # Truncate long error messages
+            if len(error_message) > 200:
+                error_message = error_message[:200] + "..."
+
+            message = f"""⚠️ **System Alert**
+
+{job_name} failed.
+
+Error: {error_message}
+
+Check logs for full details."""
+
+            await self.reminders.send_telegram_message(
+                settings.telegram_boss_chat_id,
+                message
+            )
+            logger.info(f"Sent failure notification to boss for {job_name}")
+        except Exception as notify_error:
+            logger.error(f"Could not send failure notification for {job_name}: {notify_error}")
+
     def start(self) -> None:
         """Start the scheduler with all jobs."""
         self.scheduler = AsyncIOScheduler(timezone=self.timezone)
@@ -264,7 +292,9 @@ class SchedulerManager:
             await self._send_standup_email_digest()
 
         except Exception as e:
-            logger.error(f"Error in daily standup job: {e}")
+            logger.error(f"CRITICAL: Daily Standup failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Daily Standup", e)
+            raise
 
     async def _send_standup_email_digest(self) -> None:
         """
@@ -384,7 +414,9 @@ _🔵 = Unread | ⭐ = Important_"""
             logger.info("EOD reminder sent")
 
         except Exception as e:
-            logger.error(f"Error in EOD reminder job: {e}")
+            logger.error(f"CRITICAL: EOD Reminder failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("EOD Reminder", e)
+            raise
 
     async def _weekly_summary_job(self) -> None:
         """Generate and post weekly summary."""
@@ -424,7 +456,9 @@ _🔵 = Unread | ⭐ = Important_"""
             logger.info("Weekly summary completed")
 
         except Exception as e:
-            logger.error(f"Error in weekly summary job: {e}")
+            logger.error(f"CRITICAL: Weekly Summary failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Weekly Summary", e)
+            raise
 
     async def _monthly_report_job(self) -> None:
         """Generate monthly report."""
@@ -462,7 +496,9 @@ Keep up the great work!"""
             logger.info("Monthly report completed")
 
         except Exception as e:
-            logger.error(f"Error in monthly report job: {e}")
+            logger.error(f"CRITICAL: Monthly Report failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Monthly Report", e)
+            raise
 
     async def _deadline_reminder_job(self) -> None:
         """Check and send deadline reminders."""
@@ -472,7 +508,9 @@ Keep up the great work!"""
                 logger.info(f"Sent {count} deadline reminders")
 
         except Exception as e:
-            logger.error(f"Error in deadline reminder job: {e}")
+            logger.error(f"CRITICAL: Deadline Reminder failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Deadline Reminder", e)
+            raise
 
     async def _overdue_alert_job(self) -> None:
         """Check and send overdue alerts."""
@@ -482,7 +520,9 @@ Keep up the great work!"""
                 logger.info(f"Sent {count} overdue alerts")
 
         except Exception as e:
-            logger.error(f"Error in overdue alert job: {e}")
+            logger.error(f"CRITICAL: Overdue Alert failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Overdue Alert", e)
+            raise
 
     async def _conversation_timeout_job(self) -> None:
         """Check for timed-out and auto-finalize conversations."""
@@ -505,7 +545,9 @@ Keep up the great work!"""
                 logger.info(f"Would auto-finalize conversation {conv.conversation_id}")
 
         except Exception as e:
-            logger.error(f"Error in conversation timeout job: {e}")
+            logger.error(f"CRITICAL: Conversation Timeout failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Conversation Timeout Cleanup", e)
+            raise
 
     async def _archive_tasks_job(self) -> None:
         """Archive old completed tasks."""
@@ -516,7 +558,9 @@ Keep up the great work!"""
             logger.info(f"Archived {count} completed tasks")
 
         except Exception as e:
-            logger.error(f"Error in archive tasks job: {e}")
+            logger.error(f"CRITICAL: Archive Tasks failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Archive Old Tasks", e)
+            raise
 
     async def _recurring_tasks_job(self) -> None:
         """Check and create recurring task instances."""
@@ -574,7 +618,9 @@ Keep up the great work!"""
                     logger.error(f"Error creating task from recurring {recurring.recurring_id}: {e}")
 
         except Exception as e:
-            logger.error(f"Error in recurring tasks job: {e}")
+            logger.error(f"CRITICAL: Recurring Tasks failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Recurring Tasks Creation", e)
+            raise
 
     async def _morning_email_digest_job(self) -> None:
         """Generate and send morning email digest."""
@@ -623,7 +669,9 @@ Keep up the great work!"""
             logger.info(f"Morning email digest sent to Telegram: {len(emails)} emails summarized")
 
         except Exception as e:
-            logger.error(f"Error in morning email digest job: {e}", exc_info=True)
+            logger.error(f"CRITICAL: Morning Email Digest failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Morning Email Digest", e)
+            raise
 
     async def _evening_email_digest_job(self) -> None:
         """Generate and send evening email digest."""
@@ -672,7 +720,9 @@ Keep up the great work!"""
             logger.info(f"Evening email digest sent to Telegram: {len(emails)} emails summarized")
 
         except Exception as e:
-            logger.error(f"Error in evening email digest job: {e}", exc_info=True)
+            logger.error(f"CRITICAL: Evening Email Digest failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Evening Email Digest", e)
+            raise
 
     async def _sync_attendance_job(self) -> None:
         """Sync unsynced attendance records to Google Sheets."""
@@ -722,7 +772,9 @@ Keep up the great work!"""
                 logger.info(f"Synced {count} attendance records to Sheets")
 
         except Exception as e:
-            logger.error(f"Error in attendance sync job: {e}", exc_info=True)
+            logger.error(f"CRITICAL: Attendance Sync failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Attendance Sync to Sheets", e)
+            raise
 
     async def _weekly_time_report_job(self) -> None:
         """Generate weekly time reports for all team members."""
@@ -802,7 +854,9 @@ Keep up the great work!"""
             logger.info(f"Weekly time report generated: {len(sheet_summaries)} team members")
 
         except Exception as e:
-            logger.error(f"Error in weekly time report job: {e}", exc_info=True)
+            logger.error(f"CRITICAL: Weekly Time Report failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Weekly Time Report", e)
+            raise
 
     async def _proactive_checkin_job(self) -> None:
         """
@@ -956,7 +1010,9 @@ _Reply in this thread with your update!_"""
             logger.info(f"Completed proactive check-ins for {min(len(tasks_needing_checkin), 5)} tasks")
 
         except Exception as e:
-            logger.error(f"Error in proactive check-in job: {e}", exc_info=True)
+            logger.error(f"CRITICAL: Proactive Check-in failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Proactive Task Check-in", e)
+            raise
 
     def trigger_job(self, job_id: str) -> bool:
         """Manually trigger a job."""
