@@ -3402,10 +3402,148 @@ Boss: "yes"
 
 ---
 
+### RoutingHandler (v2.5.0)
+
+**File:** `src/bot/handlers/routing_handler.py`
+**Status:** ✅ Complete (Task #4.4)
+**Parent:** BaseHandler
+**Tests:** 7/7 passing
+
+Central message router that delegates to specialized handlers based on intent.
+
+**Responsibilities:**
+- Route messages to appropriate specialized handlers
+- Detect user intent (AI-powered fallback)
+- Track active multi-turn conversations
+- Command detection and parsing
+- Handler registration and priority routing
+
+**Key Methods:**
+
+```python
+# Handler registration
+def register_handler(handler: BaseHandler):
+    """Register a specialized handler for routing"""
+
+# Routing
+async def can_handle(message: str, user_id: str, **kwargs) -> bool:
+    """Router always accepts messages (returns True)"""
+
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route message to appropriate handler using priority routing"""
+
+# Session tracking
+async def set_active_handler(user_id: str, handler: BaseHandler, ttl: int = 3600):
+    """Set active handler for multi-turn conversation"""
+
+async def clear_active_handler(user_id: str):
+    """Clear active handler session"""
+
+# Command utilities
+def is_command(message: str) -> bool:
+    """Check if message is a slash command"""
+
+def extract_command(message: str) -> tuple:
+    """Extract command and arguments from message"""
+```
+
+**Routing Priority:**
+
+1. **Active Handler** (highest priority)
+   - User is in multi-turn conversation (e.g., task creation flow)
+   - Routes to same handler that started the conversation
+   - Managed via SessionManager active_handler session
+
+2. **Specialized Handlers**
+   - Try each registered handler's `can_handle()` in order
+   - First handler that returns True processes the message
+   - Examples: ValidationHandler, ApprovalHandler, QueryHandler
+
+3. **AI Intent Detection** (fallback)
+   - No handler matched, use DeepSeek AI to classify intent
+   - Routes based on detected intent:
+     - `TASK_DONE` → TaskCreationHandler
+     - `CHECK_STATUS` → QueryHandler
+     - `MODIFY_TASK` → ModificationHandler
+     - `APPROVE_TASK/REJECT_TASK` → ValidationHandler
+     - `HELP` → Help message
+     - `GREETING` → Greeting response
+     - `CANCEL` → Clear active handler
+
+**Usage Examples:**
+
+```python
+# Setup router with handlers
+router = RoutingHandler()
+router.register_handler(ValidationHandler())
+router.register_handler(ApprovalHandler())
+router.register_handler(QueryHandler())
+
+# In bot main loop
+await router.handle(update, context)
+
+# Router automatically:
+# 1. Checks for active conversation
+# 2. Tries ValidationHandler.can_handle() → False
+# 3. Tries ApprovalHandler.can_handle() → False
+# 4. Tries QueryHandler.can_handle() → True
+# 5. Delegates to QueryHandler.handle()
+```
+
+**Multi-Turn Conversations:**
+
+```python
+# Handler sets itself as active during conversation
+class TaskCreationHandler(BaseHandler):
+    async def handle(self, update, context):
+        # Start conversation
+        await router.set_active_handler(user_id, self)
+        await self.ask_questions(update)
+
+        # Later, when done
+        await router.clear_active_handler(user_id)
+```
+
+**Command Detection:**
+
+```python
+# Extract command and arguments
+is_cmd = router.is_command("/approve TASK-001")  # True
+cmd, args = router.extract_command("/approve TASK-001")
+# cmd = "approve", args = "TASK-001"
+```
+
+**Unit Tests (7 total):**
+
+```bash
+✅ test_register_handler - Registers specialized handlers
+✅ test_route_to_matching_handler - Routes to handler that can_handle
+✅ test_is_command - Detects slash commands
+✅ test_extract_command - Parses command and arguments
+✅ test_active_handler_session - Tracks active conversations
+✅ test_fallback_to_ai_intent - Uses AI when no handler matches
+✅ test_can_handle_always_true - Router accepts all messages
+```
+
+**Integration:**
+- Uses SessionManager for active_handler sessions (1 hour TTL)
+- Uses IntentDetector for AI-powered intent classification
+- Uses BaseHandler for permissions, user info, messaging
+- Coordinates all specialized handlers (ValidationHandler, ApprovalHandler, etc.)
+
+**Impact:**
+- Reduces UnifiedHandler routing complexity by ~400 lines
+- Third specialized handler extracted (3/6 complete)
+- Enables pluggable handler architecture
+- Cleaner separation between routing and business logic
+- Foundation for future handler expansion
+
+---
+
 **Next Steps (Task #4.4-6):**
 - ✅ Task #4.3: Extract ValidationHandler from UnifiedHandler (COMPLETE)
+- ✅ Task #4.4: Extract RoutingHandler from UnifiedHandler (COMPLETE)
 - ✅ Task #4.5: Extract ApprovalHandler from UnifiedHandler (COMPLETE)
-- Task #4.4: Extract RoutingHandler from UnifiedHandler
 - Task #4.6: Extract QueryHandler, ModificationHandler, CommandHandler
 - Final: Replace UnifiedHandler with router that delegates to specialized handlers
 
@@ -4209,7 +4347,7 @@ Mirror Discord functionality to Slack
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| **2.5.0** | 2026-01-24 | **🔧 HANDLER REFACTORING (Task #4.3-4.5):** Extracted ValidationHandler (task approval/rejection) and ApprovalHandler (dangerous action confirmations) from 3,636-line UnifiedHandler. Features: 21 total unit tests (9 validation + 12 approval), SessionManager integration, BaseHandler inheritance. **Impact:** 2/6 specialized handlers extracted, ~500 lines reduced from UnifiedHandler, centralized dangerous action confirmations |
+| **2.5.0** | 2026-01-24 | **🔧 HANDLER REFACTORING (Task #4.3-4.5):** Extracted ValidationHandler (task approval/rejection), RoutingHandler (message routing/delegation), and ApprovalHandler (dangerous action confirmations) from 3,636-line UnifiedHandler. Features: 28 total unit tests (9 validation + 7 routing + 12 approval), SessionManager integration with active_handler sessions, BaseHandler inheritance, AI-powered intent fallback. **Impact:** 3/6 specialized handlers extracted, ~900 lines reduced from UnifiedHandler, pluggable handler architecture established |
 | **2.4.0** | 2026-01-24 | **🔧 SESSIONMANAGER FOUNDATION (Task #4 Phase 1):** Centralized session state management with Redis persistence. Replaces 7 handler dictionaries with unified storage. Features: TTL expiration, thread-safe locks, in-memory fallback, 17 unit tests. **Impact:** Foundation for handler refactoring, session persistence across restarts |
 | **2.3.1** | 2026-01-24 | **🔧 SLASH COMMAND AUTO-FINALIZATION:** Fixed /task and /urgent commands to auto-finalize simple tasks (skip preview). Added command detection before conversation state handling. Fixed PREVIEW stage confusion. **Impact:** /task commands now create tasks immediately, routing tests pass |
 | **2.3.0** | 2026-01-24 | **⚡ Q1 2026 PERFORMANCE OPTIMIZATION:** 5 composite indexes (10x query speed), 7 N+1 query fixes, connection pooling (30% throughput boost), dependency updates (FastAPI 0.128, telegram-bot 22.5, SQLAlchemy 2.0.46), /health/db monitoring endpoint. **Impact:** Daily reports 5s→500ms, API latency 2-3s→200-300ms, 60+ CVEs patched |

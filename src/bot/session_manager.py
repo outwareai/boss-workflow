@@ -574,6 +574,47 @@ class SessionManager:
                 logger.error(f"Error clearing message context {user_id}: {e}")
                 return False
 
+    # ==================== ACTIVE HANDLER ====================
+
+    async def get_active_handler_session(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get active handler session for a user."""
+        key = self._get_key("active_handler", user_id)
+        async with self._locks[key]:
+            data = await self._store_get(key)
+            if data:
+                try:
+                    return json.loads(data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error decoding active handler session {user_id}: {e}")
+            return None
+
+    async def set_active_handler_session(
+        self,
+        user_id: str,
+        data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """Set active handler session for a user."""
+        key = self._get_key("active_handler", user_id)
+        async with self._locks[key]:
+            try:
+                await self._store_set(key, json.dumps(data), ttl or self.DEFAULT_TTL)
+                return True
+            except Exception as e:
+                logger.error(f"Error setting active handler session {user_id}: {e}")
+                return False
+
+    async def clear_active_handler_session(self, user_id: str) -> bool:
+        """Clear active handler session for a user."""
+        key = self._get_key("active_handler", user_id)
+        async with self._locks[key]:
+            try:
+                await self._store_delete(key)
+                return True
+            except Exception as e:
+                logger.error(f"Error clearing active handler session {user_id}: {e}")
+                return False
+
     # ==================== CLEANUP & MAINTENANCE ====================
 
     async def cleanup_expired_sessions(self, ttl_seconds: int = DEFAULT_TTL) -> Dict[str, int]:
