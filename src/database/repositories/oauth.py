@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import OAuthTokenDB
 from ..connection import get_database
 from ...utils.encryption import get_token_encryption
+from ..exceptions import DatabaseConstraintError, DatabaseOperationError, EntityNotFoundError
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +158,8 @@ class OAuthTokenRepository:
                 }
 
         except Exception as e:
-            logger.error(f"Error getting OAuth token: {e}")
-            return None
+            logger.error(f"CRITICAL: OAuth token retrieval failed for {email}/{service}: {e}", exc_info=True)
+            raise DatabaseOperationError(f"Failed to get OAuth token for {email}/{service}: {e}")
 
     async def get_refresh_token(self, email: str, service: str) -> Optional[str]:
         """Get just the refresh token for a user/service."""

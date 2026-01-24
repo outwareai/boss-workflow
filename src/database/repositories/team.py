@@ -16,6 +16,8 @@ from sqlalchemy import select, update, delete, func, or_
 
 from ..connection import get_database
 from ..models import TeamMemberDB
+from ..exceptions import DatabaseConstraintError, DatabaseOperationError, EntityNotFoundError
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +73,13 @@ class TeamRepository:
                 
                 return member
 
+            except IntegrityError as e:
+                logger.error(f"Constraint violation creating team member {name}: {e}")
+                raise DatabaseConstraintError(f"Cannot create team member {name}: duplicate or constraint violation")
+
             except Exception as e:
-                logger.error(f"Error creating team member: {e}")
-                return None
+                logger.error(f"CRITICAL: Team member creation failed for {name}: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to create team member {name}: {e}")
 
     async def get_by_id(self, member_id: int) -> Optional[TeamMemberDB]:
         """Get team member by database ID."""

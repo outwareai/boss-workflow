@@ -11,6 +11,7 @@ Handles:
 """
 
 import logging
+import time
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
@@ -26,6 +27,18 @@ from ..exceptions import (
     EntityNotFoundError,
 )
 from sqlalchemy.exc import IntegrityError
+
+# Q3 2026: Import Prometheus metrics
+try:
+    from ...monitoring.prometheus import (
+        tasks_created_total,
+        tasks_completed_total,
+        db_queries_total,
+        db_query_duration,
+    )
+    METRICS_ENABLED = True
+except ImportError:
+    METRICS_ENABLED = False
 
 logger = logging.getLogger(__name__)
 

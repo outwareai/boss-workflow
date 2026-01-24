@@ -79,6 +79,13 @@ class Settings(BaseSettings):
 
     # Database (PostgreSQL)
     database_url: str = Field(default="", env="DATABASE_URL")
+    database_echo: bool = Field(default=False, env="DATABASE_ECHO")
+
+    # Database Connection Pool (Q3 2026)
+    db_pool_size: int = Field(default=20, env="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=10, env="DB_MAX_OVERFLOW")
+    db_pool_timeout: int = Field(default=30, env="DB_POOL_TIMEOUT")
+    db_pool_recycle: int = Field(default=3600, env="DB_POOL_RECYCLE")
 
     # Redis (optional - set empty to disable)
     redis_url: str = Field(default="", env="REDIS_URL")

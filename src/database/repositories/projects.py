@@ -16,6 +16,8 @@ from sqlalchemy.orm import selectinload
 
 from ..connection import get_database
 from ..models import ProjectDB, TaskDB
+from ..exceptions import DatabaseConstraintError, DatabaseOperationError, EntityNotFoundError
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +51,13 @@ class ProjectRepository:
                 logger.info(f"Created project: {name}")
                 return project
 
+            except IntegrityError as e:
+                logger.error(f"Constraint violation creating project {name}: {e}")
+                raise DatabaseConstraintError(f"Cannot create project {name}: duplicate or constraint violation")
+
             except Exception as e:
-                logger.error(f"Error creating project: {e}")
-                return None
+                logger.error(f"CRITICAL: Project creation failed for {name}: {e}", exc_info=True)
+                raise DatabaseOperationError(f"Failed to create project {name}: {e}")
 
     async def get_by_id(self, project_id: int) -> Optional[ProjectDB]:
         """Get project by ID with tasks."""

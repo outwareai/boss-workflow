@@ -1,11 +1,14 @@
 """
-Database connection and session management.
+Database connection and session management with connection pooling.
 
-Provides async SQLAlchemy engine and session factory.
+Provides async SQLAlchemy engine and session factory with optimized
+connection pooling for high concurrency scenarios.
+
+Q3 2026: Enhanced with pool monitoring and health checks.
 """
 
 import logging
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Dict, Any
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
@@ -14,6 +17,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncEngine,
 )
+from sqlalchemy.pool import NullPool, QueuePool
 
 from config import settings
 from .models import Base
@@ -46,22 +50,43 @@ class Database:
             elif database_url.startswith("postgresql://"):
                 database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+            # Connection pool configuration
+            # Use NullPool for testing to avoid connection leaks in tests
+            # Use QueuePool for production with configurable limits
+            pool_config = {}
+
+            if settings.environment == "test":
+                pool_config = {
+                    "poolclass": NullPool,
+                }
+                logger.info("Using NullPool for test environment")
+            else:
+                # Production pool configuration (configurable via settings)
+                pool_config = {
+                    "poolclass": QueuePool,
+                    "pool_size": settings.db_pool_size,          # Persistent connections
+                    "max_overflow": settings.db_max_overflow,    # Burst connections
+                    "pool_timeout": settings.db_pool_timeout,    # Wait time for connection
+                    "pool_recycle": settings.db_pool_recycle,    # Recycle after N seconds
+                    "pool_pre_ping": True,                       # Validate before use
+                }
+                logger.info(
+                    f"Database pool config: size={settings.db_pool_size}, "
+                    f"max_overflow={settings.db_max_overflow}, "
+                    f"timeout={settings.db_pool_timeout}s"
+                )
+
             # Create async engine with optimized connection pooling
-            # For production workloads (10 persistent + 20 burst connections)
             self.engine = create_async_engine(
                 database_url,
-                echo=settings.debug,
-                pool_size=10,              # 10 persistent connections
-                max_overflow=20,           # +20 burst connections (30 total)
-                pool_pre_ping=True,        # Validate before use (prevent stale)
-                pool_recycle=3600,         # Recycle every hour (DB restarts)
-                pool_timeout=30,           # 30s wait for connection
+                echo=settings.database_echo,
                 connect_args={
                     "server_settings": {
                         "application_name": "boss-workflow",
                         "jit": "off"       # Disable JIT for faster simple queries
                     }
                 },
+                **pool_config
             )
 
             # Create session factory
@@ -179,14 +204,80 @@ class Database:
                 result = await session.execute(text("SELECT 1"))
                 result.scalar()
 
+            # Get pool status
+            pool_status = await self.get_pool_status()
+
             return {
                 "status": "healthy",
                 "initialized": self._initialized,
+                "pool": pool_status,
             }
         except Exception as e:
             return {
                 "status": "unhealthy",
                 "error": str(e),
+            }
+
+    async def get_pool_status(self) -> Dict[str, Any]:
+        """Get connection pool status for monitoring."""
+        if not self.engine:
+            return {
+                "status": "not_initialized",
+                "error": "Engine not created"
+            }
+
+        try:
+            pool = self.engine.pool
+
+            # Handle NullPool (no pooling in test mode)
+            if isinstance(pool, NullPool):
+                return {
+                    "pool_type": "NullPool",
+                    "status": "no_pooling",
+                    "message": "Connection pooling disabled (test mode)"
+                }
+
+            # QueuePool statistics
+            size = pool.size()
+            checked_in = pool.checkedin()
+            checked_out = pool.checkedout()
+            overflow = pool.overflow()
+            total = size + overflow
+
+            # Calculate utilization
+            max_connections = size + pool._max_overflow
+            utilization = checked_out / max(max_connections, 1) if max_connections > 0 else 0
+
+            # Determine health status
+            if utilization > 0.9:
+                health = "critical"
+            elif utilization > 0.8:
+                health = "warning"
+            else:
+                health = "healthy"
+
+            return {
+                "pool_type": "QueuePool",
+                "status": health,
+                "size": size,
+                "checked_in": checked_in,
+                "checked_out": checked_out,
+                "overflow": overflow,
+                "total_connections": total,
+                "max_connections": max_connections,
+                "utilization": f"{utilization:.1%}",
+                "config": {
+                    "pool_size": pool.size(),
+                    "max_overflow": pool._max_overflow,
+                    "timeout": pool._timeout,
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting pool status: {e}")
+            return {
+                "status": "error",
+                "error": str(e)
             }
 
 
@@ -214,3 +305,32 @@ async def close_database():
     if _database:
         await _database.close()
         _database = None
+
+
+async def get_pool_status() -> Dict[str, Any]:
+    """Get connection pool status (module-level helper)."""
+    db = get_database()
+    return await db.get_pool_status()
+
+
+async def check_pool_health() -> bool:
+    """Check if connection pool is healthy."""
+    status = await get_pool_status()
+
+    # Handle different pool types
+    if status.get("pool_type") == "NullPool":
+        return True  # No pooling, always healthy
+
+    # Check health status
+    health = status.get("status")
+    if health in ("critical", "error"):
+        logger.warning(f"Pool health check failed: {status}")
+        return False
+
+    if health == "warning":
+        logger.warning(
+            f"High pool utilization: {status.get('utilization')} "
+            f"({status.get('checked_out')}/{status.get('max_connections')})"
+        )
+
+    return True

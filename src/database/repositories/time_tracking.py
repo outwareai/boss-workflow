@@ -11,6 +11,8 @@ from typing import Optional, List, Dict, Any
 
 from ..connection import get_database
 from ..models import TimeEntryDB, ActiveTimerDB, TaskDB
+from ..exceptions import DatabaseConstraintError, DatabaseOperationError, EntityNotFoundError
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
