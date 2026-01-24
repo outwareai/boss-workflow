@@ -832,6 +832,95 @@ async def clear_all_conversations(auth: AdminAuthRequest):
         return {"status": "error", "error": str(e)}
 
 
+@app.post("/api/admin/backup-oauth-tokens")
+async def backup_oauth_tokens_api():
+    """
+    Backup all OAuth tokens to JSON file (Railway-internal execution).
+
+    This endpoint runs the backup script within Railway's environment,
+    avoiding database connection issues from external machines.
+
+    Returns:
+        JSON with backup filename, token count, and timestamp
+    """
+    try:
+        from pathlib import Path
+        import json
+        from datetime import datetime
+        from sqlalchemy import select
+        from .database.models import OAuthTokenDB
+
+        logger.info("[BACKUP] Starting OAuth token backup via API...")
+
+        # Get database connection
+        db = get_database()
+        async with db.session() as session:
+            # Fetch all tokens
+            stmt = select(OAuthTokenDB)
+            result = await session.execute(stmt)
+            tokens = result.scalars().all()
+
+            if not tokens:
+                logger.warning("[BACKUP] No tokens found in database")
+                return {
+                    "status": "warning",
+                    "message": "No tokens found",
+                    "token_count": 0
+                }
+
+            logger.info(f"[BACKUP] Found {len(tokens)} token(s)")
+
+            # Create backup structure
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_data = {
+                "backup_timestamp": timestamp,
+                "backup_date": datetime.now().isoformat(),
+                "token_count": len(tokens),
+                "tokens": []
+            }
+
+            # Export token data
+            for token in tokens:
+                backup_data["tokens"].append({
+                    "email": token.email,
+                    "service": token.service,
+                    "access_token": token.access_token,
+                    "refresh_token": token.refresh_token,
+                    "token_type": token.token_type,
+                    "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+                    "scopes": token.scopes,
+                    "created_at": token.created_at.isoformat() if token.created_at else None,
+                    "updated_at": token.updated_at.isoformat() if token.updated_at else None
+                })
+
+            # Save backup file
+            backup_dir = Path("/tmp/oauth_backups")
+            backup_dir.mkdir(exist_ok=True)
+            filename = f"oauth_tokens_backup_{timestamp}.json"
+            filepath = backup_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump(backup_data, f, indent=2)
+
+            logger.info(f"[SUCCESS] Backup saved to: {filepath}")
+            logger.info(f"[CRITICAL] Store this backup in 1Password vault immediately!")
+
+            return {
+                "status": "success",
+                "filename": str(filepath),
+                "token_count": len(tokens),
+                "timestamp": timestamp,
+                "message": "Backup complete - download from Railway logs and store in 1Password"
+            }
+
+    except Exception as e:
+        logger.error(f"[ERROR] Backup failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
 # Track processed update IDs to prevent duplicate processing from Telegram retries
 _processed_updates: set = set()
 _max_processed_updates = 1000
