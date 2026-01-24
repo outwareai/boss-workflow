@@ -1051,7 +1051,11 @@ async def get_user_preferences(user_id: str):
 
 @app.get("/api/db/tasks")
 async def get_db_tasks(filters: TaskFilter = Depends()):
-    """Get tasks from PostgreSQL database."""
+    """
+    Get tasks from PostgreSQL database with pagination.
+
+    Q3 2026: Added pagination support (limit/offset) to prevent unbounded queries.
+    """
     try:
         from .database.repositories import get_task_repository
         task_repo = get_task_repository()
@@ -1059,13 +1063,14 @@ async def get_db_tasks(filters: TaskFilter = Depends()):
         status = filters.status.value if filters.status else None
         assignee = filters.assignee
         limit = filters.limit
+        offset = filters.offset
 
         if status:
-            tasks = await task_repo.get_by_status(status)
+            tasks = await task_repo.get_by_status(status, limit=limit, offset=offset)
         elif assignee:
-            tasks = await task_repo.get_by_assignee(assignee)
+            tasks = await task_repo.get_by_assignee(assignee, limit=limit, offset=offset)
         else:
-            tasks = await task_repo.get_all(limit=limit)
+            tasks = await task_repo.get_all(limit=limit, offset=offset)
 
         return {
             "tasks": [
@@ -1081,6 +1086,11 @@ async def get_db_tasks(filters: TaskFilter = Depends()):
                 for t in tasks
             ],
             "count": len(tasks),
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": len(tasks) == limit  # If we got exactly limit results, there might be more
+            }
         }
 
     except Exception as e:

@@ -180,14 +180,15 @@ class TaskRepository:
 
     # ==================== QUERY METHODS ====================
 
-    async def get_all(self, limit: int = 100) -> List[TaskDB]:
-        """Get all tasks."""
+    async def get_all(self, limit: int = 100, offset: int = 0) -> List[TaskDB]:
+        """Get all tasks with pagination support."""
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
                 .options(selectinload(TaskDB.subtasks))
                 .order_by(TaskDB.created_at.desc())
                 .limit(limit)
+                .offset(offset)
             )
             return list(result.scalars().all())
 
@@ -195,14 +196,15 @@ class TaskRepository:
         """Get most recent tasks (alias for get_all with smaller default)."""
         return await self.get_all(limit=limit)
 
-    async def get_by_status(self, status: str) -> List[TaskDB]:
+    async def get_by_status(self, status: str, limit: int = 100, offset: int = 0) -> List[TaskDB]:
         """
-        Get tasks by status.
-        
+        Get tasks by status with pagination support.
+
         Q2 2026 Optimization: Added eager loading to prevent lazy-load N+1.
+        Q3 2026: Added pagination (limit/offset) to prevent unbounded queries.
         """
         from sqlalchemy.orm import selectinload
-        
+
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
@@ -213,17 +215,20 @@ class TaskRepository:
                     selectinload(TaskDB.dependencies_out)
                 )
                 .order_by(TaskDB.created_at.desc())
+                .limit(limit)
+                .offset(offset)
             )
             return list(result.scalars().all())
 
-    async def get_by_assignee(self, assignee: str) -> List[TaskDB]:
+    async def get_by_assignee(self, assignee: str, limit: int = 100, offset: int = 0) -> List[TaskDB]:
         """
-        Get tasks by assignee.
-        
+        Get tasks by assignee with pagination support.
+
         Q2 2026 Optimization: Added eager loading to prevent lazy-load N+1.
+        Q3 2026: Added pagination (limit/offset) to prevent unbounded queries.
         """
         from sqlalchemy.orm import selectinload
-        
+
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
@@ -234,6 +239,8 @@ class TaskRepository:
                     selectinload(TaskDB.dependencies_out)
                 )
                 .order_by(TaskDB.created_at.desc())
+                .limit(limit)
+                .offset(offset)
             )
             return list(result.scalars().all())
 
