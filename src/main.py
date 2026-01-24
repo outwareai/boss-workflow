@@ -893,25 +893,37 @@ async def backup_oauth_tokens_api():
                     "updated_at": token.updated_at.isoformat() if token.updated_at else None
                 })
 
-            # Save backup file locally AND return data
-            backup_dir = Path("/tmp/oauth_backups")
+            # SECURITY FIX: Save encrypted backup to file instead of returning in response
+            backup_dir = Path("backups")
             backup_dir.mkdir(exist_ok=True)
-            filename = f"oauth_tokens_backup_{timestamp}.json"
-            filepath = backup_dir / filename
 
-            with open(filepath, 'w') as f:
-                json.dump(backup_data, f, indent=2)
+            backup_filename = f"oauth_backup_{timestamp}.json.enc"
+            backup_path = backup_dir / backup_filename
 
-            logger.info(f"[SUCCESS] Backup saved to: {filepath}")
-            logger.info(f"[CRITICAL] Store this backup in 1Password vault immediately!")
+            # Convert backup data to JSON string
+            backup_json = json.dumps(backup_data, indent=2)
 
+            # Encrypt the backup data
+            from .utils.encryption import get_token_encryption
+            encryption = get_token_encryption()
+            encrypted_backup = encryption.encrypt(backup_json)
+
+            # Write encrypted backup to file
+            with open(backup_path, 'w') as f:
+                f.write(encrypted_backup)
+
+            logger.info(f"[SUCCESS] Encrypted backup saved to: {backup_path}")
+            logger.info(f"[CRITICAL] Backup file is encrypted - use decryption key to restore")
+            logger.warning(f"[SECURITY] Backup data NOT included in API response (stored securely in file)")
+
+            # SECURITY FIX: Return only metadata - NO sensitive data
             return {
                 "status": "success",
-                "filename": str(filepath),
+                "backup_file": backup_filename,
+                "backup_path": str(backup_path),
                 "token_count": len(tokens),
                 "timestamp": timestamp,
-                "message": "Backup complete - download from Railway logs and store in 1Password",
-                "backup_data": backup_data  # Include full backup in response
+                "message": "Tokens backed up securely to encrypted file (not exposed in response)"
             }
 
     except Exception as e:
@@ -1140,8 +1152,20 @@ async def telegram_webhook(request: Request):
     to avoid Telegram's 60-second timeout causing duplicate requests.
 
     Q3 2026: Added Pydantic validation (lenient due to Telegram's complex update structure).
+    Q1 2027: Added webhook signature validation for security.
     """
     try:
+        # SECURITY FIX: Verify webhook signature (Secret Token Method)
+        if settings.telegram_webhook_secret:
+            import secrets
+            received_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+            if not secrets.compare_digest(received_secret, settings.telegram_webhook_secret):
+                logger.warning(f"Invalid Telegram webhook signature - rejecting request")
+                return JSONResponse(
+                    status_code=403,
+                    content={"ok": False, "error": "Invalid signature"}
+                )
+
         # Parse and validate basic structure
         update_data = await request.json()
 

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str = Field(default="", env="TELEGRAM_BOT_TOKEN")
     telegram_boss_chat_id: str = Field(default="", env="TELEGRAM_BOSS_CHAT_ID")
+    telegram_webhook_secret: str = Field(default="", env="TELEGRAM_WEBHOOK_SECRET")
 
     # DeepSeek AI
     deepseek_api_key: str = Field(default="", env="DEEPSEEK_API_KEY")

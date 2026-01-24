@@ -107,17 +107,27 @@ class Database:
         async with self.engine.begin() as conn:
             for table_name, column_name, column_def in migrations:
                 try:
-                    # Check if column exists
-                    result = await conn.execute(text(f"""
+                    # SECURITY FIX: Check if column exists using parameterized query
+                    result = await conn.execute(text("""
                         SELECT column_name
                         FROM information_schema.columns
-                        WHERE table_name = '{table_name}'
-                        AND column_name = '{column_name}'
-                    """))
+                        WHERE table_name = :table
+                        AND column_name = :column
+                    """), {"table": table_name, "column": column_name})
                     exists = result.fetchone()
 
                     if not exists:
                         logger.info(f"Migration: Adding column {table_name}.{column_name}")
+
+                        # SECURITY FIX: Validate identifiers before DDL
+                        # Only allow alphanumeric and underscores (prevents SQL injection)
+                        if not table_name.replace('_', '').isalnum():
+                            raise ValueError(f"Invalid table name: {table_name}")
+                        if not column_name.replace('_', '').isalnum():
+                            raise ValueError(f"Invalid column name: {column_name}")
+
+                        # Safe to use in DDL after validation
+                        # Note: column_def is internally controlled, not user input
                         await conn.execute(text(f"""
                             ALTER TABLE {table_name}
                             ADD COLUMN {column_name} {column_def}

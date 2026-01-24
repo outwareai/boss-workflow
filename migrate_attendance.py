@@ -38,17 +38,25 @@ async def migrate():
     async with engine.begin() as conn:
         for column_name, column_def in columns_to_add:
             try:
-                # Check if column exists
-                result = await conn.execute(text(f"""
+                # SECURITY FIX: Check if column exists using parameterized query
+                result = await conn.execute(text("""
                     SELECT column_name
                     FROM information_schema.columns
-                    WHERE table_name = 'attendance_records'
-                    AND column_name = '{column_name}'
-                """))
+                    WHERE table_name = :table
+                    AND column_name = :column
+                """), {"table": "attendance_records", "column": column_name})
                 exists = result.fetchone()
 
                 if not exists:
                     print(f"Adding column: {column_name}")
+
+                    # SECURITY FIX: Validate identifier before DDL
+                    # Only allow alphanumeric and underscores (prevents SQL injection)
+                    if not column_name.replace('_', '').isalnum():
+                        raise ValueError(f"Invalid column name: {column_name}")
+
+                    # Safe to use in DDL after validation
+                    # Note: column_def is internally controlled, not user input
                     await conn.execute(text(f"""
                         ALTER TABLE attendance_records
                         ADD COLUMN {column_name} {column_def}
