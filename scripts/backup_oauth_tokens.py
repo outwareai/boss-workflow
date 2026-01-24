@@ -55,17 +55,17 @@ async def backup_tokens():
     Returns:
         str: Filename of created backup
     """
-    print("🔄 Starting OAuth token backup...")
+    print("[BACKUP] Starting OAuth token backup...")
 
     try:
         # Get all tokens from database
         tokens = await get_all_tokens()
 
         if not tokens:
-            print("⚠️  No tokens found in database")
+            print("[WARNING] No tokens found in database")
             return None
 
-        print(f"📦 Found {len(tokens)} token(s) to backup")
+        print(f"[BACKUP] Found {len(tokens)} token(s) to backup")
 
         # Create backup structure
         backup = {
@@ -101,7 +101,7 @@ async def backup_tokens():
         print(f"✅ Successfully backed up {len(tokens)} tokens to: {filename}")
         print(f"📂 Full path: {filepath}")
         print()
-        print("🔐 CRITICAL NEXT STEPS:")
+        print("[CRITICAL] CRITICAL NEXT STEPS:")
         print("1. Store this file in 1Password vault: 'Boss Workflow Backups'")
         print("2. Item name: 'OAuth Token Backup - {}'".format(timestamp))
         print("3. Add tags: 'oauth', 'backup', 'encryption-migration'")
@@ -188,5 +188,5 @@ if __name__ == "__main__":
         print("=" * 60)
     else:
         print()
-        print("❌ Backup failed - see errors above")
+        print("[ERROR] Backup failed - see errors above")
         sys.exit(1)
