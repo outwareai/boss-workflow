@@ -173,21 +173,22 @@ class UnifiedHandler:
             # Route to command handlers
             if command == '/task':
                 # Start new task creation with the command text
-                response, _ = await self.context.start_conversation(
+                return await self._handle_create_task(
                     user_id=user_id,
-                    chat_id=user_id,  # For Telegram, chat_id = user_id
                     message=command_text if command_text else "Create a new task",
-                    is_urgent=False
+                    data={"message": command_text, "is_urgent": False},
+                    context=context,
+                    user_name=user_name
                 )
-                return response, None
             elif command == '/urgent':
-                response, _ = await self.context.start_conversation(
+                # Start urgent task creation
+                return await self._handle_create_task(
                     user_id=user_id,
-                    chat_id=user_id,
                     message=command_text if command_text else "Create an urgent task",
-                    is_urgent=True
+                    data={"message": command_text, "is_urgent": True},
+                    context=context,
+                    user_name=user_name
                 )
-                return response, None
             elif command == '/cancel':
                 await self.context.clear_active_conversation(user_id)
                 return "Cancelled. What would you like to do?", None
