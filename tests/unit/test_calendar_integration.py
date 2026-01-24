@@ -314,7 +314,7 @@ class TestGoogleCalendarIntegration:
     @pytest.mark.asyncio
     async def test_get_assignee_info_from_sheets(self, calendar):
         """Test looking up assignee info from Google Sheets."""
-        with patch('src.integrations.calendar.sheets_integration') as mock_sheets:
+        with patch('src.integrations.sheets.sheets_integration') as mock_sheets:
             mock_sheets.get_all_team_members = AsyncMock(return_value=[
                 {
                     'Name': 'Mayank',
@@ -331,7 +331,7 @@ class TestGoogleCalendarIntegration:
     @pytest.mark.asyncio
     async def test_get_assignee_info_not_found(self, calendar):
         """Test looking up non-existent assignee."""
-        with patch('src.integrations.calendar.sheets_integration') as mock_sheets:
+        with patch('src.integrations.sheets.sheets_integration') as mock_sheets:
             mock_sheets.get_all_team_members = AsyncMock(return_value=[])
 
             info = await calendar._get_assignee_info('Unknown')
@@ -395,12 +395,18 @@ class TestGoogleCalendarIntegration:
     @pytest.mark.asyncio
     async def test_build_event_body_includes_pinned_notes(self, calendar, sample_task):
         """Test event body includes pinned notes."""
-        from src.models.task import Note
+        # Create mock notes
+        note1 = MagicMock()
+        note1.content = "Important context"
+        note1.is_pinned = True
+        note1.author = "Boss"
 
-        sample_task.notes = [
-            Note(content="Important context", is_pinned=True, author="Boss"),
-            Note(content="Regular note", is_pinned=False, author="Dev")
-        ]
+        note2 = MagicMock()
+        note2.content = "Regular note"
+        note2.is_pinned = False
+        note2.author = "Dev"
+
+        sample_task.notes = [note1, note2]
 
         event = calendar._build_event_body(sample_task)
 
