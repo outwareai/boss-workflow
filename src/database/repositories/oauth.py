@@ -2,6 +2,8 @@
 Repository for OAuth token storage and retrieval.
 
 Handles storing and refreshing Google OAuth tokens for user-level integrations.
+
+Q1 2026: Integrated token encryption using Fernet (AES-128).
 """
 
 import logging
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import OAuthTokenDB
 from ..connection import get_database
+from ...utils.encryption import get_token_encryption
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,8 @@ class OAuthTokenRepository:
         """
         Store or update an OAuth token for a user/service combination.
 
+        Q1 2026: Encrypts tokens before storage using Fernet (AES-128).
+
         Args:
             email: User's email address
             service: Service name ('calendar' or 'tasks')
@@ -43,6 +48,11 @@ class OAuthTokenRepository:
             scopes: Space-separated list of granted scopes
         """
         try:
+            # Encrypt tokens before storage
+            encryption = get_token_encryption()
+            encrypted_refresh = encryption.encrypt(refresh_token)
+            encrypted_access = encryption.encrypt(access_token) if access_token else None
+
             async with self.db.session() as session:
                 # Check if token already exists
                 stmt = select(OAuthTokenDB).where(
@@ -60,27 +70,27 @@ class OAuthTokenRepository:
 
                 if existing:
                     # Update existing token
-                    existing.refresh_token = refresh_token
-                    if access_token:
-                        existing.access_token = access_token
+                    existing.refresh_token = encrypted_refresh
+                    if encrypted_access:
+                        existing.access_token = encrypted_access
                     if expires_at:
                         existing.expires_at = expires_at
                     if scopes:
                         existing.scopes = scopes
                     existing.updated_at = datetime.utcnow()
-                    logger.info(f"Updated {service} token for {email}")
+                    logger.info(f"Updated encrypted {service} token for {email}")
                 else:
                     # Create new token
                     token = OAuthTokenDB(
                         email=email,
                         service=service,
-                        refresh_token=refresh_token,
-                        access_token=access_token,
+                        refresh_token=encrypted_refresh,
+                        access_token=encrypted_access,
                         expires_at=expires_at,
                         scopes=scopes,
                     )
                     session.add(token)
-                    logger.info(f"Stored new {service} token for {email}")
+                    logger.info(f"Stored new encrypted {service} token for {email}")
 
                 await session.commit()
                 return True
@@ -93,9 +103,12 @@ class OAuthTokenRepository:
         """
         Get OAuth token for a user/service combination.
 
-        Returns dict with refresh_token, access_token, expires_at, scopes.
-        
+        Q1 2026: Decrypts tokens after retrieval. Falls back to plaintext
+        for backward compatibility during migration.
+
         Q2 2026: Added audit logging for OAuth token access.
+
+        Returns dict with refresh_token, access_token, expires_at, scopes.
         """
         try:
             async with self.db.session() as session:
@@ -111,6 +124,17 @@ class OAuthTokenRepository:
                 if not token:
                     return None
 
+                # Decrypt tokens (with backward compatibility)
+                encryption = get_token_encryption()
+                try:
+                    refresh_token = encryption.decrypt(token.refresh_token)
+                    access_token = encryption.decrypt(token.access_token) if token.access_token else None
+                except Exception as decrypt_error:
+                    # Backward compatibility: if decrypt fails, assume plaintext (pre-encryption)
+                    logger.warning(f"Decrypt failed for {email}/{service}, assuming plaintext: {decrypt_error}")
+                    refresh_token = token.refresh_token
+                    access_token = token.access_token
+
                 # Q2 2026: Audit log OAuth token access
                 from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
                 await log_audit_event(
@@ -125,8 +149,8 @@ class OAuthTokenRepository:
                 return {
                     "email": token.email,
                     "service": token.service,
-                    "refresh_token": token.refresh_token,
-                    "access_token": token.access_token,
+                    "refresh_token": refresh_token,
+                    "access_token": access_token,
                     "expires_at": token.expires_at,
                     "scopes": token.scopes,
                 }
@@ -149,10 +173,15 @@ class OAuthTokenRepository:
     ) -> bool:
         """
         Update the access token after a refresh.
-        
+
+        Q1 2026: Encrypts access token before update.
         Q2 2026: Added audit logging for OAuth token refresh.
         """
         try:
+            # Encrypt access token before storage
+            encryption = get_token_encryption()
+            encrypted_access = encryption.encrypt(access_token)
+
             async with self.db.session() as session:
                 stmt = select(OAuthTokenDB).where(
                     and_(
@@ -166,13 +195,13 @@ class OAuthTokenRepository:
                 if not token:
                     return False
 
-                token.access_token = access_token
+                token.access_token = encrypted_access
                 if expires_in:
                     token.expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
                 token.updated_at = datetime.utcnow()
 
                 await session.commit()
-                
+
                 # Q2 2026: Audit log OAuth token refresh
                 from ...utils.audit_logger import log_audit_event, AuditAction, AuditLevel
                 await log_audit_event(
@@ -183,7 +212,7 @@ class OAuthTokenRepository:
                     details={"service": service, "expires_in": expires_in},
                     level=AuditLevel.INFO
                 )
-                
+
                 return True
 
         except Exception as e:
