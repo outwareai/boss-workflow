@@ -870,7 +870,7 @@ Look good now? (yes/no)""", None
         # If auto_finalize is True, skip preview and finalize immediately
         if auto_finalize:
             logger.info(f"Auto-finalizing task from command for user {conversation.user_id}")
-            conversation.stage = ConversationStage.FINALIZED
+            # _finalize_task will set stage to COMPLETED
             return await self._finalize_task(conversation, conversation.user_id)
 
         # Normal flow: go to preview stage and ask for confirmation
