@@ -2,9 +2,14 @@
 -- Created: 2026-01-25
 -- Description: Full enterprise undo/redo system with multi-level support
 
+-- ==================== CLEANUP ====================
+
+-- Drop existing table if it exists (in case of previous failed migrations)
+DROP TABLE IF EXISTS undo_history CASCADE;
+
 -- ==================== UNDO HISTORY TABLE ====================
 
-CREATE TABLE IF NOT EXISTS undo_history (
+CREATE TABLE undo_history (
     id SERIAL PRIMARY KEY,
 
     -- User identification
@@ -46,9 +51,9 @@ CREATE INDEX IF NOT EXISTS idx_undo_history_undone ON undo_history(is_undone) WH
 -- Action type filtering
 CREATE INDEX IF NOT EXISTS idx_undo_history_action_type ON undo_history(action_type);
 
--- JSONB indexes for efficient querying
-CREATE INDEX IF NOT EXISTS idx_undo_history_action_data ON undo_history USING GIN(action_data jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS idx_undo_history_undo_data ON undo_history USING GIN(undo_data jsonb_path_ops);
+-- JSONB indexes for efficient querying (using default jsonb_ops operator class)
+CREATE INDEX IF NOT EXISTS idx_undo_history_action_data ON undo_history USING GIN(action_data);
+CREATE INDEX IF NOT EXISTS idx_undo_history_undo_data ON undo_history USING GIN(undo_data);
 
 -- ==================== COMMENTS ====================
 
