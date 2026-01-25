@@ -23,6 +23,7 @@ try:
         cache_operations_total,
         discord_messages_sent,
         errors_total,
+        error_rate_current,
         rate_limit_violations_total,
         rate_limit_near_limit,
         redis_connection_errors,
@@ -30,6 +31,7 @@ try:
         update_db_pool_metrics,
         record_task_status_counts,
     )
+    from .error_spike_detector import ErrorSpikeDetector, detector
     from .middleware import metrics_middleware
 
     __all__ = [
@@ -46,6 +48,7 @@ try:
         'cache_operations_total',
         'discord_messages_sent',
         'errors_total',
+        'error_rate_current',
         'rate_limit_violations_total',
         'rate_limit_near_limit',
         'redis_connection_errors',
@@ -56,6 +59,8 @@ try:
         'alert_manager',
         'AlertManager',
         'AlertSeverity',
+        'ErrorSpikeDetector',
+        'detector',
     ]
 except ImportError:
     # Prometheus not available, only export alerts

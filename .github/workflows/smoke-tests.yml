@@ -1,0 +1,118 @@
+name: Pre-Deploy Smoke Tests
+
+on:
+  push:
+    branches: [master, main, staging]
+    paths:
+      - 'src/**'
+      - 'tests/smoke/**'
+      - 'requirements.txt'
+      - '.github/workflows/smoke-tests.yml'
+  pull_request:
+    branches: [master, main, staging]
+    paths:
+      - 'src/**'
+      - 'tests/smoke/**'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+jobs:
+  smoke-tests:
+    name: Critical Intent Smoke Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint with flake8 (smoke tests only)
+        run: |
+          pip install flake8
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 tests/smoke/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        continue-on-error: true
+
+      - name: Run smoke tests
+        run: |
+          pytest tests/smoke/test_critical_intents.py -v \
+            --tb=short \
+            --junit-xml=smoke-test-results.xml \
+            --cov=src.ai.intent \
+            --cov-report=term-missing
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: smoke-test-results-${{ matrix.python-version }}
+          path: smoke-test-results.xml
+
+      - name: Report test results
+        if: failure()
+        run: |
+          echo "## Pre-Deploy Smoke Tests Failed" >> $GITHUB_STEP_SUMMARY
+          echo "❌ Critical tests failed - deployment is blocked" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Action Required:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the test failures above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Fix the failing tests in your code" >> $GITHUB_STEP_SUMMARY
+          echo "3. Push fixes - tests will re-run automatically" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "These tests are **required to pass** before any deployment." >> $GITHUB_STEP_SUMMARY
+
+      - name: Report success
+        if: success()
+        run: |
+          echo "## Pre-Deploy Smoke Tests Passed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All critical tests passed - safe to deploy" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Python Version:** ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+
+  status-check:
+    name: Smoke Test Status
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+    if: always()
+
+    steps:
+      - name: Check test status
+        run: |
+          if [ "${{ needs.smoke-tests.result }}" != "success" ]; then
+            echo "❌ Smoke tests FAILED - deployment blocked"
+            exit 1
+          else
+            echo "✅ Smoke tests PASSED - ready for deployment"
+            exit 0
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const testStatus = "${{ needs.smoke-tests.result }}";
+            const statusEmoji = testStatus === "success" ? "✅" : "❌";
+            const comment = `${statusEmoji} **Pre-Deploy Smoke Tests** - ${testStatus.toUpperCase()}`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

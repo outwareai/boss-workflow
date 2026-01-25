@@ -308,6 +308,20 @@ Check logs for full details."""
         )
         logger.info("Synthetic monitoring scheduled: every 1 hour")
 
+        # Data consistency check - daily at 2 AM (Q3 2026)
+        self.scheduler.add_job(
+            self._data_consistency_check_job,
+            CronTrigger(
+                hour=2,
+                minute=0,
+                timezone=self.timezone
+            ),
+            id="data_consistency_check",
+            name="Data Consistency Check - Sheets/DB/Discord",
+            replace_existing=True
+        )
+        logger.info("Data consistency check scheduled: daily at 2 AM")
+
         self.scheduler.start()
         logger.info("Scheduler started with all jobs")
 
@@ -1166,6 +1180,92 @@ _Reply in this thread with your update!_"""
         except Exception as e:
             logger.error(f"CRITICAL: Synthetic Monitoring failed: {e}", exc_info=True)
             await self._notify_boss_of_failure("Synthetic Monitoring", e)
+            raise
+
+    async def _data_consistency_check_job(self) -> None:
+        """
+        Check data consistency across Sheets, DB, and Discord.
+
+        Q3 2026: Automated data consistency checker.
+
+        Runs daily at 2 AM to detect:
+        - Orphaned tasks (in DB but not in Sheets)
+        - Orphaned sheet entries (in Sheets but not in DB)
+        - Orphaned Discord threads (no matching task)
+        - Missing Discord threads (active tasks without threads)
+        - Status mismatches (DB vs Sheets)
+
+        Auto-fixes safe issues and alerts for manual intervention.
+        """
+        logger.info("Running data consistency check job")
+
+        try:
+            from ..utils.data_consistency import run_consistency_check, fix_orphaned_data
+            from ..monitoring.alerts import alert_manager, AlertSeverity
+
+            # Run consistency check
+            issues = await run_consistency_check()
+            total_issues = sum(len(v) if isinstance(v, list) else 0 for v in issues.values())
+
+            if total_issues == 0:
+                logger.info("Data consistency check: All systems consistent ✓")
+                return
+
+            # Alert about issues found
+            await alert_manager.send_alert(
+                title="Data Consistency Issues Found",
+                message=f"Found {total_issues} data consistency issues across Sheets, DB, and Discord",
+                severity=AlertSeverity.WARNING,
+                metrics={
+                    "total_issues": total_issues,
+                    "orphaned_db_tasks": len(issues["orphaned_db_tasks"]),
+                    "orphaned_sheet_tasks": len(issues["orphaned_sheet_tasks"]),
+                    "orphaned_discord_threads": len(issues["orphaned_discord_threads"]),
+                    "missing_discord_threads": len(issues["missing_discord_threads"]),
+                    "status_mismatches": len(issues["status_mismatches"])
+                }
+            )
+
+            # Auto-fix safe issues
+            logger.info("Auto-fixing safe issues...")
+            fixed_count = await fix_orphaned_data(issues)
+
+            if fixed_count > 0:
+                logger.info(f"Auto-fixed {fixed_count} issues")
+
+            # Check if manual intervention needed
+            manual_issues = (
+                len(issues["orphaned_db_tasks"]) +
+                len(issues["orphaned_sheet_tasks"]) +
+                len(issues["missing_discord_threads"])
+            )
+
+            if manual_issues > 0:
+                logger.warning(f"{manual_issues} issues require manual intervention")
+
+                # Send detailed report to boss via Telegram
+                if settings.telegram_boss_chat_id:
+                    report = f"""⚠️ **Data Consistency Report**
+
+Auto-fixed {fixed_count} issues.
+
+**Remaining issues requiring manual intervention:**
+- {len(issues['orphaned_db_tasks'])} tasks in DB but not in Sheets
+- {len(issues['orphaned_sheet_tasks'])} tasks in Sheets but not in DB
+- {len(issues['missing_discord_threads'])} active tasks without Discord threads
+
+Run `/api/admin/check-consistency` for details."""
+
+                    await self.reminders.send_telegram_message(
+                        settings.telegram_boss_chat_id,
+                        report
+                    )
+
+            logger.info("Data consistency check completed")
+
+        except Exception as e:
+            logger.error(f"CRITICAL: Data Consistency Check failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Data Consistency Check", e)
             raise
 
     def trigger_job(self, job_id: str) -> bool:

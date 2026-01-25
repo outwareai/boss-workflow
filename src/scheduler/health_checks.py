@@ -15,13 +15,33 @@ async def check_system_health():
 
     Scheduled to run every 5 minutes.
     Checks:
-    - Error rate
+    - Error rate spike
     - Database pool usage
     - Cache hit rate
     """
     logger.info("Running system health checks...")
 
     try:
+        # Check error rate
+        try:
+            from src.monitoring.error_spike_detector import detector
+            metrics = detector.get_current_metrics()
+
+            # Alert if error rate is elevated (above 10 errors/min)
+            if metrics["current_rate"] > 10:
+                await alert_manager.send_alert(
+                    title="High Error Rate",
+                    message=f"Error rate at {metrics['current_rate']:.1f}/min",
+                    severity=AlertSeverity.WARNING,
+                    metrics={
+                        "current_rate": f"{metrics['current_rate']:.2f}/min",
+                        "baseline_rate": f"{metrics['baseline_rate']:.2f}/min",
+                        "recent_errors": str(metrics["recent_error_count"]),
+                    }
+                )
+        except Exception as e:
+            logger.debug(f"Error rate check skipped: {e}")
+
         # Check DB pool
         from src.database.connection import get_pool_status
         try:

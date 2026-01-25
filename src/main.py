@@ -1427,6 +1427,91 @@ async def reset_cache_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/admin/check-consistency")
+async def check_data_consistency():
+    """
+    Check data consistency across Sheets, DB, and Discord.
+
+    Q3 2026: Automated data consistency checker.
+
+    Returns:
+        JSON with detected issues:
+        - orphaned_db_tasks: Tasks in DB but not in Sheets
+        - orphaned_sheet_tasks: Tasks in Sheets but not in DB
+        - orphaned_discord_threads: Discord threads with no matching task
+        - missing_discord_threads: Active tasks without Discord threads
+        - status_mismatches: Tasks with different status in DB vs Sheets
+    """
+    try:
+        from .utils.data_consistency import run_consistency_check
+
+        issues = await run_consistency_check()
+
+        total_issues = sum(len(v) if isinstance(v, list) else 0 for v in issues.values())
+
+        logger.info(f"Data consistency check complete. Found {total_issues} issues.")
+
+        return {
+            "status": "healthy" if total_issues == 0 else "issues_found",
+            "total_issues": total_issues,
+            "issues": issues,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking data consistency: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/fix-orphans")
+async def fix_orphaned_data_endpoint():
+    """
+    Auto-fix orphaned data where safe.
+
+    Q3 2026: Automated orphan cleanup.
+
+    Safe fixes:
+    - Delete orphaned Discord threads (no matching task)
+    - Sync status mismatches (DB is source of truth)
+
+    Unsafe fixes require manual intervention:
+    - Orphaned DB tasks
+    - Orphaned Sheet tasks
+
+    Returns:
+        JSON with count of fixes applied
+    """
+    try:
+        from .utils.data_consistency import run_consistency_check, fix_orphaned_data
+
+        # First check what needs fixing
+        issues = await run_consistency_check()
+
+        # Apply fixes
+        fixed_count = await fix_orphaned_data(issues)
+
+        logger.info(f"Auto-fix complete. Fixed {fixed_count} issues.")
+
+        return {
+            "status": "fixed",
+            "fixed_count": fixed_count,
+            "details": {
+                "discord_threads_deleted": len(issues["orphaned_discord_threads"]),
+                "status_mismatches_synced": len(issues["status_mismatches"])
+            },
+            "remaining_issues": {
+                "orphaned_db_tasks": len(issues["orphaned_db_tasks"]),
+                "orphaned_sheet_tasks": len(issues["orphaned_sheet_tasks"]),
+                "missing_discord_threads": len(issues["missing_discord_threads"])
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error fixing orphaned data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Track processed update IDs to prevent duplicate processing from Telegram retries
 _processed_updates: set = set()
 _max_processed_updates = 1000
@@ -2070,6 +2155,30 @@ async def get_db_stats():
 
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Monitoring endpoints
+@app.get("/api/monitoring/error-spike-metrics")
+async def get_error_spike_metrics():
+    """Get error spike detection metrics.
+
+    Returns current error rate, baseline, and spike detection status.
+    """
+    try:
+        from .monitoring.error_spike_detector import detector
+
+        metrics = detector.get_current_metrics()
+
+        return {
+            "ok": True,
+            "metrics": metrics,
+            "spike_threshold": detector.spike_threshold,
+            "window_minutes": detector.window_minutes,
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting error spike metrics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

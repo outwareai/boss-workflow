@@ -93,6 +93,12 @@ errors_total = Counter(
     ['type', 'severity']
 )
 
+error_rate_current = Gauge(
+    'error_rate_current',
+    'Current error rate (errors per minute)',
+    ['time_window']
+)
+
 # Rate Limiting Metrics (Q1 2026 - Slowapi production rollout)
 rate_limit_violations_total = Counter(
     'rate_limit_violations_total',

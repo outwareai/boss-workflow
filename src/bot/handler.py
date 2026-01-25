@@ -380,6 +380,7 @@ class UnifiedHandler:
             UserIntent.SEARCH_TASKS: self._handle_search,
             UserIntent.BULK_COMPLETE: self._handle_bulk_complete,
             UserIntent.LIST_TEMPLATES: self._handle_templates,
+            UserIntent.CREATE_FROM_TEMPLATE: self._handle_create_from_template,
             UserIntent.DELAY_TASK: self._handle_delay,
             UserIntent.ADD_TEAM_MEMBER: self._handle_add_team,
             UserIntent.TEACH_PREFERENCE: self._handle_teach,
@@ -1975,6 +1976,63 @@ Reply **yes** to confirm or **no** to cancel.""", None
         lines.append("Example: \"bug: login crashes\" → High priority bug")
 
         return "\n".join(lines), None
+
+    async def _handle_create_from_template(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle template-based task creation.
+
+        Extracts template name and description from data and creates task.
+        """
+        from ..models.templates import apply_template
+
+        template_name = data.get("template")
+        description = data.get("description", "").strip()
+
+        if not template_name or not description:
+            return "❌ Could not extract template or description. Please try again.", None
+
+        try:
+            # Apply template
+            task_data = apply_template(template_name, description)
+
+            # Start conversation with template data
+            # This ensures the user sees the templated task and can review before creating
+            user_prefs = await self.prefs.get_preferences(user_id)
+
+            # Create the templated task
+            task_id = f"TASK-{datetime.now().strftime('%Y%m%d')}-{user_id[:3].upper()}"
+
+            # Build rich response showing template application
+            template_preview = f"""✅ **Template Applied: {template_name.upper()}**
+
+📋 **Task:** {task_data['title']}
+🎯 **Priority:** {task_data['priority'].upper()}
+🏷️ **Tags:** {', '.join(task_data['tags'])}
+
+📝 **Acceptance Criteria:**
+"""
+            for i, criterion in enumerate(task_data.get("acceptance_criteria", []), 1):
+                template_preview += f"\n{i}. {criterion}"
+
+            if task_data.get("estimated_effort"):
+                template_preview += f"\n\n⏱️ **Estimated Effort:** {task_data['estimated_effort']}"
+
+            template_preview += "\n\n Would you like me to create this task? (Yes/No)"
+
+            # Store the templated task data for confirmation
+            self._recent_messages[user_id] = {
+                "content": task_data["title"],
+                "template_data": task_data
+            }
+
+            return template_preview, None
+
+        except ValueError as e:
+            return f"❌ Error: {str(e)}", None
+        except Exception as e:
+            logger.error(f"Error creating task from template: {e}")
+            return f"❌ Failed to create task from template: {str(e)}", None
 
     async def _handle_email_recap(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str

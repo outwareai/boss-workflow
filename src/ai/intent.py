@@ -86,6 +86,7 @@ class UserIntent(str, Enum):
 
     # Templates
     LIST_TEMPLATES = "list_templates"        # "/templates", "what templates are there?"
+    CREATE_FROM_TEMPLATE = "create_from_template"  # "/template bug login crashes"
 
     # Spec generation
     GENERATE_SPEC = "generate_spec"          # "/spec TASK-001", "generate spec for task"

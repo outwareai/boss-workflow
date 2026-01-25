@@ -1,8 +1,8 @@
 # Boss Workflow Automation - Features Documentation
 
-> **Last Updated:** 2026-01-24
-> **Version:** 2.5.0 (Q1 2026 - Handler Refactoring Foundation)
-> **Total Lines:** ~2600 | **Total Features:** 116+
+> **Last Updated:** 2026-01-25
+> **Version:** 2.5.1 (Q1 2026 - Smart Reminders Phase 3)
+> **Total Lines:** ~2700 | **Total Features:** 118+
 
 **Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
 **Usage Rule:** **Read this file FIRST when starting work, update LAST after making changes.**
@@ -1943,6 +1943,8 @@ railway variables -s boss-workflow | grep ENCRYPTION_KEY
 | `send_evening_digest` | 8:00 PM daily | Evening email digest | 1x/day |
 | `send_deadline_reminders` | Every 15 min | Task deadline notifications | 96x/day |
 | `send_overdue_alerts` | 10:00 AM, 2:00 PM | Overdue task alerts | 2x/day |
+| `smart_deadline_reminders` | Every 30 min | Smart grouped reminders (v2.5) | 48x/day |
+| `smart_overdue_escalation` | 9:00 AM, 3:00 PM | Categorized escalation (v2.5) | 2x/day |
 | `generate_weekly_report` | Monday 10:00 AM | Weekly summary to Sheets + Discord | 1x/week |
 | `generate_monthly_report` | 1st of month 9:00 AM | Monthly analytics | 1x/month |
 | `process_recurring_tasks` | Every 5 min | Check and create due recurring tasks | 288x/day |
@@ -2070,6 +2072,93 @@ Deadline: Jan 16, 2026 5:00 PM
 
 Please follow up with your team.
 ```
+
+---
+
+#### Smart Deadline Reminders (Phase 3 - Q1 2026)
+
+**Status:** ✅ Production (New in v2.5)
+**Feature:** Personalized, grouped deadline reminders with smart prioritization
+
+**Trigger:** Every 30 minutes
+
+**Smart Features:**
+- Reminders grouped by assignee (consolidated notifications)
+- Priority-based emoji indicators (🔴 Critical, 🟠 High, 🟡 Medium, 🟢 Low)
+- Multi-channel delivery (Telegram to boss + Discord alerts)
+- Prevents spam through intelligent deduplication
+
+**Reminder Format (Grouped by Assignee):**
+```
+⏰ **Deadline Reminders for John**
+
+You have 3 task(s) due soon:
+
+🔴 TASK-008: Fix critical API bug
+  Due in: 1h 45m (17:00)
+
+🟠 TASK-015: Complete homepage redesign
+  Due in: 2h 30m (17:45)
+
+🟡 TASK-022: Write API documentation
+  Due in: 55m (16:15)
+
+Please prioritize these tasks!
+```
+
+**Implementation:** `src/scheduler/smart_reminders.py`
+
+**API Endpoints (Admin):**
+- `POST /api/admin/send-smart-reminders` - Manually trigger smart reminders
+- `POST /api/admin/send-reminder/{task_id}` - Send reminder for specific task
+
+---
+
+#### Smart Overdue Escalation (Phase 3 - Q1 2026)
+
+**Status:** ✅ Production (New in v2.5)
+**Feature:** Categorized escalation for overdue tasks with severity levels
+
+**Trigger:** 9:00 AM and 3:00 PM daily
+
+**Escalation Levels:**
+
+1. **Critical (Red Alert)** - Tasks overdue >7 days
+```
+🚨 **CRITICAL: Severely Overdue Tasks**
+
+2 task(s) are >7 days overdue!
+
+🔴 TASK-001: Stripe payment integration
+   Assignee: John | Overdue: 9 days
+
+🔴 TASK-005: Email deployment fix
+   Assignee: Sarah | Overdue: 8 days
+
+**Action Required:** Immediate follow-up needed!
+```
+
+2. **Warning (Orange Alert)** - Tasks overdue 3-7 days
+```
+⚠️ **WARNING: Overdue Tasks**
+
+4 task(s) are 3-7 days overdue:
+
+🟠 TASK-012: Database migration
+   Mayank | Overdue: 5d
+
+...
+```
+
+3. **Attention (Yellow Notice)** - Tasks overdue 1-3 days
+```
+📌 3 task(s) overdue 1-3 days. Please review and update statuses.
+```
+
+**Implementation:** `src/scheduler/smart_reminders.py`
+
+**API Endpoints (Admin):**
+- `POST /api/admin/send-overdue-escalation` - Manually trigger escalation
 
 ---
 
@@ -4209,6 +4298,7 @@ Complete monitoring infrastructure with Prometheus metrics collection, Grafana v
 
 **Error Metrics:**
 - `errors_total`: Total errors (labels: type, severity)
+- `error_rate_current`: Current error rate in errors per minute (labels: time_window)
 
 **Rate Limiting Metrics:**
 - `rate_limit_violations_total`: Rate limit violations (labels: endpoint)
@@ -4269,6 +4359,104 @@ GET /health/db
 
 **Info Alerts (12h repeat):**
 - `LowCacheHitRate`: <50% cache hit rate for 10 minutes
+
+### Error Spike Alerting
+
+**Status:** ✅ Production (Q1 2026 - Phase 4)
+**Priority:** P2 (Production hardening)
+**Files:** `src/monitoring/error_spike_detector.py`
+
+#### Overview
+
+Proactive error spike detection that identifies sudden increases in error rates and sends immediate Slack/Discord alerts when errors spike above baseline levels. Prevents alert fatigue through rate limiting (max 1 alert per hour).
+
+#### Features
+
+**Spike Detection Algorithm:**
+- 5-minute sliding window for error rate calculation
+- Baseline establishment after 5+ errors
+- Exponential moving average (90% history, 10% new data)
+- 2.0x baseline threshold for spike detection
+- Rate-limited alerting (1 alert per hour maximum)
+
+**Metrics Tracked:**
+- `current_rate`: Errors per minute in current window
+- `baseline_rate`: Rolling average of historical error rate
+- `spike_factor`: Multiplier above baseline when spike detected
+- `recent_error_count`: Number of errors in current window
+- `baseline_established`: Boolean flag (True after 5+ errors)
+
+**Integration Points:**
+- Middleware captures HTTP errors (4xx, 5xx) and exceptions
+- Health checks monitor error rate every 5 minutes
+- Global `/api/monitoring/error-spike-metrics` endpoint for diagnostics
+
+#### Implementation
+
+**Error Recording:**
+```python
+from src.monitoring import detector
+
+# Automatically called by middleware on errors
+await detector.record_error()
+```
+
+**Metrics Retrieval:**
+```python
+metrics = detector.get_current_metrics()
+# Returns: {
+#   'current_rate': 2.5,        # errors/minute
+#   'baseline_rate': 1.2,       # baseline
+#   'spike_factor': 2.08,       # current_rate/baseline
+#   'recent_error_count': 5,    # in window
+#   'baseline_established': True,
+#   'time_since_last_alert': 300
+# }
+```
+
+**Endpoint:**
+```
+GET /api/monitoring/error-spike-metrics
+
+Response:
+{
+  "ok": true,
+  "metrics": { ... },
+  "spike_threshold": 2.0,
+  "window_minutes": 5
+}
+```
+
+**Health Check Integration:**
+Runs every 5 minutes in `src/scheduler/health_checks.py`:
+- Alerts if error rate > 10 errors/min
+- Compares current rate vs baseline
+- Includes recent error count in alert
+
+#### Alert Details
+
+**When Triggered:**
+- Error rate increases 2.0x above baseline
+- After baseline established (5+ errors minimum)
+- Only 1 alert per hour to prevent fatigue
+
+**Alert Format (Slack/Discord):**
+```
+[CRITICAL] Error Rate Spike Detected
+Error rate increased 2.1x above baseline
+
+Metrics:
+  current_rate: 8.50/min
+  baseline_rate: 4.05/min
+  spike_factor: 2.1x
+  window_minutes: 5
+```
+
+**What It Catches:**
+- Sudden error increases (critical bugs, crashes)
+- Deployment issues or regressions
+- Infrastructure problems (database down, API failures)
+- Rate limit exceeded scenarios
 
 #### AlertManager Integration
 

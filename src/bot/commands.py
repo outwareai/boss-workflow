@@ -16,6 +16,13 @@ from ..ai.deepseek import get_deepseek_client
 from .conversation import get_conversation_manager
 from .validation import get_validation_workflow
 from ..models.validation import ProofType, ValidationStatus
+from ..models.templates import (
+    apply_template,
+    validate_template_name,
+    get_template_suggestions,
+    list_templates,
+    format_template_help,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +308,78 @@ Or use `/addteam [name] [role]`"""
             return f"✅ Added **{name}** to your team!"
         else:
             return "Failed to add team member. Please try again."
+
+    async def handle_templates(self, user_id: str) -> str:
+        """Handle /templates command - show available task templates."""
+        return format_template_help()
+
+    async def handle_template(
+        self,
+        user_id: str,
+        chat_id: str,
+        template_name: str,
+        description: str
+    ) -> str:
+        """Handle /template command - create task from template.
+
+        Usage: /template bug Login redirects to wrong page
+
+        Args:
+            user_id: User ID
+            chat_id: Chat ID
+            template_name: Name of the template
+            description: Task description to fill template
+
+        Returns:
+            Response message
+        """
+        if not description:
+            return """❌ Missing description!
+
+Usage: `/template <template_name> <description>`
+
+Examples:
+• `/template bug` Login redirects to wrong page
+• `/template feature` Add dark mode toggle
+• `/template hotfix` Database connection timeout
+• `/template research` Investigate performance issues
+• `/template meeting` Q1 planning session
+
+Use `/templates` to see all available templates."""
+
+        # Validate template exists
+        if not validate_template_name(template_name):
+            suggestions = get_template_suggestions(description)
+            suggestion_msg = ""
+            if suggestions:
+                suggestion_msg = f"\n💡 Suggested templates: {', '.join(suggestions)}"
+
+            return f"""❌ Unknown template: **{template_name}**{suggestion_msg}
+
+Available templates: {', '.join(list_templates().keys())}
+
+Use `/templates` for full details."""
+
+        try:
+            # Apply template
+            task_data = apply_template(template_name, description)
+
+            # Start conversation with template data
+            response, _ = await self.conversation.start_conversation(
+                user_id=user_id,
+                chat_id=chat_id,
+                message=task_data["title"],
+                is_urgent=(task_data.get("priority") in ["urgent", "high"]),
+                template_data=task_data
+            )
+
+            return response
+
+        except ValueError as e:
+            return f"❌ Error: {str(e)}"
+        except Exception as e:
+            logger.error(f"Error creating task from template: {e}")
+            return f"❌ Failed to create task from template: {str(e)}"
 
     async def handle_syncteam(self, user_id: str, clear_first: bool = False) -> str:
         """
