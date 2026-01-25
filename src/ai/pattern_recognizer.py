@@ -15,7 +15,7 @@ from src.database.repositories import (
     get_memory_repository,
     get_template_repository
 )
-from src.database.connection import get_db_session
+from src.database.connection import get_session
 from src.ai.deepseek import get_deepseek_client
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class PatternRecognizer:
         Returns:
             List of similar projects with similarity scores
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 memory_repo = get_memory_repository(session)
 
@@ -160,7 +160,7 @@ Only include projects with score >= 50."""
         Returns:
             Dictionary with aggregated patterns
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 memory_repo = get_memory_repository(session)
 
@@ -257,7 +257,7 @@ Return JSON:
         Returns:
             List of predicted challenges with probabilities
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 memory_repo = get_memory_repository(session)
 
@@ -349,7 +349,7 @@ Return top 5 predicted challenges with probability:
         Returns:
             List of recommended templates with match scores
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 template_repo = get_template_repository(session)
 

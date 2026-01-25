@@ -17,7 +17,7 @@ from src.database.repositories import (
     get_discussion_repository,
     get_planning_repository
 )
-from src.database.connection import get_db_session
+from src.database.connection import get_session
 from src.ai.deepseek import get_deepseek_client
 from src.ai.pattern_recognizer import pattern_recognizer
 
@@ -45,7 +45,7 @@ class MemoryRetrieval:
         Returns:
             Answer text based on memory
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 memory_repo = get_memory_repository(session)
                 decision_repo = get_decision_repository(session)
@@ -223,7 +223,7 @@ If the memory doesn't contain relevant information, say so clearly."""
         Returns:
             List of suggested next steps
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 from src.database.repositories import get_task_draft_repository
 

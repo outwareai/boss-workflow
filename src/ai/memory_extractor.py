@@ -18,7 +18,7 @@ from src.database.repositories import (
     get_planning_repository,
     get_task_repository
 )
-from src.database.connection import get_db_session
+from src.database.connection import get_session
 from src.ai.deepseek import get_deepseek_client
 import json
 
@@ -41,7 +41,7 @@ class MemoryExtractor:
         Returns:
             True if patterns were extracted successfully
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 memory_repo = get_memory_repository(session)
                 task_repo = get_task_repository(session)
@@ -157,7 +157,7 @@ Provide in JSON format:
         Returns:
             Number of decisions extracted
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 planning_repo = get_planning_repository(session)
                 decision_repo = get_decision_repository(session)
@@ -295,7 +295,7 @@ Keep summary under 200 words."""
         Returns:
             Metrics dictionary with statistics and insights
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 task_repo = get_task_repository(session)
                 tasks = await task_repo.get_by_project(project_id)
@@ -405,7 +405,7 @@ Keep summary under 200 words."""
         Returns:
             Discussion ID if created, None otherwise
         """
-        async with get_db_session() as session:
+        async with get_session() as session:
             try:
                 discussion_repo = get_discussion_repository(session)
 
