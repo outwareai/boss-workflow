@@ -67,41 +67,41 @@ class UndoManager:
         try:
             # Create database record
             undo_record = UndoHistoryDB(
-                    user_id=user_id,
-                    action_type=action_type,
-                    action_data=action_data,
-                    undo_function=undo_function,
-                    undo_data=undo_data,
-                    description=description,
-                    metadata=metadata or {}
-                )
+                user_id=user_id,
+                action_type=action_type,
+                action_data=action_data,
+                undo_function=undo_function,
+                undo_data=undo_data,
+                description=description,
+                metadata=metadata or {}
+            )
 
-                session.add(undo_record)
-                await session.flush()
+            session.add(undo_record)
+            await session.flush()
 
-                record_id = undo_record.id
+            record_id = undo_record.id
 
-                # Cache last N actions for fast access
-                cache_key = f"undo:history:{user_id}"
-                history = await cache.get(cache_key) or []
-                history.insert(0, {
-                    "id": record_id,
-                    "action_type": action_type,
-                    "description": description,
-                    "timestamp": undo_record.timestamp.isoformat()
-                })
+            # Cache last N actions for fast access
+            cache_key = f"undo:history:{user_id}"
+            history = await cache.get(cache_key) or []
+            history.insert(0, {
+                "id": record_id,
+                "action_type": action_type,
+                "description": description,
+                "timestamp": undo_record.timestamp.isoformat()
+            })
 
-                # Keep only recent actions in cache
-                history = history[:self.max_undo_depth]
-                await cache.set(cache_key, history, ttl=self.cache_ttl)
+            # Keep only recent actions in cache
+            history = history[:self.max_undo_depth]
+            await cache.set(cache_key, history, ttl=self.cache_ttl)
 
-                logger.info(f"Recorded undoable action: {action_type} for user {user_id}")
+            logger.info(f"Recorded undoable action: {action_type} for user {user_id}")
 
-                # Only commit if we created the session
-                if not use_existing_session:
-                    await session.commit()
+            # Only commit if we created the session
+            if not use_existing_session:
+                await session.commit()
 
-                return record_id
+            return record_id
 
         except Exception as e:
             logger.error(f"Failed to record undo action: {e}")

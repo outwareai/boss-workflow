@@ -829,6 +829,136 @@ async def run_migration(auth: AdminAuthRequest):
         }
 
 
+@app.post("/admin/run-undo-migration")
+async def run_undo_migration(auth: AdminAuthRequest):
+    """
+    Run undo_history table migration (003_add_undo_history.sql).
+    Requires ADMIN_SECRET environment variable in request body.
+
+    Q4 2025: Undo/Redo System activation.
+    """
+    try:
+        import secrets as sec_module
+
+        # Security check
+        admin_secret = settings.admin_secret if hasattr(settings, 'admin_secret') else None
+
+        if not admin_secret or not sec_module.compare_digest(auth.secret, admin_secret):
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+        logger.info("[MIGRATION] Starting undo_history table migration")
+
+        # Read migration SQL
+        import pathlib
+        migration_path = pathlib.Path(__file__).parent.parent / "migrations" / "003_add_undo_history.sql"
+
+        if not migration_path.exists():
+            return {
+                "status": "error",
+                "error": f"Migration file not found: {migration_path}"
+            }
+
+        migration_sql = migration_path.read_text(encoding="utf-8")
+
+        # Split into statements
+        statements = [s.strip() for s in migration_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+
+        logger.info(f"[MIGRATION] Found {len(statements)} statements to execute")
+
+        # Execute migration
+        from .database.connection import get_database
+        db = get_database()
+
+        results = []
+
+        async with db.session() as session:
+            for i, statement in enumerate(statements, 1):
+                if not statement or statement.startswith('--'):
+                    continue
+
+                try:
+                    from sqlalchemy import text
+                    await session.execute(text(statement))
+
+                    if 'CREATE TABLE' in statement:
+                        table_name = statement.split('CREATE TABLE')[1].split('(')[0].strip()
+                        results.append(f"✅ Created table: {table_name}")
+                        logger.info(f"[{i}] Created table: {table_name}")
+                    elif 'CREATE INDEX' in statement:
+                        index_name = statement.split('CREATE INDEX')[1].split('ON')[0].strip().replace('IF NOT EXISTS', '').strip()
+                        results.append(f"✅ Created index: {index_name}")
+                        logger.info(f"[{i}] Created index: {index_name}")
+                    elif 'COMMENT ON' in statement:
+                        results.append(f"✅ Added comment")
+                    elif 'ALTER TABLE' in statement:
+                        results.append(f"✅ Added constraint")
+                    else:
+                        results.append(f"✅ Executed statement {i}")
+                        logger.info(f"[{i}] Executed statement")
+
+                except Exception as e:
+                    if 'already exists' in str(e):
+                        results.append(f"⚠️  Already exists (skipped)")
+                        logger.info(f"[{i}] Already exists (skipped)")
+                    else:
+                        results.append(f"❌ Error: {e}")
+                        logger.error(f"[{i}] Error: {e}")
+                        raise
+
+            await session.commit()
+
+        # Verify table was created
+        async with db.session() as session:
+            from sqlalchemy import text
+            result = await session.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name = 'undo_history'
+                )
+            """))
+
+            exists = result.scalar()
+
+            if not exists:
+                return {
+                    "status": "error",
+                    "error": "Table creation verification failed",
+                    "results": results
+                }
+
+            # Check indexes
+            indexes_result = await session.execute(text("""
+                SELECT indexname
+                FROM pg_indexes
+                WHERE tablename = 'undo_history'
+            """))
+
+            indexes = indexes_result.fetchall()
+
+        logger.info(f"[MIGRATION] Complete - Created undo_history table with {len(indexes)} indexes")
+
+        return {
+            "status": "success",
+            "message": "Undo history migration completed successfully",
+            "table": "undo_history",
+            "indexes_created": len(indexes),
+            "indexes": [idx[0] for idx in indexes],
+            "results": results,
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error running undo migration: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }
+
+
 @app.post("/admin/seed-test-team")
 async def seed_test_team(auth: AdminAuthRequest):
     """
