@@ -120,12 +120,16 @@ Answer with ONLY: YES or NO
 YES = User wants to plan/organize a multi-step project
 NO = User wants to create a simple task or other action"""
 
-                response = await self.ai.chat_completion(
+                response = await self.ai.chat(
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1
                 )
 
-                answer = response.strip().upper()
+                # Extract text from response
+
+                text = response.choices[0].message.content
+
+                answer = text.strip().upper()
 
                 if answer == "YES":
                     logger.info("Planning intent detected via AI")
@@ -374,14 +378,14 @@ Example:
 1. Are there any existing systems this needs to integrate with?
 2. What's the most critical feature to deliver first?"""
 
-            response = await self.ai.chat_completion(
+            response = await self.ai.chat(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7
             )
 
             # Parse numbered list
             ai_questions = []
-            for line in response.strip().split("\n"):
+            for line in text.strip().split("\n"):
                 line = line.strip()
                 if line and line[0].isdigit():
                     # Remove number prefix
@@ -574,14 +578,14 @@ Generate the JSON now:"""
                     session.applied_template_id = matched_template["template_id"]
                     await db.commit()
 
-                response = await self.ai.chat_completion(
+                response = await self.ai.chat(
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7,
                     response_format={"type": "json_object"}
                 )
 
                 import json
-                breakdown = json.loads(response)
+                breakdown = json.loads(response.choices[0].message.content)
 
                 # Determine complexity
                 complexity_map = {
@@ -928,14 +932,14 @@ OUTPUT FORMAT (JSON):
 }}
 """
 
-                response = await self.ai.chat_completion(
+                response = await self.ai.chat(
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.7,
                     response_format={"type": "json_object"}
                 )
 
                 import json
-                updated_breakdown = json.loads(response)
+                updated_breakdown = json.loads(response.choices[0].message.content)
 
                 # Determine complexity
                 complexity_map = {
@@ -1220,14 +1224,14 @@ Return JSON with best match:
 Only match if confidence > 0.6.
 """
 
-            response = await self.ai.chat_completion(
+            response = await self.ai.chat(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 response_format={"type": "json_object"}
             )
 
             import json
-            result = json.loads(response)
+            result = json.loads(response.choices[0].message.content)
 
             if not result.get("template_id") or result.get("confidence", 0) < 0.6:
                 return {"template_prompt": ""}
