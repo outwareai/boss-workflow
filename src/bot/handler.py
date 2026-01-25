@@ -26,7 +26,7 @@ from ..integrations.gmail import get_gmail_integration
 from ..integrations.tasks import get_tasks_integration
 from ..ai.email_summarizer import get_email_summarizer
 from ..ai.reviewer import get_submission_reviewer, ReviewResult
-from ..database.connection import get_async_session
+from ..database.connection import get_session
 from ..database.repositories import get_task_repository, get_planning_repository
 from ..services.attendance import get_attendance_service
 from ..utils import to_naive_local, get_assignee_info, validate_task_data
@@ -204,7 +204,7 @@ class UnifiedHandler:
                 )
             elif command == '/approve':
                 # Approve current planning session
-                async with get_async_session() as db:
+                async with get_session() as db:
                     planning_repo = get_planning_repository(db)
                     active_session = await planning_repo.get_active_for_user(user_id)
 
@@ -233,7 +233,7 @@ class UnifiedHandler:
                 )
             elif command == '/cancel':
                 # Cancel active planning session OR conversation
-                async with get_async_session() as db:
+                async with get_session() as db:
                     planning_repo = get_planning_repository(db)
                     active_session = await planning_repo.get_active_for_user(user_id)
 
@@ -801,7 +801,7 @@ What would you like to do?""", None
 
             if action == "refine":
                 # Handle refinement request
-                async with get_async_session() as db:
+                async with get_session() as db:
                     planning_repo = get_planning_repository(db)
                     active_session = await planning_repo.get_active_for_user(user_id)
 
@@ -816,7 +816,7 @@ What would you like to do?""", None
                     )
 
             # Check for active planning session
-            async with get_async_session() as db:
+            async with get_session() as db:
                 planning_repo = get_planning_repository(db)
                 active_session = await planning_repo.get_active_for_user(user_id)
 

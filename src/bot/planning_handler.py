@@ -12,10 +12,10 @@ v3.0 Planning System (Q1 2026)
 """
 
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from datetime import datetime
 
-from src.database.connection import get_async_session
+from src.database.connection import get_session
 from src.database.repositories import (
     get_planning_repository,
     get_task_draft_repository,
@@ -26,9 +26,13 @@ from src.database.repositories import (
 )
 from src.database.models import PlanningStateEnum, ProjectComplexityEnum
 from src.ai.deepseek import DeepSeekClient
-from src.integrations.telegram_client import TelegramClient
 from src.integrations.sheets import GoogleSheetsClient
 from config.settings import settings
+
+if TYPE_CHECKING:
+    from src.bot.telegram_simple import TelegramBotSimple as TelegramClient
+else:
+    TelegramClient = Any
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +146,7 @@ NO = User wants to create a simple task or other action"""
             Dict with session info and next_action
         """
         try:
-            async with get_async_session() as db:
+            async with get_session() as db:
                 planning_repo = get_planning_repository(db)
 
                 # Check for active session
@@ -218,7 +222,7 @@ NO = User wants to create a simple task or other action"""
             Dict with questions and state
         """
         try:
-            async with get_async_session() as db:
+            async with get_session() as db:
                 planning_repo = get_planning_repository(db)
                 session = await planning_repo.get_by_id_or_fail(session_id)
 
@@ -337,7 +341,7 @@ Example:
             Dict with next action
         """
         try:
-            async with get_async_session() as db:
+            async with get_session() as db:
                 planning_repo = get_planning_repository(db)
                 session = await planning_repo.get_by_id_or_fail(session_id)
 
@@ -415,7 +419,7 @@ Example:
             Dict with task breakdown
         """
         try:
-            async with get_async_session() as db:
+            async with get_session() as db:
                 planning_repo = get_planning_repository(db)
                 draft_repo = get_task_draft_repository(db)
 
@@ -591,7 +595,7 @@ Generate the JSON now:"""
             Dict with created tasks
         """
         try:
-            async with get_async_session() as db:
+            async with get_session() as db:
                 planning_repo = get_planning_repository(db)
                 draft_repo = get_task_draft_repository(db)
                 project_repo = get_project_repository(db)
@@ -703,7 +707,7 @@ Generate the JSON now:"""
             Dict with status
         """
         try:
-            async with get_async_session() as db:
+            async with get_session() as db:
                 planning_repo = get_planning_repository(db)
 
                 await planning_repo.update_state(
