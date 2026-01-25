@@ -51,9 +51,8 @@ CREATE INDEX IF NOT EXISTS idx_undo_history_undone ON undo_history(is_undone) WH
 -- Action type filtering
 CREATE INDEX IF NOT EXISTS idx_undo_history_action_type ON undo_history(action_type);
 
--- JSONB indexes for efficient querying (using default jsonb_ops operator class)
-CREATE INDEX IF NOT EXISTS idx_undo_history_action_data ON undo_history USING GIN(action_data);
-CREATE INDEX IF NOT EXISTS idx_undo_history_undo_data ON undo_history USING GIN(undo_data);
+-- Note: GIN indexes on JSONB columns can be added later if needed for query performance
+-- They are omitted here to ensure migration compatibility across PostgreSQL versions
 
 -- ==================== COMMENTS ====================
 
