@@ -6136,3 +6136,221 @@ railway logs -s boss-workflow | grep "synthetic"
 ✅ Manual trigger endpoint (`/api/admin/synthetic-tests`)
 ✅ Catches bot failures before real users impacted
 ✅ Production-ready
+---
+
+### Data Consistency Checker - Phase 1
+
+**Status:** ✅ Production (Q3 2026)
+**Priority:** P1 (High - Data Integrity)
+**Files:** `src/utils/data_consistency.py`, `src/main.py`, `src/scheduler/jobs.py`
+
+#### Overview
+
+Automated data consistency checker that detects orphaned records across Google Sheets, PostgreSQL DB, and Discord. Runs daily at 2 AM and auto-fixes safe issues while alerting for manual intervention.
+
+#### What It Detects
+
+**Orphan Detection:**
+1. **Orphaned DB Tasks**: Tasks in PostgreSQL but not in Sheets
+2. **Orphaned Sheet Tasks**: Tasks in Sheets but not in DB
+3. **Orphaned Discord Threads**: Discord thread links with no matching task
+4. **Missing Discord Threads**: Active tasks without Discord threads
+5. **Status Mismatches**: Tasks with different status in DB vs Sheets
+
+**Safe Auto-Fixes:**
+- Delete orphaned Discord thread links (no matching task)
+- Sync status mismatches (DB is source of truth, updates Sheets)
+
+**Requires Manual Fix:**
+- Orphaned DB tasks (might need re-sync to Sheets)
+- Orphaned Sheet tasks (might be legitimate manual entries)
+- Missing Discord threads (requires recreating thread)
+
+#### API Endpoints
+
+**Check Consistency:**
+```bash
+GET /api/admin/check-consistency
+
+Response:
+{
+  "status": "healthy" | "issues_found",
+  "total_issues": 5,
+  "issues": {
+    "orphaned_db_tasks": ["TASK-001", "TASK-002"],
+    "orphaned_sheet_tasks": [],
+    "orphaned_discord_threads": ["TASK-003"],
+    "missing_discord_threads": ["TASK-004"],
+    "status_mismatches": [
+      {
+        "task_id": "TASK-005",
+        "db_status": "completed",
+        "sheet_status": "in_progress",
+        "title": "Fix login bug"
+      }
+    ]
+  },
+  "timestamp": "2026-01-25T14:30:00Z"
+}
+```
+
+**Auto-Fix Orphans:**
+```bash
+POST /api/admin/fix-orphans
+
+Response:
+{
+  "status": "fixed",
+  "fixed_count": 2,
+  "details": {
+    "discord_threads_deleted": 1,
+    "status_mismatches_synced": 1
+  },
+  "remaining_issues": {
+    "orphaned_db_tasks": 2,
+    "orphaned_sheet_tasks": 0,
+    "missing_discord_threads": 1
+  },
+  "timestamp": "2026-01-25T14:30:15Z"
+}
+```
+
+#### Scheduler Job
+
+**Job ID:** `data_consistency_check`
+**Trigger:** `CronTrigger(hour=2, minute=0)` - Daily at 2 AM
+**What It Does:**
+1. Runs full consistency check across all systems
+2. Logs total issues found
+3. Sends WARNING alert if issues detected
+4. Auto-fixes safe issues (orphaned threads, status mismatches)
+5. Sends Telegram report to boss if manual intervention needed
+
+**Alert Example:**
+```
+⚠️ Data Consistency Report
+
+Auto-fixed 2 issues.
+
+Remaining issues requiring manual intervention:
+- 2 tasks in DB but not in Sheets
+- 0 tasks in Sheets but not in DB
+- 1 active tasks without Discord threads
+
+Run /api/admin/check-consistency for details.
+```
+
+#### Implementation Details
+
+**Class:** `DataConsistencyChecker` in `src/utils/data_consistency.py`
+
+**Key Methods:**
+- `check_all()` - Run all consistency checks
+- `_get_db_tasks()` - Fetch all tasks from PostgreSQL
+- `_get_sheet_tasks()` - Fetch all tasks from Google Sheets
+- `_get_discord_threads()` - Fetch all Discord thread links from DB
+- `_find_orphaned_db_tasks()` - Compare DB to Sheets
+- `_find_orphaned_sheet_tasks()` - Compare Sheets to DB
+- `_find_orphaned_discord_threads()` - Find threads with no task
+- `_find_missing_discord_threads()` - Find active tasks without threads
+- `_find_status_mismatches()` - Compare statuses between DB and Sheets
+
+**Auto-Fix Logic:**
+- `fix_orphaned_data()` - Delete orphaned Discord threads, sync status mismatches
+- Uses DB as source of truth for status
+- Safe operations only (no data loss)
+
+#### Configuration
+
+No additional config required. Uses existing:
+- `get_task_repository()` - PostgreSQL task access
+- `get_staff_context_repository()` - Discord thread links
+- `get_sheets_integration()` - Google Sheets access
+- `alert_manager` - For WARNING alerts
+- `settings.telegram_boss_chat_id` - For manual intervention reports
+
+#### Metrics & Logging
+
+**Logged Messages:**
+```
+INFO: "Starting data consistency check..."
+INFO: "Fetched 150 DB tasks, 148 Sheet tasks, 145 Discord threads"
+WARNING: "Found 5 orphaned DB tasks: ['TASK-001', 'TASK-002', ...]"
+WARNING: "Found 3 status mismatches: ['TASK-010', 'TASK-011', ...]"
+INFO: "Auto-fixing safe issues..."
+INFO: "Deleted orphaned Discord thread: TASK-003"
+INFO: "Fixed status mismatch: TASK-005"
+INFO: "Auto-fix complete. Fixed 2 issues."
+INFO: "Data consistency check: All systems consistent ✓"
+```
+
+**Alert Metrics:**
+- `total_issues` - Sum of all detected issues
+- `orphaned_db_tasks` - Count of DB orphans
+- `orphaned_sheet_tasks` - Count of Sheet orphans
+- `orphaned_discord_threads` - Count of Discord orphans
+- `missing_discord_threads` - Count of active tasks without threads
+- `status_mismatches` - Count of status differences
+
+#### Usage Examples
+
+**Manual Check:**
+```bash
+# Check consistency now
+curl http://localhost:8000/api/admin/check-consistency
+
+# Or on Railway:
+curl https://boss-workflow-production.up.railway.app/api/admin/check-consistency
+```
+
+**Manual Fix:**
+```bash
+# Auto-fix safe issues
+curl -X POST http://localhost:8000/api/admin/fix-orphans
+
+# Or on Railway:
+curl -X POST https://boss-workflow-production.up.railway.app/api/admin/fix-orphans
+```
+
+**Monitor in Logs:**
+```bash
+# Watch scheduled checks (2 AM daily)
+railway logs -s boss-workflow | grep "data consistency"
+
+# Check for issues
+railway logs -s boss-workflow | grep "orphaned\|mismatch"
+```
+
+#### Troubleshooting
+
+**Issue: False positives for orphaned tasks**
+- Check if Sheets API is slow (rows might not be fetched fully)
+- Verify `get_all_tasks()` in `sheets.py` returns all rows
+- Run `/api/admin/check-consistency` twice to confirm
+
+**Issue: Status mismatches keep appearing**
+- Verify DB is being updated correctly on status changes
+- Check if manual edits are happening in Sheets (they'll be overwritten)
+- Ensure sync is bidirectional or DB-only
+
+**Issue: Missing Discord threads not being created**
+- This requires manual intervention (endpoint doesn't auto-create threads)
+- Check if tasks were created before Discord integration was added
+- Manually post task to Discord or mark as completed
+
+**Issue: Consistency check job not running**
+- Verify scheduler: `GET /api/status` (look for `data_consistency_check`)
+- Check logs: "Data consistency check scheduled: daily at 2 AM"
+- Manually trigger: `POST /api/trigger-job/data_consistency_check`
+
+#### Success Criteria Met
+
+✅ Detects 5 types of consistency issues
+✅ Auto-fixes safe issues (Discord threads, status mismatches)
+✅ Runs daily at 2 AM automatically
+✅ Sends WARNING alerts when issues found
+✅ Notifies boss via Telegram for manual intervention
+✅ Manual check endpoint (`/api/admin/check-consistency`)
+✅ Manual fix endpoint (`/api/admin/fix-orphans`)
+✅ Production-ready
+
