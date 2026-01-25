@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-25
-> **Version:** 2.5.3 (Q3 2026 Phase 4 - Performance Metrics Tracking)
+> **Version:** 2.6.1 (Q3 2026 Phase 4 - Performance Metrics Tracking)
 > **Total Lines:** ~2850 | **Total Features:** 121+
 
 **Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
@@ -5926,6 +5926,7 @@ Mirror Discord functionality to Slack
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| **2.6.1** | 2026-01-25 | **📊 Q3 2026 PHASE 4 - PERFORMANCE METRICS TRACKING:** Added response time tracking (`performance.py`) with slow request/query detection (1s/100ms thresholds). Implemented SQLAlchemy event-based slow query detector with statistics and history (last 100 queries). New API endpoints: `/api/performance/metrics`, `/api/performance/slow-queries`, `/api/performance/clear-slow-queries`. Integrated with Prometheus metrics and repository tracking. **Impact:** Automatic performance issue detection, query optimization insights, production monitoring |
 | **2.6.0** | 2026-01-25 | **🔄 CI/CD PIPELINE - PHASE 2:** Comprehensive CI/CD pipeline with automated testing, branch protection, and Railway deployment. Features: Main CI workflow (lint + test matrix 3.10-3.12 + smoke tests + security scan), auto-deploy on master merge, PR auto-comment with test results, weekly dependency updates, branch protection requiring all checks to pass. **Files:** `.github/workflows/ci.yml`, `deploy.yml`, `pr-comment.yml`, `dependency-update.yml`. **Docs:** `docs/CICD_SETUP.md`, `.github/BRANCH_PROTECTION.md`, `.github/QUICK_REFERENCE.md`. **Impact:** Tests block merge if failing, auto-deploy after merge, coverage tracking with Codecov, security scanning with Bandit, zero-downtime deployments |
 | **2.5.2** | 2026-01-25 | **🧪 INTENT ROUTING TEST COVERAGE - PHASE 1:** Comprehensive test suite covering all 35+ intents to prevent routing regressions. Features: 73 routing tests (13 slash commands, 12 context states, 30 task modifications, 6 edge cases), handler method existence validation, intent routing matrix verification. **File:** `tests/unit/test_intent_routing.py`. **Impact:** 100% pass rate on intent routing validation, prevents silent routing failures, ensures all intents map to handlers |
 | **2.5.1** | 2026-01-25 | **🔔 SMART REMINDERS PHASE 3:** Personalized deadline reminders grouped by assignee, multi-level overdue escalation (Critical >7d, Warning 3-7d, Attention 1-3d), manual trigger endpoints, priority-based emoji indicators. Features: 2 new scheduled jobs (smart_deadline_reminders every 30m, smart_overdue_escalation 2x daily), 3 admin API endpoints. **Implementation:** `src/scheduler/smart_reminders.py`. **Impact:** Smarter notifications, intelligent task grouping, reduced reminder fatigue, enhanced escalation workflow |
