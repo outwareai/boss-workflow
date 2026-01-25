@@ -45,6 +45,7 @@ class CommandHandler(BaseHandler):
             "list": self._cmd_list,
             "search": self._cmd_search,
             "report": self._cmd_report,
+            "export": self._cmd_export,
         }
 
     async def can_handle(self, message: str, user_id: str, **kwargs) -> bool:
@@ -107,6 +108,10 @@ class CommandHandler(BaseHandler):
 • `/report daily` - Daily standup report
 • `/report weekly` - Weekly summary
 • `/report monthly` - Monthly overview
+
+**Planning & Documentation:**
+• `/export markdown` - Export plan as Markdown
+• `/export gdoc` - Create Google Doc spec
 
 **Other:**
 • `/cancel` - Cancel current operation
@@ -201,3 +206,36 @@ class CommandHandler(BaseHandler):
         """Handle /report command."""
         # TODO: Delegate to QueryHandler
         await self.send_message(update, f"Generating {args or 'daily'} report...")
+
+    async def _cmd_export(self, update: Update, context: ContextTypes.DEFAULT_TYPE, args: str):
+        """Handle /export command - Export planning session documentation."""
+        from src.bot.commands import get_command_handler
+
+        # Get format from args (default: markdown)
+        export_format = args.strip().lower() if args else "markdown"
+
+        # Validate format
+        if export_format not in ["markdown", "md", "gdoc", "google", "googledoc"]:
+            await self.send_message(
+                update,
+                """❌ Invalid export format
+
+**Usage:**
+• `/export markdown` - Export as Markdown file
+• `/export gdoc` - Create Google Doc
+
+**Example:**
+`/export markdown`"""
+            )
+            return
+
+        # Delegate to command handler
+        user_id = str(update.effective_user.id)
+        cmd_handler = get_command_handler()
+
+        try:
+            response = await cmd_handler.handle_export(user_id, export_format)
+            await self.send_message(update, response)
+        except Exception as e:
+            self.logger.error(f"Export command error: {e}", exc_info=True)
+            await self.send_error(update, f"Export failed: {str(e)}")

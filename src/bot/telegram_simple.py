@@ -24,6 +24,7 @@ from .handlers import (
     CommandHandler,
     UnifiedHandlerWrapper
 )
+from .handlers.planning_handler_wrapper import PlanningHandler
 
 logger = logging.getLogger(__name__)
 
@@ -49,17 +50,20 @@ class TelegramBotSimple:
         self.validation_handler = ValidationHandler()
         self.approval_handler = ApprovalHandler()
         self.query_handler = QueryHandler()
+        self.planning_handler = PlanningHandler()               # v3.0 Planning system
         self.modification_handler = ModificationHandler()
         self.command_handler = CommandHandler()
         self.unified_wrapper = UnifiedHandlerWrapper()
 
         # Initialize routing handler and register all handlers
+        # ORDER MATTERS: Earlier handlers have priority
         self.router = RoutingHandler()
-        self.router.register_handler(self.command_handler)      # First priority - slash commands
+        self.router.register_handler(self.command_handler)      # First - slash commands
         self.router.register_handler(self.approval_handler)     # Second - yes/no responses
         self.router.register_handler(self.validation_handler)   # Third - task validation
         self.router.register_handler(self.query_handler)        # Fourth - status queries
-        self.router.register_handler(self.modification_handler) # Fifth - task updates
+        self.router.register_handler(self.planning_handler)     # Fifth - planning (BEFORE modification!)
+        self.router.register_handler(self.modification_handler) # Sixth - task updates
         self.router.register_handler(self.unified_wrapper)      # Last - fallback to UnifiedHandler
 
         self.boss_chat_id = settings.telegram_boss_chat_id

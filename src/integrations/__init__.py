@@ -5,6 +5,7 @@ from .gmail import GmailIntegration
 from .drive import GoogleDriveIntegration
 from .tasks import GoogleTasksIntegration
 from .meet import GoogleMeetIntegration
+from .google_docs import GoogleDocsClient, get_google_docs_client
 
 __all__ = [
     "DiscordIntegration",
@@ -13,5 +14,7 @@ __all__ = [
     "GmailIntegration",
     "GoogleDriveIntegration",
     "GoogleTasksIntegration",
-    "GoogleMeetIntegration"
+    "GoogleMeetIntegration",
+    "GoogleDocsClient",
+    "get_google_docs_client",
 ]

@@ -39,8 +39,17 @@ class ModificationHandler(BaseHandler):
         - "update", "change", "modify", "edit"
         - "reassign", "change assignee"
         - "set priority", "change deadline"
+
+        DOES NOT handle:
+        - Task creation ("create", "add", "make")
+        - Planning ("plan", "organize", "break down")
         """
         message_lower = message.lower().strip()
+
+        # Exclude planning keywords - planning takes priority
+        planning_exclusions = ["plan", "planning", "break down", "organize", "help me plan"]
+        if any(exc in message_lower for exc in planning_exclusions):
+            return False
 
         modification_keywords = [
             "update", "change", "modify", "edit",

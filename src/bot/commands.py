@@ -155,6 +155,11 @@ Just send me a message to get started!"""
 • `/daily` - Today's task summary
 • `/overdue` - List overdue tasks
 
+**Planning & Documentation:**
+• `/plan [description]` - Start project planning
+• `/export markdown` - Export plan as Markdown
+• `/export gdoc` - Create Google Doc spec
+
 **Team & Settings:**
 • `/team` - View team members
 • `/addteam [name] [role]` - Add team member
@@ -1643,6 +1648,122 @@ Action type: {result['action_type']}
 The action has been re-applied."""
         else:
             return f"❌ {result['message']}"
+
+    async def handle_export(self, user_id: str, export_format: str = "markdown") -> str:
+        """
+        Handle /export command - Export planning session documentation.
+
+        Args:
+            user_id: User ID requesting export
+            export_format: "markdown" or "gdoc"
+
+        Returns:
+            Success message with file path or Google Doc URL
+        """
+        from ..services.documentation_generator import get_documentation_generator
+        from src.database.connection import get_db
+        from src.database.repositories import get_planning_repository
+
+        doc_gen = get_documentation_generator()
+
+        # Get active planning session for user
+        async for session in get_db():
+            planning_repo = get_planning_repository(session)
+            active_session = await planning_repo.get_active_for_user(user_id)
+
+            if not active_session:
+                return "❌ No active planning session. Start one with `/plan <description>`"
+
+            session_id = active_session.session_id
+
+            try:
+                if export_format.lower() in ["markdown", "md"]:
+                    # Export as markdown file
+                    file_path = await doc_gen.export_to_file(session_id)
+
+                    return f"""✅ **Plan exported to Markdown**
+
+**File:** `{file_path}`
+
+You can:
+• Download the file
+• Commit to your repository
+• Share with your team
+
+The document includes:
+• Executive summary
+• Task breakdown by assignee
+• Timeline visualization
+• Risk assessment
+• Success criteria
+• Decision log"""
+
+                elif export_format.lower() in ["gdoc", "google", "googledoc"]:
+                    # Create Google Doc
+                    from ..integrations.google_docs import get_google_docs_client
+
+                    docs_client = get_google_docs_client()
+
+                    # Get session data
+                    from src.database.repositories import get_task_draft_repository
+                    draft_repo = get_task_draft_repository(session)
+
+                    task_drafts = await draft_repo.get_by_session(session_id)
+
+                    session_data = {
+                        "session_id": active_session.session_id,
+                        "project_description": active_session.raw_input,
+                        "created_at": active_session.created_at,
+                        "status": active_session.state,
+                        "complexity": active_session.complexity,
+                    }
+
+                    drafts_data = []
+                    for draft in task_drafts:
+                        drafts_data.append({
+                            "task_id": draft.draft_id,
+                            "title": draft.title,
+                            "assignee": draft.assigned_to or "Unassigned",
+                            "estimated_effort_hours": draft.estimated_hours,
+                            "priority": draft.priority or "medium",
+                            "deadline": draft.deadline_date,
+                        })
+
+                    doc_title = f"Project Plan: {active_session.raw_input[:50]}"
+                    doc_url = await docs_client.create_spec_document(
+                        doc_title,
+                        session_data,
+                        drafts_data
+                    )
+
+                    if doc_url:
+                        return f"""✅ **Google Doc created**
+
+**Link:** {doc_url}
+
+The document includes:
+• Project overview
+• Task breakdown table
+• Timeline and milestones
+• Team assignments
+
+You can now:
+• Share the link with your team
+• Edit collaboratively
+• Export to PDF"""
+                    else:
+                        return "❌ Failed to create Google Doc. Check credentials."
+
+                else:
+                    return f"""❌ Invalid export format: `{export_format}`
+
+**Usage:**
+• `/export markdown` - Export as Markdown file
+• `/export gdoc` - Create Google Doc"""
+
+            except Exception as e:
+                logger.error(f"Export error: {e}", exc_info=True)
+                return f"❌ Export failed: {str(e)}"
 
 
 # Singleton instance
