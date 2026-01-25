@@ -407,103 +407,6 @@ Example:
                 "Who should work on this?"
             ]
 
-    async def _check_questions_answered(
-        self,
-        questions: List[str],
-        combined_input: str
-    ) -> bool:
-        """
-        Use AI to check if all questions have been answered in the combined input.
-
-        Args:
-            questions: List of questions that were asked
-            combined_input: Original request + all user responses
-
-        Returns:
-            True if all questions are answered
-        """
-        if not questions:
-            return True
-
-        try:
-            prompt = f"""Given the user's input below, determine if ALL of these questions have been answered:
-
-Questions:
-{chr(10).join(f"{i+1}. {q}" for i, q in enumerate(questions))}
-
-User Input:
-{combined_input}
-
-Respond with ONLY "YES" if ALL questions are answered, or "NO" if any are missing.
-Be lenient - if the information is clearly provided, even if not in direct answer format, say YES."""
-
-            response = await self.ai.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
-            )
-
-            # Extract text from response
-            text = response.choices[0].message.content
-
-            result = text.strip().upper() == "YES"
-
-            logger.info(f"Questions answered check: {result} (questions={len(questions)})")
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to check questions answered: {e}")
-            # Fallback to old logic (count messages)
-            answers_collected = combined_input.count("Additional Info:")
-            return answers_collected >= len(questions)
-
-    async def _get_unanswered_questions(
-        self,
-        questions: List[str],
-        combined_input: str
-    ) -> List[str]:
-        """
-        Determine which questions are still unanswered.
-
-        Args:
-            questions: Original questions
-            combined_input: User's input so far
-
-        Returns:
-            List of unanswered questions
-        """
-        try:
-            prompt = f"""Given the user's input, identify which questions are NOT yet answered.
-
-Questions:
-{chr(10).join(f"{i+1}. {q}" for i, q in enumerate(questions))}
-
-User Input:
-{combined_input}
-
-List ONLY the question numbers (e.g., "1,3") that are NOT answered, or "NONE" if all are answered.
-Be lenient - if info is clearly provided, consider it answered."""
-
-            response = await self.ai.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
-            )
-
-            text = response.choices[0].message.content.strip().upper()
-
-            if text == "NONE" or not text:
-                return []
-
-            # Parse numbers like "1,3" or "2"
-            import re
-            numbers = re.findall(r'\d+', text)
-            indices = [int(n) - 1 for n in numbers if int(n) <= len(questions)]
-
-            return [questions[i] for i in indices if 0 <= i < len(questions)]
-
-        except Exception as e:
-            logger.error(f"Failed to get unanswered questions: {e}")
-            return questions  # Return all questions as fallback
-
     async def process_answer(
         self,
         session_id: str,
@@ -537,16 +440,13 @@ Be lenient - if info is clearly provided, consider it answered."""
                 # Store answer in raw_input (append)
                 updated_input = f"{session.raw_input}\n\nAdditional Info: {answer}"
 
-                # Check if we have enough info using AI
+                # Check if we have enough info
+                # SIMPLE FIX: Always proceed after first answer
+                # The original message usually has all the details
                 questions = session.clarifying_questions or []
 
-                # Use AI to check if all questions have been answered
-                all_answered = await self._check_questions_answered(
-                    questions,
-                    updated_input
-                )
-
-                if all_answered:
+                # Just proceed - AI will extract what it needs from combined input
+                if True:  # Always proceed after any user response
                     # Move to AI analysis
                     await planning_repo.update_state(
                         session_id,
@@ -569,40 +469,7 @@ Be lenient - if info is clearly provided, consider it answered."""
                         "next_action": "review_breakdown",
                         "breakdown": breakdown_result
                     }
-                else:
-                    # Still gathering info - determine what's missing
-                    await planning_repo.update_state(
-                        session_id,
-                        PlanningStateEnum.GATHERING_INFO,
-                        raw_input=updated_input
-                    )
-
-                    # Use AI to determine which questions still need answers
-                    unanswered = await self._get_unanswered_questions(
-                        questions,
-                        updated_input
-                    )
-
-                    if unanswered:
-                        questions_text = "\n".join(f"{i+1}. {q}" for i, q in enumerate(unanswered))
-                        await self.telegram.send_message(
-                            chat_id,
-                            f"👍 Got some info! Still need:\n\n{questions_text}\n\nPlease provide these details.",
-                            parse_mode="Markdown"
-                        )
-                    else:
-                        # Shouldn't happen (all_answered would be True), but fallback
-                        await self.telegram.send_message(
-                            chat_id,
-                            "👍 Got it! Just need a bit more information...",
-                            parse_mode="Markdown"
-                        )
-
-                    return {
-                        "success": True,
-                        "next_action": "continue_gathering",
-                        "remaining_questions": remaining
-                    }
+                # Note: Removed "else" branch - we always proceed after first answer
 
         except Exception as e:
             logger.error(f"Failed to process answer: {e}", exc_info=True)
