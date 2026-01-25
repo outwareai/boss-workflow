@@ -592,6 +592,8 @@ DELETE TASK-001
 /approve                         # Approve and create tasks from plan
 /refine [changes]                # Refine the generated plan
 /cancel                          # Cancel active planning session
+/resume [session-id]             # Resume saved planning session (Phase 7)
+/saved                           # List saved planning sessions (Phase 7)
 ```
 
 **Workflow:**
@@ -703,6 +705,9 @@ Bot: ✅ Plan approved! 8 tasks created.
 ```
 INITIATED → GATHERING_INFO → AI_ANALYZING →
 REVIEWING_BREAKDOWN → REFINING → FINALIZING → COMPLETED
+
+                     ↓ (30min timeout)
+                   SAVED ← ─ ─ ┘ (resumable)
 ```
 
 **6 New Tables:**
@@ -748,10 +753,19 @@ REVIEWING_BREAKDOWN → REFINING → FINALIZING → COMPLETED
 - Context integration from similar projects
 - AI learns from past successes and challenges
 
-**GROUP 3: Advanced**
+**GROUP 3: Advanced** ✅ **COMPLETE**
 - Smart task breakdown with dependency detection
 - Cross-project pattern recognition
 - Automatic template matching and application
+- **✨ Phase 7: Enhanced Multi-Turn Planning Sessions** (2026-01-25)
+  - Auto-save sessions after 30 minutes of inactivity
+  - Resume capability with AI-generated context summary
+  - Stale session detection (>24 hours) with automatic archiving
+  - Session recovery on errors preserves all data
+  - Multiple saved sessions per user (7-day retention)
+  - Telegram notifications on timeout
+  - Seamless context restoration when resuming
+  - New `/resume` and `/saved` commands
 
 **Benefits:**
 - ✅ **30-50% faster** than manual task creation for projects
@@ -803,9 +817,57 @@ REVIEWING_BREAKDOWN → REFINING → FINALIZING → COMPLETED
 - Validation sequence: Apply changes → Validate → Show impact → Confirm
 - Rollback: Changes only applied if validation passes
 
+**GROUP 3 Phase 7 Technical Implementation:**
+
+*PlanningSessionManager:*
+- Stale detection: Checks last_activity_at > 24 hours
+- Auto-save triggers: Async background task on timeout
+- Context generation: AI summarizes session state for resume
+- Recovery window: 7-day retention for saved sessions
+- Multiple sessions: User can have many saved sessions
+
+*SessionTimeoutHandler:*
+- Timer mechanism: asyncio.create_task for background timers
+- Timeout duration: 30 minutes (configurable)
+- Activity tracking: reset_timeout_timer() on each user message
+- Notification: Telegram message on auto-save
+- Graceful cleanup: cancel_timeout_timer() on completion/cancel
+
+**Phase 7 Workflow Example:**
+```
+Boss: /plan Build notification system
+
+Bot: 🎯 Planning Mode Activated
+     1. When do you need this completed?
+
+Boss: [Stops responding for 30 minutes]
+
+Bot: ⏰ **Planning Session Auto-Saved**
+     Your planning session was inactive for 30 minutes.
+     Session ID: PLAN-20260125-ABC123
+     Use /resume to continue anytime!
+
+[Next day]
+Boss: /resume
+
+Bot: 🔄 **Resuming Planning Session**
+
+     You were planning a notification system for your app.
+     We had just started gathering requirements - you mentioned
+     needing it completed soon but hadn't specified team members yet.
+
+     Session ID: PLAN-20260125-ABC123
+     Tasks: 0 (still gathering info)
+
+     Let's continue from where we left off!
+     1. When do you need this completed?
+```
+
 **Files:**
 - `src/bot/planning_handler.py` - Core planning logic with GROUP 1 integration
 - `src/bot/planning_enhancements.py` - GROUP 1 enhancement orchestrator
+- `src/bot/planning_session_manager.py` - **NEW:** Phase 7 session lifecycle management
+- `src/bot/planning_session_timeout.py` - **NEW:** Phase 7 timeout handling
 - `src/ai/project_recognizer.py` - Project context retrieval
 - `src/ai/historical_estimator.py` - **NEW:** Effort estimation from history
 - `src/ai/team_performance_analyzer.py` - **NEW:** Assignee recommendations
