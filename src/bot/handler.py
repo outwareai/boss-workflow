@@ -26,9 +26,11 @@ from ..integrations.gmail import get_gmail_integration
 from ..integrations.tasks import get_tasks_integration
 from ..ai.email_summarizer import get_email_summarizer
 from ..ai.reviewer import get_submission_reviewer, ReviewResult
-from ..database.repositories import get_task_repository
+from ..database.connection import get_async_session
+from ..database.repositories import get_task_repository, get_planning_repository
 from ..services.attendance import get_attendance_service
 from ..utils import to_naive_local, get_assignee_info, validate_task_data
+from .planning_handler import get_planning_handler
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +193,57 @@ class UnifiedHandler:
                     context=context,
                     user_name=user_name
                 )
+            elif command == '/plan':
+                # Start planning mode
+                return await self._handle_planning(
+                    user_id=user_id,
+                    message=command_text if command_text else "Start planning",
+                    data={"message": command_text},
+                    context=context,
+                    user_name=user_name
+                )
+            elif command == '/approve':
+                # Approve current planning session
+                async with get_async_session() as db:
+                    planning_repo = get_planning_repository(db)
+                    active_session = await planning_repo.get_active_for_user(user_id)
+
+                    if not active_session:
+                        return "❌ No active planning session to approve.", None
+
+                    from ..integrations.telegram_client import telegram_client
+                    planning_handler = get_planning_handler(telegram_client, self.ai, self.sheets)
+
+                    boss_chat_id = context.get("chat_id") or settings.TELEGRAM_BOSS_CHAT_ID
+                    result = await planning_handler.approve_plan(active_session.session_id, boss_chat_id)
+
+                    if result.get("success"):
+                        return f"✅ Plan approved! {result.get('task_count', 0)} tasks created.", None
+                    else:
+                        return f"❌ Failed to approve: {result.get('error')}", None
+
+            elif command == '/refine':
+                # Refine current plan
+                return await self._handle_planning(
+                    user_id=user_id,
+                    message=command_text,
+                    data={"action": "refine", "message": command_text},
+                    context=context,
+                    user_name=user_name
+                )
             elif command == '/cancel':
+                # Cancel active planning session OR conversation
+                async with get_async_session() as db:
+                    planning_repo = get_planning_repository(db)
+                    active_session = await planning_repo.get_active_for_user(user_id)
+
+                    if active_session:
+                        from ..integrations.telegram_client import telegram_client
+                        planning_handler = get_planning_handler(telegram_client, self.ai, self.sheets)
+
+                        boss_chat_id = context.get("chat_id") or settings.TELEGRAM_BOSS_CHAT_ID
+                        await planning_handler.cancel_plan(active_session.session_id, boss_chat_id)
+
                 await self.context.clear_active_conversation(user_id)
                 return "Cancelled. What would you like to do?", None
             elif command == '/help':
@@ -383,6 +435,7 @@ class UnifiedHandler:
             UserIntent.GREETING: self._handle_greeting,
             UserIntent.HELP: self._handle_help,
             UserIntent.CREATE_TASK: self._handle_create_task,
+            UserIntent.PLANNING: self._handle_planning,
             UserIntent.TASK_DONE: self._handle_task_done,
             UserIntent.SUBMIT_PROOF: self._handle_submit_proof,
             UserIntent.DONE_ADDING_PROOF: self._handle_done_proof,
@@ -721,6 +774,98 @@ What would you like to do?""", None
             # Check if auto_finalize flag is set (from /task or /urgent commands)
             auto_finalize = data.get("_auto_finalize", False)
             return await self._create_task_directly(conversation, prefs.to_dict(), auto_finalize=auto_finalize)
+
+    async def _handle_planning(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """
+        Handle planning intent - conversational project planning.
+
+        v3.0 Planning System (Q1 2026)
+        """
+        try:
+            from ..integrations.telegram_client import telegram_client
+
+            # Initialize planning handler (lazy)
+            planning_handler = get_planning_handler(
+                telegram_client=telegram_client,
+                ai_client=self.ai,
+                sheets_client=self.sheets
+            )
+
+            # Get boss chat ID from context or settings
+            boss_chat_id = context.get("chat_id") or settings.TELEGRAM_BOSS_CHAT_ID
+
+            # Check if this is a planning command with action
+            action = data.get("action")
+
+            if action == "refine":
+                # Handle refinement request
+                async with get_async_session() as db:
+                    planning_repo = get_planning_repository(db)
+                    active_session = await planning_repo.get_active_for_user(user_id)
+
+                    if not active_session:
+                        return "❌ No active planning session. Use `/plan <project>` to start one.", None
+
+                    # For now, just acknowledge - full refinement in GROUP 2.1
+                    return (
+                        f"🔄 Got it! You want to refine the plan for: {active_session.project_name or 'project'}\n\n"
+                        "Please tell me what you'd like to change...",
+                        None
+                    )
+
+            # Check for active planning session
+            async with get_async_session() as db:
+                planning_repo = get_planning_repository(db)
+                active_session = await planning_repo.get_active_for_user(user_id)
+
+                if active_session:
+                    # User is responding to planning questions or continuing conversation
+                    result = await planning_handler.process_answer(
+                        session_id=active_session.session_id,
+                        answer=message,
+                        chat_id=boss_chat_id
+                    )
+
+                    if result.get("success"):
+                        return "✅ Processing...", None
+                    else:
+                        return f"❌ {result.get('error', 'Something went wrong')}", None
+
+            # Start new planning session
+            planning_request = data.get("message") or message
+            result = await planning_handler.start_planning_session(
+                user_id=user_id,
+                raw_input=planning_request,
+                conversation_id=None,
+                chat_id=boss_chat_id
+            )
+
+            if result.get("success"):
+                # Trigger information gathering
+                await planning_handler.gather_information(
+                    session_id=result["session_id"],
+                    chat_id=boss_chat_id
+                )
+
+                return "🎯 Planning mode activated!", None
+            else:
+                error = result.get("error", "Unknown error")
+                if error == "active_session_exists":
+                    session_id = result.get("session_id")
+                    return (
+                        f"⚠️ You have an active planning session.\n\n"
+                        f"Use `/cancel` to cancel it, or continue where you left off.\n\n"
+                        f"Session ID: `{session_id}`",
+                        None
+                    )
+                else:
+                    return f"❌ Failed to start planning: {error}", None
+
+        except Exception as e:
+            logger.error(f"Planning handler error: {e}", exc_info=True)
+            return f"❌ Planning system error: {str(e)}", None
 
     async def _handle_task_correction(
         self, user_id: str, conversation: ConversationState, correction: str, user_name: str
