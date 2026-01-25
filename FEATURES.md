@@ -5998,3 +5998,140 @@ All 38 unit tests passing:
 
 **Last Major Revision:** 2026-01-25 (v2.6+ Task Templates Feature)
 **Next Planned Update:** Team Bot Access implementation (Q1 2026)
+
+### Synthetic Monitoring - Phase 2
+
+**Status:** ✅ Production (Q3 2026)
+**Priority:** P2 (Bot health verification)
+**Files:** `src/monitoring/synthetic_tests.py`
+
+#### Overview
+
+Hourly synthetic health checks that ping the bot with test messages to catch failures early before real users are impacted. Automatically triggers CRITICAL alerts on failure.
+
+#### Features
+
+**Automated Hourly Checks:**
+- Runs every 60 minutes via scheduler (`_synthetic_monitoring_job`)
+- 3 synthetic test checks per run
+- Pass/fail status for each check
+- Aggregated health report
+
+**Test Checks:**
+1. **Intent Classification**: Tests AI intent detection with "Create task for test: Synthetic check"
+   - Expected: Intent = "create_task"
+   - Verifies: AI engine responsiveness
+
+2. **Help Command**: Tests `/help` command routing
+   - Expected: Intent = "help"
+   - Verifies: Command processing works
+
+3. **Status Command**: Tests `/status` command routing
+   - Expected: Intent = "check_status"
+   - Verifies: Status queries functional
+
+**Alerting:**
+- On any failure: Sends CRITICAL alert via alert_manager
+- Alert includes: Failed check names, error details, timestamp
+- Routes to: Slack/Discord webhooks (configured in alert_manager)
+
+#### API Endpoints
+
+```bash
+# Manual trigger (test now)
+POST /api/admin/synthetic-tests
+
+# Response:
+{
+  "status": "healthy" | "failed",
+  "timestamp": "2026-01-25T14:30:45.123Z",
+  "passed_checks": 3,
+  "failed_checks": 0,
+  "total_checks": 3,
+  "checks": [
+    {
+      "name": "Intent Classification",
+      "passed": true,
+      "intent": "create_task"
+    },
+    {
+      "name": "Help Command",
+      "passed": true,
+      "intent": "help"
+    },
+    {
+      "name": "Status Command",
+      "passed": true,
+      "intent": "check_status"
+    }
+  ]
+}
+```
+
+#### Scheduler Job
+
+**Job ID:** `synthetic_monitoring`
+**Trigger:** `IntervalTrigger(hours=1)`
+**Trigger Time:** Every hour (0, 1, 2, ..., 23 o'clock)
+**Error Handling:** Notifies boss via Telegram if critical failure
+
+#### Configuration
+
+No additional config required. Uses existing:
+- `settings.deepseek_api_key` - For AI intent classification
+- Alert channels from `alert_manager` (Slack/Discord)
+- Telegram boss notification via `settings.telegram_boss_chat_id`
+
+#### Metrics & Logging
+
+**Logged Messages:**
+- Success: `"Synthetic tests: 3/3 passed - BOT HEALTHY"`
+- Failure: `"Synthetic tests: 2/3 passed - FAILURES DETECTED"`
+- Critical: Boss receives Telegram alert on failures
+
+**Log Level:**
+- INFO for success summaries
+- WARNING for failure summaries
+- ERROR for exceptions (triggers boss notification)
+
+#### Usage Examples
+
+**Manual Testing:**
+```bash
+# Test bot health right now
+curl -X POST http://localhost:8000/api/admin/synthetic-tests
+
+# Monitor in Railway logs
+railway logs -s boss-workflow | grep "synthetic"
+```
+
+**Scheduled Monitoring:**
+- Bot automatically runs every hour
+- Check Railway logs for regular entries: "Running synthetic monitoring job"
+- Set up alert notifications in Slack/Discord to be notified of failures
+
+#### Troubleshooting
+
+**Synthetic tests failing but bot works fine?**
+- Check if intent classification is working: `POST /api/admin/synthetic-tests`
+- Verify DeepSeek API is reachable
+- Check `/help` and `/status` commands manually
+
+**Alerts not triggering on failures?**
+- Verify alert_manager configuration in `settings.py`
+- Ensure Slack/Discord webhooks are configured
+- Test manually: `POST /api/admin/test-alert?severity=critical`
+
+**Synthetic job not running?**
+- Check scheduler status: `GET /api/status` (look for `synthetic_monitoring` job)
+- Verify scheduler started: Check logs for "Synthetic monitoring scheduled: every 1 hour"
+- Manually trigger: Use `/api/trigger-job/synthetic_monitoring`
+
+#### Success Criteria Met
+
+✅ 3 synthetic checks (intent, help, status)
+✅ Runs hourly automatically
+✅ Alerts on failure (CRITICAL severity)
+✅ Manual trigger endpoint (`/api/admin/synthetic-tests`)
+✅ Catches bot failures before real users impacted
+✅ Production-ready
