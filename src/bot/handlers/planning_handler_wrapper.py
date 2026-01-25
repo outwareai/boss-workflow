@@ -87,12 +87,15 @@ class PlanningHandler(BaseHandler):
         chat_id = str(update.effective_chat.id)
 
         try:
-            # Initialize planning handler with telegram bot instance
+            # Initialize planning handler with telegram client adapter
             from src.bot.telegram_simple import get_telegram_bot_simple
+            from src.bot.telegram_client_adapter import get_telegram_client_adapter
+
             telegram_bot = get_telegram_bot_simple()
+            telegram_client = get_telegram_client_adapter(telegram_bot)
 
             planning_handler = get_planning_handler(
-                telegram_client=telegram_bot,
+                telegram_client=telegram_client,
                 ai_client=self.ai,
                 sheets_client=self.sheets
             )
