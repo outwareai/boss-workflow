@@ -1,8 +1,9 @@
 # Enterprise Undo/Redo System
 
-**Version:** 2.0
+**Version:** 2.1
 **Created:** 2026-01-25
-**Status:** Production Ready
+**Last Updated:** 2026-01-25
+**Status:** Activated & Production Ready
 
 ## Overview
 
@@ -89,6 +90,25 @@ Mark as Undone
       ↓
 Clear Cache
 ```
+
+## Activation Status
+
+### Automatic Recording
+
+The following actions are **now automatically recorded** for undo when you provide a user_id:
+
+1. **Task Deletion** - Fully integrated in `TaskRepository.delete()`
+2. **Status Changes** - Recorded in `TaskRepository.update()` when status changes
+3. **Reassignments** - Recorded in `TaskRepository.update()` when assignee changes
+4. **Priority Changes** - Recorded in `TaskRepository.update()` when priority changes
+5. **Deadline Changes** - Recorded in `TaskRepository.update()` when deadline changes
+
+### Bot Integration
+
+Undo commands are now hooked into the Telegram bot handler:
+- `/undo` - Routes to `UnifiedCommands.handle_undo()`
+- `/undo_list` - Routes to `UnifiedCommands.handle_undo_list()`
+- `/redo` - Routes to `UnifiedCommands.handle_redo()`
 
 ## Usage
 

@@ -39,7 +39,8 @@ class UndoManager:
         undo_function: str,
         undo_data: Dict,
         description: str,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        session: Optional[AsyncSession] = None
     ) -> int:
         """
         Record an undoable action in database and cache.
@@ -56,10 +57,16 @@ class UndoManager:
         Returns:
             ID of the recorded undo action
         """
-        async with self.db.session() as session:
-            try:
-                # Create database record
-                undo_record = UndoHistoryDB(
+        # Use provided session or create a new one
+        use_existing_session = session is not None
+
+        if not use_existing_session:
+            session = self.db.session()
+            await session.__aenter__()
+
+        try:
+            # Create database record
+            undo_record = UndoHistoryDB(
                     user_id=user_id,
                     action_type=action_type,
                     action_data=action_data,
@@ -89,12 +96,22 @@ class UndoManager:
                 await cache.set(cache_key, history, ttl=self.cache_ttl)
 
                 logger.info(f"Recorded undoable action: {action_type} for user {user_id}")
+
+                # Only commit if we created the session
+                if not use_existing_session:
+                    await session.commit()
+
                 return record_id
 
-            except Exception as e:
-                logger.error(f"Failed to record undo action: {e}")
+        except Exception as e:
+            logger.error(f"Failed to record undo action: {e}")
+            if not use_existing_session:
                 await session.rollback()
-                raise
+            raise
+        finally:
+            # Only close if we created the session
+            if not use_existing_session:
+                await session.__aexit__(None, None, None)
 
     async def get_undo_history(
         self,

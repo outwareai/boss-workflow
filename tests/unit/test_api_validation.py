@@ -21,6 +21,13 @@ from src.models.api_validation import (
     TelegramUpdate,
     DiscordWebhookPayload,
     ProjectCreate,
+    TaskCreateRequest,
+    TaskUpdateRequest,
+    BatchCompleteRequest,
+    BatchReassignRequest,
+    BatchStatusChangeRequest,
+    UndoRequest,
+    RedoRequest,
 )
 
 
@@ -401,3 +408,290 @@ class TestProjectCreate:
         """Test description maximum length."""
         with pytest.raises(ValidationError):
             ProjectCreate(name="Project", description="x" * 2001)
+
+
+# ============================================
+# CRITICAL FIX #4: NEW VALIDATION TESTS
+# ============================================
+
+
+class TestTaskCreateRequest:
+    """Test task creation validation (Critical Fix #4)."""
+
+    def test_valid_task_create(self):
+        """Test valid task creation request."""
+        request = TaskCreateRequest(
+            task_id="TASK-20260125-001",
+            title="Test task",
+            assignee="John",
+            status=TaskStatusFilter.PENDING,
+            priority="medium"
+        )
+        assert request.task_id == "TASK-20260125-001"
+        assert request.title == "Test task"
+        assert request.assignee == "John"
+        assert request.status == TaskStatusFilter.PENDING
+
+    def test_invalid_task_id_format(self):
+        """Test that invalid task_id format is rejected."""
+        with pytest.raises(ValidationError):
+            TaskCreateRequest(
+                task_id="INVALID-ID",
+                title="Test task",
+                assignee="John"
+            )
+
+    def test_xss_in_title(self):
+        """Test that XSS attacks in title are prevented."""
+        with pytest.raises(ValidationError):
+            TaskCreateRequest(
+                task_id="TASK-20260125-001",
+                title="<script>alert('xss')</script>",
+                assignee="John"
+            )
+
+    def test_xss_in_description(self):
+        """Test that XSS attacks in description are prevented."""
+        with pytest.raises(ValidationError):
+            TaskCreateRequest(
+                task_id="TASK-20260125-001",
+                title="Test",
+                assignee="John",
+                description="<iframe src='evil.com'></iframe>"
+            )
+
+    def test_too_many_tags(self):
+        """Test that too many tags are rejected."""
+        with pytest.raises(ValidationError):
+            TaskCreateRequest(
+                task_id="TASK-20260125-001",
+                title="Test task",
+                assignee="John",
+                tags=["tag" + str(i) for i in range(21)]  # 21 tags (max is 20)
+            )
+
+    def test_invalid_priority(self):
+        """Test that invalid priority is rejected."""
+        with pytest.raises(ValidationError):
+            TaskCreateRequest(
+                task_id="TASK-20260125-001",
+                title="Test task",
+                assignee="John",
+                priority="super_urgent"  # Invalid
+            )
+
+    def test_title_too_long(self):
+        """Test that title length limit is enforced."""
+        with pytest.raises(ValidationError):
+            TaskCreateRequest(
+                task_id="TASK-20260125-001",
+                title="x" * 501,  # Exceeds max_length=500
+                assignee="John"
+            )
+
+    def test_valid_with_all_fields(self):
+        """Test creation with all optional fields."""
+        request = TaskCreateRequest(
+            task_id="TASK-20260125-001",
+            title="Complete task",
+            assignee="John",
+            status=TaskStatusFilter.IN_PROGRESS,
+            priority="high",
+            description="Full description",
+            task_type="feature",
+            estimated_effort="2 hours",
+            tags=["urgent", "backend"],
+            acceptance_criteria="Should work correctly",
+            created_by="Boss",
+            original_message="Original request text"
+        )
+        assert request.priority == "high"
+        assert len(request.tags) == 2
+
+
+class TestTaskUpdateRequest:
+    """Test task update validation (Critical Fix #4)."""
+
+    def test_valid_task_update(self):
+        """Test valid task update request."""
+        request = TaskUpdateRequest(
+            title="Updated title",
+            status=TaskStatusFilter.IN_PROGRESS
+        )
+        assert request.title == "Updated title"
+        assert request.status == TaskStatusFilter.IN_PROGRESS
+
+    def test_xss_prevention(self):
+        """Test XSS prevention in update fields."""
+        with pytest.raises(ValidationError):
+            TaskUpdateRequest(
+                description="<iframe src='evil.com'></iframe>"
+            )
+
+    def test_partial_update(self):
+        """Test that partial updates work (only some fields)."""
+        request = TaskUpdateRequest(status=TaskStatusFilter.COMPLETED)
+        assert request.status == TaskStatusFilter.COMPLETED
+        assert request.title is None
+        assert request.assignee is None
+
+    def test_invalid_tags(self):
+        """Test tag validation in updates."""
+        with pytest.raises(ValidationError):
+            TaskUpdateRequest(
+                tags=["tag" * 20]  # Single tag too long
+            )
+
+
+class TestBatchCompleteRequest:
+    """Test batch complete validation (Critical Fix #4)."""
+
+    def test_valid_batch_complete(self):
+        """Test valid batch complete request."""
+        request = BatchCompleteRequest(
+            assignee="John",
+            dry_run=True,
+            user_id="BOSS-123"
+        )
+        assert request.assignee == "John"
+        assert request.dry_run is True
+        assert request.user_id == "BOSS-123"
+
+    def test_empty_assignee(self):
+        """Test that empty assignee is rejected."""
+        with pytest.raises(ValidationError):
+            BatchCompleteRequest(assignee="")
+
+    def test_xss_prevention(self):
+        """Test XSS prevention in assignee field."""
+        with pytest.raises(ValidationError):
+            BatchCompleteRequest(assignee="<script>alert('xss')</script>")
+
+    def test_defaults(self):
+        """Test default values."""
+        request = BatchCompleteRequest(assignee="John")
+        assert request.dry_run is False
+        assert request.user_id == "API"
+
+
+class TestBatchReassignRequest:
+    """Test batch reassign validation (Critical Fix #4)."""
+
+    def test_valid_batch_reassign(self):
+        """Test valid batch reassign request."""
+        request = BatchReassignRequest(
+            from_assignee="John",
+            to_assignee="Jane",
+            dry_run=False
+        )
+        assert request.from_assignee == "John"
+        assert request.to_assignee == "Jane"
+
+    def test_same_assignees(self):
+        """Test that from_assignee and to_assignee must be different."""
+        with pytest.raises(ValidationError):
+            BatchReassignRequest(
+                from_assignee="John",
+                to_assignee="John"
+            )
+
+    def test_invalid_status_filter(self):
+        """Test that invalid status in filter is rejected."""
+        with pytest.raises(ValidationError):
+            BatchReassignRequest(
+                from_assignee="John",
+                to_assignee="Jane",
+                status_filter=["invalid_status"]
+            )
+
+    def test_valid_status_filter(self):
+        """Test that valid status filter works."""
+        request = BatchReassignRequest(
+            from_assignee="John",
+            to_assignee="Jane",
+            status_filter=["pending", "in_progress"]
+        )
+        assert request.status_filter == ["pending", "in_progress"]
+
+
+class TestBatchStatusChangeRequest:
+    """Test batch status change validation (Critical Fix #4)."""
+
+    def test_valid_batch_status_change(self):
+        """Test valid batch status change request."""
+        request = BatchStatusChangeRequest(
+            task_ids=["TASK-20260125-001", "TASK-20260125-002"],
+            status=TaskStatusFilter.COMPLETED
+        )
+        assert len(request.task_ids) == 2
+        assert request.status == TaskStatusFilter.COMPLETED
+
+    def test_too_many_tasks(self):
+        """Test that exceeding max tasks is rejected."""
+        with pytest.raises(ValidationError):
+            BatchStatusChangeRequest(
+                task_ids=["TASK-20260125-" + str(i).zfill(3) for i in range(101)],
+                status=TaskStatusFilter.COMPLETED
+            )
+
+    def test_invalid_task_id(self):
+        """Test that invalid task_id format is rejected."""
+        with pytest.raises(ValidationError):
+            BatchStatusChangeRequest(
+                task_ids=["INVALID-ID"],
+                status=TaskStatusFilter.COMPLETED
+            )
+
+    def test_empty_list(self):
+        """Test that empty task_ids list is rejected."""
+        with pytest.raises(ValidationError):
+            BatchStatusChangeRequest(
+                task_ids=[],
+                status=TaskStatusFilter.COMPLETED
+            )
+
+
+class TestUndoRequest:
+    """Test undo request validation (Critical Fix #4)."""
+
+    def test_valid_undo_request(self):
+        """Test valid undo request."""
+        request = UndoRequest(user_id="USER-123", action_id=42)
+        assert request.user_id == "USER-123"
+        assert request.action_id == 42
+
+    def test_no_action_id(self):
+        """Test undo request without specific action_id (undo most recent)."""
+        request = UndoRequest(user_id="USER-123")
+        assert request.user_id == "USER-123"
+        assert request.action_id is None
+
+    def test_xss_prevention(self):
+        """Test XSS prevention in user_id."""
+        with pytest.raises(ValidationError):
+            UndoRequest(user_id="<script>alert('xss')</script>")
+
+    def test_negative_action_id(self):
+        """Test that negative action_id is rejected."""
+        with pytest.raises(ValidationError):
+            UndoRequest(user_id="USER-123", action_id=-1)
+
+
+class TestRedoRequest:
+    """Test redo request validation (Critical Fix #4)."""
+
+    def test_valid_redo_request(self):
+        """Test valid redo request."""
+        request = RedoRequest(user_id="USER-123", action_id=42)
+        assert request.user_id == "USER-123"
+        assert request.action_id == 42
+
+    def test_missing_action_id(self):
+        """Test that redo requires action_id."""
+        with pytest.raises(ValidationError):
+            RedoRequest(user_id="USER-123")
+
+    def test_zero_action_id(self):
+        """Test that action_id must be >= 1."""
+        with pytest.raises(ValidationError):
+            RedoRequest(user_id="USER-123", action_id=0)

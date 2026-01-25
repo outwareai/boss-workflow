@@ -118,14 +118,15 @@ async def test_create_conversation_minimal_fields(conversation_repository):
 
 @pytest.mark.asyncio
 async def test_create_conversation_error_handling(conversation_repository):
-    """Test conversation creation error handling."""
+    """Test conversation creation error handling raises exception."""
+    from src.database.exceptions import DatabaseOperationError
     repo, session = conversation_repository
 
     session.flush.side_effect = Exception("Database error")
 
-    result = await repo.create(user_id="123456789")
-
-    assert result is None
+    # Should raise DatabaseOperationError
+    with pytest.raises(DatabaseOperationError, match="Failed to create conversation"):
+        await repo.create(user_id="123456789")
 
 
 # ============================================================
@@ -454,20 +455,22 @@ async def test_add_message_with_intent(conversation_repository, sample_conversat
 
 @pytest.mark.asyncio
 async def test_add_message_conversation_not_found(conversation_repository):
-    """Test adding a message when conversation doesn't exist."""
+    """Test adding a message when conversation doesn't exist raises exception."""
+    from src.database.exceptions import EntityNotFoundError
     repo, session = conversation_repository
 
     mock_result = Mock()
     mock_result.scalar_one_or_none = Mock(return_value=None)
     session.execute.return_value = mock_result
 
-    result = await repo.add_message(
-        conversation_id="CONV-nonexistent",
-        role="user",
-        content="Test message"
-    )
+    # Should raise EntityNotFoundError
+    with pytest.raises(EntityNotFoundError, match="Conversation CONV-nonexistent not found"):
+        await repo.add_message(
+            conversation_id="CONV-nonexistent",
+            role="user",
+            content="Test message"
+        )
 
-    assert result is None
     session.add.assert_not_called()
 
 

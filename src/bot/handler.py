@@ -202,6 +202,22 @@ class UnifiedHandler:
                 from .commands import UnifiedCommands
                 commands = UnifiedCommands()
                 return await commands.handle_status(user_id), None
+            elif command == '/undo':
+                from .commands import UnifiedCommands
+                commands = UnifiedCommands()
+                action_id = command_text if command_text else None
+                return await commands.handle_undo(user_id, action_id), None
+            elif command == '/undo_list':
+                from .commands import UnifiedCommands
+                commands = UnifiedCommands()
+                limit = int(command_text) if command_text and command_text.isdigit() else 10
+                return await commands.handle_undo_list(user_id, limit), None
+            elif command == '/redo':
+                from .commands import UnifiedCommands
+                commands = UnifiedCommands()
+                if not command_text:
+                    return "Usage: /redo <action_id>\nUse /undo_list to see available actions.", None
+                return await commands.handle_redo(user_id, command_text), None
             # Add more command handlers as needed
             else:
                 # Unknown command - treat as regular message

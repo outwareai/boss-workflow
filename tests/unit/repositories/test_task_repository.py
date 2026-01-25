@@ -109,7 +109,8 @@ async def test_create_task_success(task_repository, sample_task):
 
 @pytest.mark.asyncio
 async def test_create_task_duplicate_id(task_repository, sample_task):
-    """Test creating a task with duplicate task_id returns None."""
+    """Test creating a task with duplicate task_id raises exception."""
+    from src.database.exceptions import DatabaseOperationError
     repo, session = task_repository
 
     # Mock that task creation raises an exception (duplicate key)
@@ -120,10 +121,9 @@ async def test_create_task_duplicate_id(task_repository, sample_task):
         "title": "Duplicate task",
     }
 
-    result = await repo.create(task_data)
-
-    # Should return None on error
-    assert result is None
+    # Should raise DatabaseOperationError on error
+    with pytest.raises(DatabaseOperationError, match="Failed to create task"):
+        await repo.create(task_data)
 
 
 # ============================================================
@@ -240,7 +240,8 @@ async def test_update_task_success(task_repository, sample_task):
 
 @pytest.mark.asyncio
 async def test_update_task_not_found(task_repository):
-    """Test updating a non-existent task."""
+    """Test updating a non-existent task raises exception."""
+    from src.database.exceptions import EntityNotFoundError
     repo, session = task_repository
 
     # Mock no task found
@@ -248,9 +249,9 @@ async def test_update_task_not_found(task_repository):
     mock_result.scalar_one_or_none = Mock(return_value=None)
     session.execute.return_value = mock_result
 
-    result = await repo.update("TASK-999", {"title": "New title"})
-
-    assert result is None
+    # Should raise EntityNotFoundError
+    with pytest.raises(EntityNotFoundError, match="Task TASK-999 not found"):
+        await repo.update("TASK-999", {"title": "New title"})
 
 
 @pytest.mark.asyncio
@@ -303,8 +304,8 @@ async def test_delete_task_not_found(task_repository):
 
     result = await repo.delete("TASK-999")
 
-    # Delete returns True even if task not found (idempotent)
-    assert result is True
+    # Delete returns False when task not found
+    assert result is False
 
 
 # ============================================================

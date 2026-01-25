@@ -903,3 +903,280 @@ class UndoHistoryDB(Base):
         Index("idx_undo_history_user_time", "user_id", "timestamp"),
         Index("idx_undo_history_action_type", "action_type"),
     )
+
+
+# ==================== PLANNING SYSTEM (v3.0) ====================
+
+class PlanningStateEnum(str, enum.Enum):
+    """Planning session states"""
+    INITIATED = "initiated"
+    GATHERING_INFO = "gathering_info"
+    AI_ANALYZING = "ai_analyzing"
+    REVIEWING_BREAKDOWN = "reviewing_breakdown"
+    REFINING = "refining"
+    FINALIZING = "finalizing"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class ProjectComplexityEnum(str, enum.Enum):
+    """Project complexity levels"""
+    SIMPLE = "simple"              # 1-3 tasks, <8 hours
+    MODERATE = "moderate"          # 4-7 tasks, 8-40 hours
+    COMPLEX = "complex"            # 8-15 tasks, 40-160 hours
+    VERY_COMPLEX = "very_complex"  # 16+ tasks, >160 hours
+
+
+class PlanningSessionDB(Base):
+    """Planning sessions with AI-powered task breakdown"""
+    __tablename__ = "planning_sessions"
+
+    # Primary identifiers
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    conversation_id: Mapped[Optional[str]] = mapped_column(String(50), ForeignKey("conversations.conversation_id"), nullable=True)
+    user_id: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Session metadata
+    state: Mapped[str] = mapped_column(String(50), default="initiated", nullable=False)
+    project_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    project_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    detected_project_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    detection_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # AI analysis results
+    complexity: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    estimated_duration_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    suggested_team_members: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    applied_template_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Planning data
+    raw_input: Mapped[str] = mapped_column(Text, nullable=False)
+    clarifying_questions: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    ai_breakdown: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    user_edits: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Finalization
+    finalized_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_project_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_task_ids: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    conversation: Mapped[Optional["ConversationDB"]] = relationship("ConversationDB", foreign_keys=[conversation_id])
+    task_drafts: Mapped[List["TaskDraftDB"]] = relationship("TaskDraftDB", back_populates="planning_session", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("idx_planning_user_state", "user_id", "state"),
+        Index("idx_planning_created", "created_at"),
+        Index("idx_planning_project", "detected_project_id"),
+        Index("idx_planning_activity", "last_activity_at"),
+    )
+
+
+class TaskDraftDB(Base):
+    """Task drafts within planning sessions"""
+    __tablename__ = "task_drafts"
+
+    # Primary identifiers
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    draft_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    session_id: Mapped[str] = mapped_column(String(50), ForeignKey("planning_sessions.session_id"), nullable=False)
+
+    # Task details
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    priority: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # Assignment
+    assigned_to: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    estimated_hours: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Dependencies
+    depends_on: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    blocking: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # AI metadata
+    ai_generated: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_modified: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Order
+    sequence_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Finalization
+    created_task_id: Mapped[Optional[str]] = mapped_column(String(50), ForeignKey("tasks.task_id"), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    planning_session: Mapped["PlanningSessionDB"] = relationship("PlanningSessionDB", back_populates="task_drafts")
+    created_task: Mapped[Optional["TaskDB"]] = relationship("TaskDB", foreign_keys=[created_task_id])
+
+    __table_args__ = (
+        Index("idx_draft_session", "session_id"),
+        Index("idx_draft_order", "session_id", "sequence_order"),
+        Index("idx_draft_created_task", "created_task_id"),
+    )
+
+
+class ProjectMemoryDB(Base):
+    """AI-extracted patterns and learnings from completed projects"""
+    __tablename__ = "project_memory"
+
+    # Primary identifier
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    memory_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Pattern extraction (AI-powered)
+    common_challenges: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    success_patterns: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    team_insights: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    estimated_vs_actual: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    bottleneck_patterns: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    recommended_templates: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Learning metadata
+    pattern_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last_analyzed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    analysis_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_memory_project", "project_id"),
+        Index("idx_memory_analyzed", "last_analyzed_at"),
+        Index("idx_memory_confidence", "pattern_confidence"),
+    )
+
+
+class ProjectDecisionDB(Base):
+    """Key decisions made during project planning and execution"""
+    __tablename__ = "project_decisions"
+
+    # Primary identifier
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    decision_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    planning_session_id: Mapped[Optional[str]] = mapped_column(String(50), ForeignKey("planning_sessions.session_id"), nullable=True)
+
+    # Decision details
+    decision_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    decision_text: Mapped[str] = mapped_column(Text, nullable=False)
+    reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    alternatives_considered: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Context
+    made_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    context: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Impact tracking
+    impact_assessment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    outcome: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    decided_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    planning_session: Mapped[Optional["PlanningSessionDB"]] = relationship("PlanningSessionDB", foreign_keys=[planning_session_id])
+
+    __table_args__ = (
+        Index("idx_decision_project", "project_id"),
+        Index("idx_decision_type", "decision_type"),
+        Index("idx_decision_date", "decided_at"),
+        Index("idx_decision_session", "planning_session_id"),
+    )
+
+
+class KeyDiscussionDB(Base):
+    """Important discussions extracted and summarized by AI"""
+    __tablename__ = "key_discussions"
+
+    # Primary identifier
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    discussion_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    planning_session_id: Mapped[Optional[str]] = mapped_column(String(50), ForeignKey("planning_sessions.session_id"), nullable=True)
+
+    # Discussion content
+    topic: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    key_points: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Messages
+    message_ids: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    participant_ids: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # AI extraction
+    extracted_decisions: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    extracted_action_items: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Importance
+    importance_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tags: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Timestamps
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    summarized_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Relationships
+    planning_session: Mapped[Optional["PlanningSessionDB"]] = relationship("PlanningSessionDB", foreign_keys=[planning_session_id])
+
+    __table_args__ = (
+        Index("idx_discussion_project", "project_id"),
+        Index("idx_discussion_importance", "importance_score"),
+        Index("idx_discussion_date", "occurred_at"),
+        Index("idx_discussion_session", "planning_session_id"),
+    )
+
+
+class PlanningTemplateDB(Base):
+    """Reusable planning templates for common project types"""
+    __tablename__ = "planning_templates"
+
+    # Primary identifier
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    template_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+
+    # Template metadata
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # Template structure
+    task_template: Mapped[str] = mapped_column(JSON, nullable=False)
+    clarifying_questions: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    team_suggestions: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+
+    # Learning metadata
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_project_ids: Mapped[Optional[str]] = mapped_column(JSON, nullable=True)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    success_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Versioning
+    version: Mapped[str] = mapped_column(String(20), default="1.0", nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_template_category", "category"),
+        Index("idx_template_active", "active"),
+        Index("idx_template_usage", "usage_count"),
+        Index("idx_template_success", "success_rate"),
+    )

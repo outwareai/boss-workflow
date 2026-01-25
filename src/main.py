@@ -27,6 +27,13 @@ from .models.api_validation import (
     TeachingRequest,
     ProjectCreate,
     TelegramUpdate,
+    TaskCreateRequest,
+    TaskUpdateRequest,
+    BatchCompleteRequest,
+    BatchReassignRequest,
+    BatchStatusChangeRequest,
+    UndoRequest,
+    RedoRequest,
 )
 from .bot.telegram_simple import get_telegram_bot_simple
 from .scheduler.jobs import get_scheduler_manager
@@ -1918,6 +1925,89 @@ async def get_db_task(task_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/db/tasks")
+async def create_task(request: TaskCreateRequest):
+    """
+    Create a new task in the database.
+
+    Critical Fix #4: Added Pydantic validation to prevent invalid input.
+    """
+    try:
+        from .database.repositories import get_task_repository
+        task_repo = get_task_repository()
+
+        # Convert Pydantic model to dict
+        task_data = request.dict(exclude_none=True)
+
+        # Convert status enum to string if present
+        if "status" in task_data and task_data["status"] is not None:
+            task_data["status"] = task_data["status"].value
+
+        # Create the task
+        task = await task_repo.create(task_data)
+
+        return {
+            "ok": True,
+            "task_id": task.task_id,
+            "title": task.title,
+            "status": task.status,
+            "assignee": task.assignee,
+            "created_at": task.created_at.isoformat(),
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/db/tasks/{task_id}")
+async def update_task(task_id: str, request: TaskUpdateRequest):
+    """
+    Update an existing task.
+
+    Critical Fix #4: Added Pydantic validation to prevent invalid input.
+    """
+    try:
+        from .database.repositories import get_task_repository
+        task_repo = get_task_repository()
+
+        # Validate task_id format
+        if not task_id.startswith('TASK-'):
+            raise HTTPException(status_code=400, detail="Invalid task_id format. Must start with 'TASK-'")
+
+        # Convert Pydantic model to dict, exclude None values
+        update_data = request.dict(exclude_none=True)
+
+        # Convert status enum to string if present
+        if "status" in update_data and update_data["status"] is not None:
+            update_data["status"] = update_data["status"].value
+
+        # Update the task
+        task = await task_repo.update(task_id, update_data)
+
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        return {
+            "ok": True,
+            "task_id": task.task_id,
+            "title": task.title,
+            "status": task.status,
+            "assignee": task.assignee,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/db/tasks/{task_id}/subtasks")
 async def add_subtask(task_id: str, subtask: SubtaskCreate):
     """Add a subtask to a task."""
@@ -2132,19 +2222,19 @@ async def trigger_sync():
 # ==================== Q1 2026: BATCH OPERATIONS API ====================
 
 @app.post("/api/batch/complete")
-async def batch_complete_tasks(
-    assignee: str,
-    dry_run: bool = False,
-    user_id: str = "API"
-):
-    """Complete all tasks for a specific assignee."""
+async def batch_complete_tasks(request: BatchCompleteRequest):
+    """
+    Complete all tasks for a specific assignee.
+
+    Critical Fix #4: Added Pydantic validation to prevent invalid input.
+    """
     try:
         from .operations.batch import batch_ops
         from .database.connection import get_session
 
         async with get_session() as session:
             result = await batch_ops.complete_all_for_assignee(
-                session, assignee, dry_run, user_id
+                session, request.assignee, request.dry_run, request.user_id
             )
             return {"ok": True, **result}
 
@@ -2156,20 +2246,20 @@ async def batch_complete_tasks(
 
 
 @app.post("/api/batch/reassign")
-async def batch_reassign_tasks(
-    from_assignee: str,
-    to_assignee: str,
-    dry_run: bool = False,
-    user_id: str = "API"
-):
-    """Reassign all tasks from one person to another."""
+async def batch_reassign_tasks(request: BatchReassignRequest):
+    """
+    Reassign all tasks from one person to another.
+
+    Critical Fix #4: Added Pydantic validation to prevent invalid input.
+    """
     try:
         from .operations.batch import batch_ops
         from .database.connection import get_session
 
         async with get_session() as session:
             result = await batch_ops.reassign_all(
-                session, from_assignee, to_assignee, None, dry_run, user_id
+                session, request.from_assignee, request.to_assignee,
+                request.status_filter, request.dry_run, request.user_id
             )
             return {"ok": True, **result}
 
@@ -2181,20 +2271,20 @@ async def batch_reassign_tasks(
 
 
 @app.post("/api/batch/status")
-async def batch_status_change(
-    task_ids: List[str],
-    status: str,
-    dry_run: bool = False,
-    user_id: str = "API"
-):
-    """Bulk status change for multiple tasks."""
+async def batch_status_change(request: BatchStatusChangeRequest):
+    """
+    Bulk status change for multiple tasks.
+
+    Critical Fix #4: Added Pydantic validation to prevent invalid input.
+    """
     try:
         from .operations.batch import batch_ops
         from .database.connection import get_session
 
         async with get_session() as session:
             result = await batch_ops.bulk_status_change(
-                session, task_ids, status, dry_run, user_id
+                session, request.task_ids, request.status.value,
+                request.dry_run, request.user_id
             )
             return {"ok": True, **result}
 
@@ -2321,13 +2411,15 @@ async def get_undo_history(user_id: str, limit: int = 10):
 
 
 @app.post("/api/undo")
-async def undo_action(user_id: str, action_id: Optional[int] = None):
+async def undo_action(request: UndoRequest):
     """
     Undo an action.
 
+    Critical Fix #4: Added Pydantic validation to prevent invalid input.
+
     Args:
-        user_id: User performing the undo
-        action_id: Specific action to undo (None = most recent)
+        request.user_id: User performing the undo
+        request.action_id: Specific action to undo (None = most recent)
 
     Returns:
         Undo result with success status
@@ -2336,7 +2428,7 @@ async def undo_action(user_id: str, action_id: Optional[int] = None):
         from .operations.undo_manager import get_undo_manager
 
         undo_mgr = get_undo_manager()
-        result = await undo_mgr.undo_action(user_id, action_id)
+        result = await undo_mgr.undo_action(request.user_id, request.action_id)
 
         if result["success"]:
             return {"ok": True, **result}
@@ -2351,13 +2443,15 @@ async def undo_action(user_id: str, action_id: Optional[int] = None):
 
 
 @app.post("/api/redo")
-async def redo_action(user_id: str, action_id: int):
+async def redo_action(request: RedoRequest):
     """
     Redo a previously undone action.
 
+    Critical Fix #4: Added Pydantic validation to prevent invalid input.
+
     Args:
-        user_id: User performing the redo
-        action_id: ID of action to redo
+        request.user_id: User performing the redo
+        request.action_id: ID of action to redo
 
     Returns:
         Redo result with success status
@@ -2366,7 +2460,7 @@ async def redo_action(user_id: str, action_id: int):
         from .operations.undo_manager import get_undo_manager
 
         undo_mgr = get_undo_manager()
-        result = await undo_mgr.redo_action(user_id, action_id)
+        result = await undo_mgr.redo_action(request.user_id, request.action_id)
 
         if result["success"]:
             return {"ok": True, **result}

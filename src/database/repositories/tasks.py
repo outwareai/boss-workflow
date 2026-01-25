@@ -161,10 +161,85 @@ class TaskRepository:
             )
             return result.scalar_one_or_none()
 
-    async def update(self, task_id: str, updates: Dict[str, Any]) -> TaskDB:
-        """Update a task."""
+    async def update(self, task_id: str, updates: Dict[str, Any], user_id: Optional[str] = None) -> TaskDB:
+        """Update a task with optional undo recording."""
         async with self.db.session() as session:
             try:
+                # Get current task state for undo recording
+                if user_id:
+                    result_before = await session.execute(
+                        select(TaskDB).where(TaskDB.task_id == task_id)
+                    )
+                    task_before = result_before.scalar_one_or_none()
+
+                    if task_before:
+                        try:
+                            from ...operations.undo_manager import get_undo_manager
+                            undo_mgr = get_undo_manager()
+
+                            # Record undo for specific field changes
+                            if "status" in updates and updates["status"] != task_before.status:
+                                await undo_mgr.record_action(
+                                    session=session,
+                                    user_id=user_id,
+                                    action_type="change_status",
+                                    action_data={"task_id": task_id, "new_status": updates["status"]},
+                                    undo_function="restore_status",
+                                    undo_data={
+                                        "task_id": task_id,
+                                        "old_status": task_before.status
+                                    },
+                                    description=f"Changed status: {task_before.status} → {updates['status']}"
+                                )
+
+                            if "assignee" in updates and updates["assignee"] != task_before.assignee:
+                                await undo_mgr.record_action(
+                                    session=session,
+                                    user_id=user_id,
+                                    action_type="reassign_task",
+                                    action_data={"task_id": task_id, "new_assignee": updates["assignee"]},
+                                    undo_function="restore_assignee",
+                                    undo_data={
+                                        "task_id": task_id,
+                                        "old_assignee": task_before.assignee
+                                    },
+                                    description=f"Reassigned: {task_before.assignee} → {updates['assignee']}"
+                                )
+
+                            if "priority" in updates and updates["priority"] != task_before.priority:
+                                await undo_mgr.record_action(
+                                    session=session,
+                                    user_id=user_id,
+                                    action_type="change_priority",
+                                    action_data={"task_id": task_id, "new_priority": updates["priority"]},
+                                    undo_function="restore_priority",
+                                    undo_data={
+                                        "task_id": task_id,
+                                        "old_priority": task_before.priority
+                                    },
+                                    description=f"Changed priority: {task_before.priority} → {updates['priority']}"
+                                )
+
+                            if "deadline" in updates and updates["deadline"] != task_before.deadline:
+                                await undo_mgr.record_action(
+                                    session=session,
+                                    user_id=user_id,
+                                    action_type="change_deadline",
+                                    action_data={
+                                        "task_id": task_id,
+                                        "new_deadline": updates["deadline"].isoformat() if updates["deadline"] else None
+                                    },
+                                    undo_function="restore_deadline",
+                                    undo_data={
+                                        "task_id": task_id,
+                                        "old_deadline": task_before.deadline.isoformat() if task_before.deadline else None
+                                    },
+                                    description=f"Changed deadline for {task_id}"
+                                )
+
+                        except Exception as e:
+                            logger.warning(f"Failed to record undo action for update: {e}")
+
                 # Mark for sheet sync
                 updates["needs_sheet_sync"] = True
                 updates["updated_at"] = datetime.now()
@@ -197,12 +272,13 @@ class TaskRepository:
                 logger.error(f"CRITICAL: Task update failed for {task_id}: {e}", exc_info=True)
                 raise DatabaseOperationError(f"Failed to update task {task_id}: {e}")
 
-    async def delete(self, task_id: str) -> bool:
+    async def delete(self, task_id: str, user_id: Optional[str] = None) -> bool:
         """
         Delete a task and all related records (cascade).
 
         Q2 2026: Added audit logging for task deletion.
         Q1 2026: Added cascade delete for subtasks, dependencies, time entries.
+        Q4 2025: Added undo support.
         """
         async with self.db.session() as session:
             try:
@@ -217,6 +293,47 @@ class TaskRepository:
                     return False
 
                 db_id = task.id  # Integer primary key for FK references
+
+                # Record undo action before deletion
+                if user_id:
+                    try:
+                        from ...operations.undo_manager import get_undo_manager
+
+                        undo_mgr = get_undo_manager()
+
+                        # Serialize task data for restoration
+                        task_data = {
+                            "task_id": task.task_id,
+                            "title": task.title,
+                            "description": task.description,
+                            "priority": task.priority,
+                            "status": task.status,
+                            "task_type": task.task_type,
+                            "assignee": task.assignee,
+                            "assignee_telegram_id": task.assignee_telegram_id,
+                            "assignee_discord_id": task.assignee_discord_id,
+                            "assignee_email": task.assignee_email,
+                            "deadline": task.deadline.isoformat() if task.deadline else None,
+                            "estimated_effort": task.estimated_effort,
+                            "tags": task.tags,
+                            "acceptance_criteria": task.acceptance_criteria,
+                            "created_by": task.created_by,
+                            "original_message": task.original_message,
+                            "project_id": task.project_id,
+                        }
+
+                        await undo_mgr.record_action(
+                            session=session,
+                            user_id=user_id,
+                            action_type="delete_task",
+                            action_data={"task_id": task_id},
+                            undo_function="restore_task",
+                            undo_data={"task_data": task_data},
+                            description=f"Deleted task {task_id}: {task.title or 'Untitled'}"
+                        )
+                        logger.info(f"Recorded undo action for task deletion: {task_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to record undo action for delete: {e}")
 
                 # Delete related records FIRST (foreign key constraints)
                 # 1. Delete subtasks

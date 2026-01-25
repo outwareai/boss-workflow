@@ -105,15 +105,16 @@ async def test_create_project_minimal_fields(project_repository):
 
 @pytest.mark.asyncio
 async def test_create_project_error_handling(project_repository):
-    """Test project creation error handling."""
+    """Test project creation error handling raises exception."""
+    from src.database.exceptions import DatabaseOperationError
     repo, session = project_repository
 
     # Simulate database error
     session.flush.side_effect = Exception("Database error")
 
-    result = await repo.create(name="Error Project")
-
-    assert result is None
+    # Should raise DatabaseOperationError
+    with pytest.raises(DatabaseOperationError, match="Failed to create project"):
+        await repo.create(name="Error Project")
 
 
 # ============================================================

@@ -376,11 +376,13 @@ class BatchReassignRequest(BaseModel):
                 raise ValueError(f"Invalid status: {status}. Must be one of: {', '.join(valid_statuses)}")
         return v
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Custom validation: from_assignee and to_assignee must be different
-        if self.from_assignee == self.to_assignee:
+    @field_validator('to_assignee')
+    @classmethod
+    def validate_different_assignees(cls, v, info):
+        """Validate that from_assignee and to_assignee are different."""
+        if 'from_assignee' in info.data and v == info.data['from_assignee']:
             raise ValueError("from_assignee and to_assignee must be different")
+        return v
 
 
 class BatchStatusChangeRequest(BaseModel):
