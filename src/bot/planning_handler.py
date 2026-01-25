@@ -424,12 +424,31 @@ Example:
                 draft_repo = get_task_draft_repository(db)
 
                 session = await planning_repo.get_by_id_or_fail(session_id)
+                template_repo = get_template_repository(db)
 
-                # Generate task breakdown
+                # GROUP 2.2: Context-Aware AI - Gather context
+                context_data = await self._gather_planning_context(
+                    session.raw_input,
+                    session.user_id,
+                    db
+                )
+
+                # GROUP 3.3: Template System - Match templates
+                matched_template = await self._match_template(
+                    session.raw_input,
+                    template_repo
+                )
+
+                # GROUP 3.1 & 3.2: Smart Breakdown with Learning
+                # Generate task breakdown with context
                 prompt = f"""You are an expert project manager. Break down this project into specific, actionable tasks.
 
 PROJECT REQUEST:
 {session.raw_input}
+
+{context_data.get("context_prompt", "")}
+
+{matched_template.get("template_prompt", "")}
 
 INSTRUCTIONS:
 1. Create 4-10 discrete tasks (not too many, not too few)
@@ -438,6 +457,7 @@ INSTRUCTIONS:
 4. Estimate hours for each task (be realistic)
 5. Suggest team members if mentioned
 6. Identify dependencies between tasks
+7. Learn from past project patterns if provided
 
 OUTPUT FORMAT (JSON):
 {{
@@ -459,6 +479,12 @@ OUTPUT FORMAT (JSON):
 }}
 
 Generate the JSON now:"""
+
+                # Track template usage
+                if matched_template.get("template_id"):
+                    await template_repo.increment_usage(matched_template["template_id"])
+                    session.applied_template_id = matched_template["template_id"]
+                    await db.commit()
 
                 response = await self.ai.chat_completion(
                     messages=[{"role": "user", "content": prompt}],
@@ -879,6 +905,152 @@ OUTPUT FORMAT (JSON):
             if task.get('assigned_to'):
                 lines.append(f"   - Assigned: {task.get('assigned_to')}")
 
+        return "\n".join(lines)
+
+    async def _gather_planning_context(
+        self,
+        planning_request: str,
+        user_id: str,
+        db
+    ) -> Dict[str, Any]:
+        """
+        GROUP 2.2: Context-Aware AI - Gather relevant context
+
+        Returns context data including similar projects and patterns
+        """
+        try:
+            from src.ai.project_recognizer import get_project_recognizer
+
+            recognizer = get_project_recognizer(self.ai)
+
+            # Find related projects
+            related = await recognizer.suggest_related_projects(
+                planning_request,
+                user_id,
+                limit=3
+            )
+
+            if not related:
+                return {"context_prompt": ""}
+
+            # Build context prompt
+            context_lines = ["\nCONTEXT FROM SIMILAR PAST PROJECTS:"]
+
+            memory_repo = get_memory_repository(db)
+
+            for proj in related:
+                project_id = proj.get("project_id")
+                context = await recognizer.get_project_context(
+                    project_id,
+                    include_memory=True,
+                    include_decisions=False,
+                    include_discussions=False
+                )
+
+                if context.get("challenges"):
+                    context_lines.append(f"\nChallenges from '{context.get('name')}':")
+                    context_lines.append(str(context["challenges"])[:200])
+
+                if context.get("successes"):
+                    context_lines.append(f"\nSuccess patterns:")
+                    context_lines.append(str(context["successes"])[:200])
+
+            context_prompt = "\n".join(context_lines)
+
+            return {
+                "context_prompt": context_prompt,
+                "related_projects": related
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to gather context: {e}", exc_info=True)
+            return {"context_prompt": ""}
+
+    async def _match_template(
+        self,
+        planning_request: str,
+        template_repo
+    ) -> Dict[str, Any]:
+        """
+        GROUP 3.3: Template System - Match planning templates
+
+        Returns matched template with prompt enhancement
+        """
+        try:
+            # Get active templates
+            templates = await template_repo.get_all_active()
+
+            if not templates:
+                return {"template_prompt": ""}
+
+            # Use AI to find best match
+            template_list = [
+                {
+                    "id": t.template_id,
+                    "name": t.name,
+                    "description": t.description or "",
+                    "category": t.category
+                }
+                for t in templates
+            ]
+
+            prompt = f"""Which template best matches this project request?
+
+REQUEST: "{planning_request}"
+
+TEMPLATES:
+{self._format_templates_for_matching(template_list)}
+
+Return JSON with best match:
+{{"template_id": "TPL-ID or null", "confidence": 0.8}}
+
+Only match if confidence > 0.6.
+"""
+
+            response = await self.ai.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            result = json.loads(response)
+
+            if not result.get("template_id") or result.get("confidence", 0) < 0.6:
+                return {"template_prompt": ""}
+
+            # Get full template
+            template = await template_repo.get_by_id(result["template_id"])
+
+            if not template:
+                return {"template_prompt": ""}
+
+            # Build template prompt
+            template_prompt = f"\nUSE THIS TEMPLATE AS GUIDANCE:\n{template.name}\n"
+            if template.description:
+                template_prompt += f"{template.description}\n"
+
+            logger.info(f"Matched template: {template.name}")
+
+            return {
+                "template_id": template.template_id,
+                "template_prompt": template_prompt,
+                "template_name": template.name
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to match template: {e}", exc_info=True)
+            return {"template_prompt": ""}
+
+    def _format_templates_for_matching(self, templates: List[Dict]) -> str:
+        """Format templates for AI matching"""
+        lines = []
+        for t in templates:
+            lines.append(f"- {t['id']}: {t['name']}")
+            if t.get('description'):
+                lines.append(f"  {t['description'][:100]}")
+            if t.get('category'):
+                lines.append(f"  Category: {t['category']}")
         return "\n".join(lines)
 
 
