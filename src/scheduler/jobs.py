@@ -336,6 +336,21 @@ Check logs for full details."""
         )
         logger.info("Data consistency check scheduled: daily at 2 AM")
 
+        # Project pattern extraction - weekly on Sunday at 3 AM (GROUP 2: Memory System)
+        self.scheduler.add_job(
+            self._extract_project_patterns_job,
+            CronTrigger(
+                day_of_week='sun',
+                hour=3,
+                minute=0,
+                timezone=self.timezone
+            ),
+            id="extract_project_patterns",
+            name="Extract Project Patterns from Completed Projects",
+            replace_existing=True
+        )
+        logger.info("Project pattern extraction scheduled: weekly on Sunday at 3 AM")
+
         self.scheduler.start()
         logger.info("Scheduler started with all jobs")
 
@@ -1281,6 +1296,55 @@ Run `/api/admin/check-consistency` for details."""
             logger.error(f"CRITICAL: Data Consistency Check failed: {e}", exc_info=True)
             await self._notify_boss_of_failure("Data Consistency Check", e)
             raise
+
+    async def _extract_project_patterns_job(self) -> None:
+        """
+        Extract patterns from recently completed projects.
+
+        GROUP 2: Memory System - Analyzes completed projects to extract:
+        - Common challenges
+        - Success patterns
+        - Team insights
+        - Bottleneck patterns
+
+        Runs weekly on Sunday at 3 AM.
+        """
+        logger.info("Running project pattern extraction job")
+
+        try:
+            from ..ai.memory_extractor import extract_patterns_for_recent_projects
+
+            # Extract patterns from projects completed in last 7 days
+            count = await extract_patterns_for_recent_projects(days=7)
+
+            if count > 0:
+                logger.info(f"✓ Extracted patterns from {count} completed projects")
+
+                # Notify boss via Telegram
+                if settings.telegram_boss_chat_id:
+                    message = f"""📚 **Project Pattern Extraction Complete**
+
+Analyzed {count} recently completed project{'s' if count != 1 else ''}.
+
+Extracted insights including:
+- Common challenges
+- Success patterns
+- Team performance metrics
+- Bottleneck identification
+
+These patterns will help with future project planning."""
+
+                    await self.reminders.send_telegram_message(
+                        settings.telegram_boss_chat_id,
+                        message
+                    )
+            else:
+                logger.info("No recently completed projects to analyze")
+
+        except Exception as e:
+            logger.error(f"Project pattern extraction failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Project Pattern Extraction", e)
+            # Don't raise - this is not critical
 
     async def _cleanup_undo_history_job(self) -> None:
         """

@@ -26,7 +26,10 @@ from src.database.repositories import (
 )
 from src.database.models import PlanningStateEnum, ProjectComplexityEnum
 from src.ai.deepseek import DeepSeekClient
+from src.ai.memory_retrieval import memory_retrieval  # GROUP 2: Memory System
+from src.ai.memory_extractor import memory_extractor  # GROUP 2: Memory System
 from src.integrations.sheets import GoogleSheetsIntegration as GoogleSheetsClient
+from src.bot.planning_enhancements import PlanningEnhancer
 from config.settings import settings
 
 if TYPE_CHECKING:
@@ -53,6 +56,8 @@ class PlanningHandler:
         self.telegram = telegram_client
         self.ai = ai_client
         self.sheets = sheets_client
+        # GROUP 1: Conversational Planning Engine enhancements
+        self.enhancer = PlanningEnhancer(ai_client)
 
     async def detect_planning_intent(
         self,
@@ -180,14 +185,33 @@ NO = User wants to create a simple task or other action"""
 
                 logger.info(f"Created planning session {session.session_id} for user {user_id}")
 
-                # Send welcome message
+                # GROUP 2: Get relevant context from memory system
+                context = await self._get_planning_context(raw_input, session.session_id)
+
+                # Store context in session
+                if context.get("has_context"):
+                    await planning_repo.update_session(
+                        session.session_id,
+                        similar_projects_context=context.get("similar_projects"),
+                        predicted_challenges=context.get("predicted_challenges"),
+                        recommended_templates=context.get("recommended_templates")
+                    )
+
+                # Send welcome message with context
                 if chat_id:
+                    welcome_msg = f"🎯 **Planning Mode Activated**\n\n"
+                    welcome_msg += f"Let's break down your project into actionable tasks!\n\n"
+                    welcome_msg += f"**Your request:** {raw_input}\n\n"
+
+                    # Include context if available
+                    if context.get("has_context"):
+                        welcome_msg += f"\n{context['context_summary']}\n\n"
+
+                    welcome_msg += f"I'll ask a few questions to understand the scope..."
+
                     await self.telegram.send_message(
                         chat_id,
-                        f"🎯 **Planning Mode Activated**\n\n"
-                        f"Let's break down your project into actionable tasks!\n\n"
-                        f"**Your request:** {raw_input}\n\n"
-                        f"I'll ask a few questions to understand the scope...",
+                        welcome_msg,
                         parse_mode="Markdown"
                     )
 
@@ -516,12 +540,32 @@ Generate the JSON now:"""
                     breakdown.get("total_hours", 0)
                 )
 
-                # Create task drafts
+                # GROUP 1 Phase 2: Enhance tasks with historical data and assignee suggestions
                 tasks = breakdown.get("tasks", [])
-                await draft_repo.bulk_create_from_ai(session_id, tasks)
+                enhanced_tasks = await self.enhancer.enhance_task_drafts(
+                    session_id,
+                    tasks,
+                    session.detected_project_id or "NEW",
+                    db
+                )
+
+                # Create task drafts
+                await draft_repo.bulk_create_from_ai(session_id, enhanced_tasks)
+
+                # GROUP 1 Phase 3: Validate dependencies
+                validation = await self.enhancer.validate_plan(session_id, enhanced_tasks)
 
                 # Present to user
                 await self._present_breakdown(chat_id, session_id, breakdown)
+
+                # Show validation results
+                if not validation["is_valid"]:
+                    validation_msg = self.enhancer.format_validation_message(validation)
+                    await self.telegram.send_message(
+                        chat_id,
+                        f"\n{validation_msg}",
+                        parse_mode="Markdown"
+                    )
 
                 logger.info(f"Generated breakdown for session {session_id}: {len(tasks)} tasks")
 

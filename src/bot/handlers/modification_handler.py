@@ -72,15 +72,10 @@ class ModificationHandler(BaseHandler):
 
     async def _parse_modification(self, message: str) -> Optional[Dict[str, Any]]:
         """Parse modification from natural language."""
-        # Use AI to extract modification details
-        from ...ai.intent import extract_task_modifications
-
-        try:
-            modifications = await extract_task_modifications(message)
-            return modifications
-        except Exception as e:
-            self.logger.error(f"Failed to parse modifications: {e}")
-            return None
+        # TODO: Implement AI extraction of modification details
+        # For now, return None to prevent import errors
+        self.logger.warning("_parse_modification not fully implemented, returning None")
+        return None
 
     async def _execute_modification(
         self,
