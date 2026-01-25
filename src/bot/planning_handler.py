@@ -26,7 +26,7 @@ from src.database.repositories import (
 )
 from src.database.models import PlanningStateEnum, ProjectComplexityEnum
 from src.ai.deepseek import DeepSeekClient
-from src.integrations.sheets import GoogleSheetsClient
+from src.integrations.sheets import GoogleSheetsIntegration as GoogleSheetsClient
 from config.settings import settings
 
 if TYPE_CHECKING:
@@ -735,6 +735,151 @@ Generate the JSON now:"""
                 "success": False,
                 "error": str(e)
             }
+
+    async def refine_plan(
+        self,
+        session_id: str,
+        refinement_request: str,
+        chat_id: str
+    ) -> Dict[str, Any]:
+        """
+        Refine the AI-generated plan based on user feedback
+
+        GROUP 2.1: Iterative Refinement
+
+        Args:
+            session_id: Planning session ID
+            refinement_request: User's refinement instructions
+            chat_id: Telegram chat ID
+
+        Returns:
+            Dict with updated breakdown
+        """
+        try:
+            async with get_session() as db:
+                planning_repo = get_planning_repository(db)
+                draft_repo = get_task_draft_repository(db)
+
+                session = await planning_repo.get_by_id_or_fail(session_id, with_drafts=True)
+
+                if not session.ai_breakdown:
+                    return {"success": False, "error": "No plan to refine"}
+
+                # Use AI to understand refinement request
+                current_breakdown = session.ai_breakdown
+                drafts = session.task_drafts
+
+                prompt = f"""Refine this project plan based on user feedback.
+
+CURRENT PLAN:
+{self._format_breakdown_for_refinement(current_breakdown, drafts)}
+
+USER FEEDBACK: "{refinement_request}"
+
+Generate an updated plan in JSON format (same structure as original).
+Apply the user's requested changes while keeping the rest intact.
+
+OUTPUT FORMAT (JSON):
+{{
+  "project_name": "name",
+  "complexity": "simple|moderate|complex|very_complex",
+  "total_hours": <hours>,
+  "tasks": [...]
+}}
+"""
+
+                response = await self.ai.chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                    response_format={"type": "json_object"}
+                )
+
+                import json
+                updated_breakdown = json.loads(response)
+
+                # Determine complexity
+                complexity_map = {
+                    "simple": ProjectComplexityEnum.SIMPLE,
+                    "moderate": ProjectComplexityEnum.MODERATE,
+                    "complex": ProjectComplexityEnum.COMPLEX,
+                    "very_complex": ProjectComplexityEnum.VERY_COMPLEX
+                }
+
+                complexity = complexity_map.get(
+                    updated_breakdown.get("complexity", "moderate"),
+                    ProjectComplexityEnum.MODERATE
+                )
+
+                # Save updated breakdown
+                await planning_repo.save_ai_breakdown(
+                    session_id,
+                    updated_breakdown,
+                    complexity,
+                    updated_breakdown.get("total_hours", 0)
+                )
+
+                # Track user edit
+                await planning_repo.add_user_edit(
+                    session_id,
+                    "refine_plan",
+                    {"request": refinement_request}
+                )
+
+                # Delete old drafts
+                for draft in drafts:
+                    await draft_repo.delete(draft.draft_id)
+
+                # Create new drafts
+                tasks = updated_breakdown.get("tasks", [])
+                await draft_repo.bulk_create_from_ai(session_id, tasks)
+
+                # Present updated plan
+                await self._present_breakdown(chat_id, session_id, updated_breakdown)
+
+                logger.info(f"Refined plan for session {session_id}")
+
+                return {
+                    "success": True,
+                    "task_count": len(tasks)
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to refine plan: {e}", exc_info=True)
+
+            if chat_id:
+                await self.telegram.send_message(
+                    chat_id,
+                    f"❌ Failed to refine plan: {str(e)}",
+                    parse_mode="Markdown"
+                )
+
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def _format_breakdown_for_refinement(
+        self,
+        breakdown: Dict[str, Any],
+        drafts: List
+    ) -> str:
+        """Format breakdown for AI refinement"""
+        tasks = breakdown.get("tasks", [])
+        lines = [
+            f"Project: {breakdown.get('project_name')}",
+            f"Complexity: {breakdown.get('complexity')}",
+            f"Total Hours: {breakdown.get('total_hours')}",
+            "\nTasks:"
+        ]
+
+        for idx, task in enumerate(tasks, 1):
+            lines.append(f"{idx}. {task.get('title')}")
+            lines.append(f"   - Category: {task.get('category')}")
+            lines.append(f"   - Hours: {task.get('estimated_hours')}")
+            if task.get('assigned_to'):
+                lines.append(f"   - Assigned: {task.get('assigned_to')}")
+
+        return "\n".join(lines)
 
 
 def get_planning_handler(
