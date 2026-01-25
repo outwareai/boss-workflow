@@ -126,17 +126,31 @@ class PlanningEnhancer:
             Validation result dict
         """
         try:
-            # Convert to TaskDraft objects
-            draft_objs = [
-                TaskDraft(
+            # Build mapping of array index -> draft_id
+            # Dependencies are stored as array indices (0, 1, 2...) but validator needs draft IDs
+            index_to_draft_id = {
+                idx: d.get("draft_id", "")
+                for idx, d in enumerate(task_drafts)
+            }
+
+            # Convert to TaskDraft objects with mapped dependencies
+            draft_objs = []
+            for idx, d in enumerate(task_drafts):
+                # Map dependency indices to draft IDs
+                dep_indices = d.get("depends_on", [])
+                dep_draft_ids = [
+                    index_to_draft_id[dep_idx]
+                    for dep_idx in dep_indices
+                    if dep_idx in index_to_draft_id
+                ]
+
+                draft_objs.append(TaskDraft(
                     task_id=d.get("draft_id", ""),
                     title=d.get("title", ""),
                     assignee=d.get("assigned_to", "Unassigned"),
-                    dependencies=d.get("depends_on", []),
+                    dependencies=dep_draft_ids,  # Use mapped draft IDs, not indices
                     estimated_hours=d.get("estimated_hours", 0.0)
-                )
-                for d in task_drafts
-            ]
+                ))
 
             # Validate
             validator = DependencyValidator(draft_objs)
