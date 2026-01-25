@@ -157,6 +157,8 @@ Just send me a message to get started!"""
 
 **Planning & Documentation:**
 • `/plan [description]` - Start project planning
+• `/resume [session-id]` - Resume saved session
+• `/saved` - List saved planning sessions
 • `/export markdown` - Export plan as Markdown
 • `/export gdoc` - Create Google Doc spec
 
@@ -1764,6 +1766,97 @@ You can now:
             except Exception as e:
                 logger.error(f"Export error: {e}", exc_info=True)
                 return f"❌ Export failed: {str(e)}"
+
+    async def handle_resume(
+        self,
+        user_id: str,
+        chat_id: str,
+        session_id: Optional[str] = None
+    ) -> str:
+        """
+        Handle /resume command - Resume saved planning session.
+
+        GROUP 3 Phase 7: Enhanced Multi-Turn Planning Sessions
+
+        Args:
+            user_id: User ID
+            chat_id: Telegram chat ID
+            session_id: Optional specific session ID to resume
+
+        Returns:
+            Status message
+        """
+        try:
+            from src.database.connection import get_db
+            from src.database.repositories import get_planning_repository
+            from src.bot.planning_handler import get_planning_handler
+            from src.integrations.sheets import get_sheets_integration
+            from src.bot.telegram_simple import get_telegram_client
+
+            telegram_client = get_telegram_client()
+            sheets_client = get_sheets_integration()
+
+            planning_handler = get_planning_handler(
+                telegram_client,
+                self.ai,
+                sheets_client
+            )
+
+            result = await planning_handler.resume_session(
+                user_id,
+                session_id,
+                chat_id
+            )
+
+            if result.get("success"):
+                return "✅ Planning session resumed! Check messages above for details."
+            else:
+                return f"❌ {result.get('error', 'Failed to resume session')}"
+
+        except Exception as e:
+            logger.error(f"Resume command error: {e}", exc_info=True)
+            return f"❌ Failed to resume session: {str(e)}"
+
+    async def handle_saved(
+        self,
+        user_id: str,
+        chat_id: str
+    ) -> str:
+        """
+        Handle /saved command - List saved planning sessions.
+
+        GROUP 3 Phase 7: Enhanced Multi-Turn Planning Sessions
+
+        Args:
+            user_id: User ID
+            chat_id: Telegram chat ID
+
+        Returns:
+            List of saved sessions
+        """
+        try:
+            from src.database.connection import get_db
+            from src.database.repositories import get_planning_repository
+            from src.bot.planning_handler import get_planning_handler
+            from src.integrations.sheets import get_sheets_integration
+            from src.bot.telegram_simple import get_telegram_client
+
+            telegram_client = get_telegram_client()
+            sheets_client = get_sheets_integration()
+
+            planning_handler = get_planning_handler(
+                telegram_client,
+                self.ai,
+                sheets_client
+            )
+
+            await planning_handler.list_saved_sessions(user_id, chat_id)
+
+            return "✅ Listed saved planning sessions"
+
+        except Exception as e:
+            logger.error(f"Saved command error: {e}", exc_info=True)
+            return f"❌ Failed to list saved sessions: {str(e)}"
 
 
 # Singleton instance

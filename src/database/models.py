@@ -918,6 +918,7 @@ class PlanningStateEnum(str, enum.Enum):
     FINALIZING = "finalizing"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    SAVED = "saved"  # Phase 7: Auto-saved sessions for later resume
 
 
 class ProjectComplexityEnum(str, enum.Enum):

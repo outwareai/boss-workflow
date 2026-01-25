@@ -16,7 +16,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-from src.database.connection import get_db
+from src.database.connection import get_session
 from src.database.repositories import (
     get_planning_repository,
     get_task_draft_repository,
@@ -25,7 +25,7 @@ from src.database.repositories import (
     get_task_repository
 )
 from src.ai.deepseek import get_deepseek_client
-from src.integrations.sheets import sheets_client
+from src.integrations.sheets import get_sheets_integration
 
 logger = logging.getLogger(__name__)
 

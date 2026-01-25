@@ -30,6 +30,8 @@ from src.ai.memory_retrieval import memory_retrieval  # GROUP 2: Memory System
 from src.ai.memory_extractor import memory_extractor  # GROUP 2: Memory System
 from src.integrations.sheets import GoogleSheetsIntegration as GoogleSheetsClient
 from src.bot.planning_enhancements import PlanningEnhancer
+from src.bot.planning_session_manager import get_planning_session_manager  # GROUP 3 Phase 7
+from src.bot.planning_session_timeout import get_timeout_handler  # GROUP 3 Phase 7
 from config.settings import settings
 
 if TYPE_CHECKING:
@@ -58,6 +60,9 @@ class PlanningHandler:
         self.sheets = sheets_client
         # GROUP 1: Conversational Planning Engine enhancements
         self.enhancer = PlanningEnhancer(ai_client)
+        # GROUP 3 Phase 7: Enhanced session management
+        self.session_manager = get_planning_session_manager(ai_client)
+        self.timeout_handler = get_timeout_handler(telegram_client, timeout_minutes=30)
 
     async def detect_planning_intent(
         self,
@@ -151,30 +156,43 @@ NO = User wants to create a simple task or other action"""
             Dict with session info and next_action
         """
         try:
+            # GROUP 3 Phase 7: Use session manager to check for active/stale sessions
+            session_check = await self.session_manager.get_or_create_session(
+                user_id,
+                raw_input
+            )
+
+            if session_check["status"] == "active":
+                # User has active session
+                active_session = session_check["session"]
+
+                if chat_id:
+                    await self.telegram.send_message(
+                        chat_id,
+                        f"⚠️ You have an active planning session: {active_session.project_name or 'Unnamed Project'}\n\n"
+                        f"Please complete or cancel it first.\n\n"
+                        f"Session ID: `{active_session.session_id}`\n"
+                        f"State: {active_session.state}",
+                        parse_mode="Markdown"
+                    )
+
+                return {
+                    "success": False,
+                    "error": "active_session_exists",
+                    "session_id": active_session.session_id
+                }
+
+            if session_check["status"] == "has_saved":
+                # User has saved sessions
+                if chat_id:
+                    await self.telegram.send_message(
+                        chat_id,
+                        session_check["message"],
+                        parse_mode="Markdown"
+                    )
+
             async with get_session() as db:
                 planning_repo = get_planning_repository(db)
-
-                # Check for active session
-                active_session = await planning_repo.get_active_for_user(user_id)
-
-                if active_session:
-                    logger.warning(f"User {user_id} already has active planning session: {active_session.session_id}")
-
-                    if chat_id:
-                        await self.telegram.send_message(
-                            chat_id,
-                            f"⚠️ You have an active planning session: {active_session.project_name or 'Unnamed Project'}\n\n"
-                            f"Please complete or cancel it first.\n\n"
-                            f"Session ID: `{active_session.session_id}`\n"
-                            f"State: {active_session.state}",
-                            parse_mode="Markdown"
-                        )
-
-                    return {
-                        "success": False,
-                        "error": "active_session_exists",
-                        "session_id": active_session.session_id
-                    }
 
                 # Create new session
                 session = await planning_repo.create(
@@ -213,6 +231,14 @@ NO = User wants to create a simple task or other action"""
                         chat_id,
                         welcome_msg,
                         parse_mode="Markdown"
+                    )
+
+                # GROUP 3 Phase 7: Start timeout timer
+                if chat_id:
+                    self.timeout_handler.start_timeout_timer(
+                        session.session_id,
+                        user_id,
+                        chat_id
                     )
 
                 # Move to information gathering
@@ -395,9 +421,17 @@ Example:
             Dict with next action
         """
         try:
+            # GROUP 3 Phase 7: Reset timeout on user activity
             async with get_session() as db:
                 planning_repo = get_planning_repository(db)
                 session = await planning_repo.get_by_id_or_fail(session_id)
+
+                # Reset timeout timer
+                self.timeout_handler.reset_timeout_timer(
+                    session_id,
+                    session.user_id,
+                    chat_id
+                )
 
                 # Store answer in raw_input (append)
                 updated_input = f"{session.raw_input}\n\nAdditional Info: {answer}"
@@ -749,6 +783,9 @@ Generate the JSON now:"""
                     task_ids
                 )
 
+                # GROUP 3 Phase 7: Cancel timeout timer on completion
+                self.timeout_handler.cancel_timeout_timer(session_id)
+
                 # Sync to Google Sheets
                 try:
                     for task in created_tasks:
@@ -814,6 +851,9 @@ Generate the JSON now:"""
                     session_id,
                     PlanningStateEnum.CANCELLED
                 )
+
+                # GROUP 3 Phase 7: Cancel timeout timer
+                self.timeout_handler.cancel_timeout_timer(session_id)
 
                 if chat_id:
                     await self.telegram.send_message(
@@ -1282,6 +1322,178 @@ Only match if confidence > 0.6.
 
         except Exception as e:
             logger.error(f"Failed to extract session insights: {e}", exc_info=True)
+
+    async def resume_session(
+        self,
+        user_id: str,
+        session_id: Optional[str] = None,
+        chat_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Resume a saved planning session.
+
+        GROUP 3 Phase 7: Enhanced Multi-Turn Planning Sessions
+
+        Args:
+            user_id: User ID
+            session_id: Optional specific session to resume (otherwise uses most recent)
+            chat_id: Telegram chat ID for responses
+
+        Returns:
+            Dict with resume status and session data
+        """
+        try:
+            # If no session ID provided, find most recent saved session
+            if not session_id:
+                recovery = await self.session_manager.recover_session(user_id)
+
+                if not recovery:
+                    if chat_id:
+                        await self.telegram.send_message(
+                            chat_id,
+                            "📭 No saved planning sessions found.\n\n"
+                            "Use `/plan <description>` to start a new planning session.",
+                            parse_mode="Markdown"
+                        )
+
+                    return {
+                        "success": False,
+                        "error": "no_saved_sessions"
+                    }
+
+                session_id = recovery["session_id"]
+
+            # Resume the session
+            resume_result = await self.session_manager.resume_session_with_context(
+                session_id
+            )
+
+            if not resume_result.get("success"):
+                if chat_id:
+                    await self.telegram.send_message(
+                        chat_id,
+                        f"❌ Failed to resume session: {resume_result.get('error')}",
+                        parse_mode="Markdown"
+                    )
+
+                return resume_result
+
+            # Send context summary to user
+            if chat_id:
+                message = (
+                    f"🔄 **Resuming Planning Session**\n\n"
+                    f"{resume_result['context_summary']}\n\n"
+                    f"Session ID: `{session_id}`\n"
+                    f"Tasks: {resume_result['task_count']}\n"
+                    f"State: {resume_result['state']}\n\n"
+                )
+
+                # Add appropriate next steps based on state
+                state = resume_result['state']
+
+                if state == "reviewing_breakdown":
+                    message += (
+                        "**What would you like to do?**\n"
+                        "• `/approve` - Create these tasks\n"
+                        "• `/refine <changes>` - Request changes\n"
+                        "• `/cancel` - Cancel planning"
+                    )
+                elif state == "gathering_info":
+                    message += "I'll continue asking questions from where we left off."
+                else:
+                    message += "Let's continue planning!"
+
+                await self.telegram.send_message(
+                    chat_id,
+                    message,
+                    parse_mode="Markdown"
+                )
+
+                # Restart timeout timer
+                self.timeout_handler.start_timeout_timer(
+                    session_id,
+                    user_id,
+                    chat_id
+                )
+
+                # If state is reviewing_breakdown, re-present the breakdown
+                if state == "reviewing_breakdown":
+                    session = resume_result["session"]
+                    if session.ai_breakdown:
+                        await self._present_breakdown(
+                            chat_id,
+                            session_id,
+                            session.ai_breakdown
+                        )
+
+            logger.info(f"Resumed planning session {session_id} for user {user_id}")
+
+            return {
+                "success": True,
+                "session_id": session_id,
+                "state": resume_result["state"]
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to resume planning session: {e}", exc_info=True)
+
+            if chat_id:
+                await self.telegram.send_message(
+                    chat_id,
+                    f"❌ Failed to resume session: {str(e)}",
+                    parse_mode="Markdown"
+                )
+
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    async def list_saved_sessions(
+        self,
+        user_id: str,
+        chat_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        List user's saved planning sessions.
+
+        GROUP 3 Phase 7: Enhanced Multi-Turn Planning Sessions
+
+        Args:
+            user_id: User ID
+            chat_id: Telegram chat ID for responses
+
+        Returns:
+            Dict with session list
+        """
+        try:
+            message = await self.session_manager.list_saved_sessions(user_id)
+
+            if chat_id:
+                await self.telegram.send_message(
+                    chat_id,
+                    message,
+                    parse_mode="Markdown"
+                )
+
+            return {
+                "success": True
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to list saved sessions: {e}", exc_info=True)
+
+            if chat_id:
+                await self.telegram.send_message(
+                    chat_id,
+                    f"❌ Failed to list saved sessions: {str(e)}",
+                    parse_mode="Markdown"
+                )
+
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
 
 def get_planning_handler(
