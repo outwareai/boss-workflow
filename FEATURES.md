@@ -1,8 +1,8 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-25
-> **Version:** 2.7.0 (Q1 2026 Enterprise Batch Operations)
-> **Total Lines:** ~2850 | **Total Features:** 127+
+> **Version:** 2.8.0 (Q2 2026 Enterprise Undo/Redo System)
+> **Total Lines:** ~3200 | **Total Features:** 130+
 
 **Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
 **Usage Rule:** **Read this file FIRST when starting work, update LAST after making changes.**
@@ -37,6 +37,12 @@
 /status                          # Current overview
 /daily                           # Today's tasks
 /weekly                          # Weekly summary
+
+# Undo/Redo Operations
+/undo                            # Undo last action
+/undo [id]                       # Undo specific action
+/undo_list                       # View undo history
+/redo [id]                       # Redo undone action
 
 # Team Operations
 /team                            # View team members
@@ -480,6 +486,91 @@ Bot: "✅ Added tags to TASK-001: security"
 - `"Block all of John's tasks"` → Filters + bulk update
 
 **Implementation:** `src/bot/commands.py`, `src/integrations/sheets.py` (bulk_update_status, bulk_assign)
+
+---
+
+#### 🔄 Undo/Redo System (v2.8+)
+
+**Status:** ✅ Production
+**Added:** Q2 2026 (v2.8.0)
+
+**Feature:** Enterprise multi-level undo/redo system with full audit trail
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/undo` | Undo last action | `/undo` |
+| `/undo [id]` | Undo specific action by ID | `/undo 42` |
+| `/undo_list` | View undo history (last 10) | `/undo_list` |
+| `/redo [id]` | Redo previously undone action | `/redo 42` |
+
+**Supported Actions:**
+
+| Action Type | Description | Undo Function |
+|-------------|-------------|---------------|
+| `delete_task` | Task deletion | Restores deleted task with all metadata |
+| `change_status` | Status changes | Reverts to previous status |
+| `reassign` | Assignee changes | Restores previous assignee |
+| `change_priority` | Priority changes | Reverts to previous priority |
+| `change_deadline` | Deadline changes | Restores previous deadline |
+
+**Key Features:**
+- **Multi-level:** Up to 10 undo operations per user
+- **History:** 7-day retention with automatic cleanup
+- **Redis Caching:** Fast access to recent undo history (1-hour TTL)
+- **User Isolation:** Each user has their own undo history
+- **Audit Integration:** Full audit trail of all undo/redo operations
+- **Boss Notifications:** Alerted on cleanup job failures
+
+**API Endpoints:**
+
+```http
+GET  /api/undo/history?user_id=X&limit=N  # Get undo history
+POST /api/undo?user_id=X&action_id=N      # Undo action
+POST /api/redo?user_id=X&action_id=N      # Redo action
+```
+
+**Database:**
+- Table: `undo_history` with JSONB support
+- Indexes: 4 performance indexes (user, timestamp, user+time, action_type)
+- Migration: `003_add_undo_history.sql`
+
+**Scheduler:**
+- Daily cleanup at 2:00 AM (removes records > 7 days old)
+- Job ID: `cleanup_undo_history`
+
+**Usage Example:**
+
+```bash
+# Accidentally delete task
+DELETE TASK-001
+
+# View undo history
+/undo_list
+# Shows: 1. Deleted task TASK-001: Fix login bug (ID: 42)
+
+# Undo the deletion
+/undo 42
+# Task TASK-001 restored!
+
+# Change your mind, redo the delete
+/redo 42
+# Task TASK-001 deleted again
+```
+
+**Implementation:**
+- `src/operations/undo_manager.py` - Core undo manager
+- `src/database/models.py` - UndoHistoryDB model
+- `src/bot/commands.py` - Bot command handlers
+- `src/main.py` - API endpoints
+- `src/scheduler/jobs.py` - Cleanup job
+- `tests/unit/test_undo_manager.py` - Unit tests
+- `docs/UNDO_SYSTEM.md` - Complete documentation
+
+**Limitations:**
+- Cannot undo bulk operations (each action undone separately)
+- Cannot undo external integrations (Discord, Sheets, Calendar)
+- Cannot undo actions by other users (except boss in future)
+- Does not cascade to related entities (subtasks, dependencies)
 
 ---
 
@@ -6157,6 +6248,7 @@ Mirror Discord functionality to Slack
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| **2.8.0** | 2026-01-25 | **🔄 Q2 2026 ENTERPRISE UNDO/REDO SYSTEM:** Full multi-level undo/redo system with audit trail integration. Features: 10-level undo history per user, 5 reversible action types (delete_task, change_status, reassign, change_priority, change_deadline), Redis caching for fast access, automatic 7-day cleanup, complete audit logging. **Bot commands:** `/undo`, `/undo [id]`, `/undo_list`, `/redo [id]`. **API endpoints:** `GET /api/undo/history`, `POST /api/undo`, `POST /api/redo`. **Database:** New `undo_history` table with JSONB support, 4 performance indexes, migration 003. **Scheduler:** Daily cleanup job at 2 AM. **Files:** `src/operations/undo_manager.py`, `migrations/003_add_undo_history.sql`, `tests/unit/test_undo_manager.py`, `docs/UNDO_SYSTEM.md`. **Impact:** Production-grade mistake recovery, complete operation reversibility, enterprise compliance |
 | **2.7.1** | 2026-01-25 | **🔒 SECURITY PATCH - DEPENDENCY UPDATES:** Fixed 3 CVEs (cryptography 44.0.1, protobuf 5.29.3). **CVE-2024-12797** (OpenSSL in cryptography wheels), **CVE-2026-0994** (protobuf DoS), **GHSA-h4gh-qq45-vh27** (OpenSSL advisory). Zero breaking changes, all dependencies at latest stable, benchmark verified: 42K crypto ops/s, 199K protobuf ops/s. **Impact:** Production-safe, zero vulnerabilities, compliant with security standards |
 | **2.7.0** | 2026-01-25 | **🔄 Q1 2026 ENTERPRISE BATCH OPERATIONS:** Full-featured batch operations system with dry-run mode, transaction support, progress tracking, audit logging, and Discord notifications. Features: 5 batch operations (complete all, reassign all, bulk status change, bulk delete, bulk add tags), cancellation support, confirmation workflow, progress tracking in Redis, audit trail integration. **New intents:** BATCH_COMPLETE_TASKS, BATCH_REASSIGN, BATCH_STATUS_CHANGE, BATCH_DELETE, BATCH_ADD_TAGS, BATCH_DRY_RUN. **API endpoints:** `/api/batch/complete`, `/api/batch/reassign`, `/api/batch/status`, `/api/batch/delete`, `/api/batch/tags`, `/api/batch/progress/{id}`, `/api/batch/cancel/{id}`. **Files:** `src/operations/batch.py`, `tests/unit/test_batch_operations.py`. **Impact:** Enterprise-grade bulk operations, safe preview mode, multi-task management efficiency |
 | **2.6.2** | 2026-01-25 | **🧪 E2E TEST SUITE - PHASE 1:** Comprehensive end-to-end conversation flow testing framework. Features: 40+ E2E tests (13 critical flows, 19 performance tests, 8 examples), ConversationSimulator with full assertion support, TestScenario framework for reusable tests, CI/CD integration with GitHub Actions, performance baseline tracking. **Files:** `tests/e2e/framework.py`, `test_critical_flows.py`, `test_performance.py`, `.github/workflows/e2e-tests.yml`, `run_e2e_tests.py`. **Docs:** `tests/e2e/README.md`, `TESTING_GUIDE.md`. **Impact:** Real conversation testing, performance regression detection (< 2s simple, < 5s complex), 5-10 concurrent user testing, memory leak detection |
