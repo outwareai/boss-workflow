@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..connection import get_database
-from ..models import TaskDB, SubtaskDB, TaskDependencyDB, ProjectDB
+from ..models import TaskDB, SubtaskDB, TaskDependencyDB, ProjectDB, TimeEntryDB
 from ..exceptions import (
     DatabaseConstraintError,
     DatabaseOperationError,
@@ -176,21 +176,50 @@ class TaskRepository:
 
     async def delete(self, task_id: str) -> bool:
         """
-        Delete a task.
+        Delete a task and all related records (cascade).
 
         Q2 2026: Added audit logging for task deletion.
+        Q1 2026: Added cascade delete for subtasks, dependencies, time entries.
         """
         async with self.db.session() as session:
             try:
-                # Get task info before deletion
+                # Get task info before deletion (need db id for FK references)
                 result = await session.execute(
                     select(TaskDB).where(TaskDB.task_id == task_id)
                 )
                 task = result.scalar_one_or_none()
 
                 if not task:
-                    raise EntityNotFoundError(f"Task {task_id} not found for deletion")
+                    logger.debug(f"Task {task_id} not found for deletion")
+                    return False
 
+                db_id = task.id  # Integer primary key for FK references
+
+                # Delete related records FIRST (foreign key constraints)
+                # 1. Delete subtasks
+                await session.execute(
+                    delete(SubtaskDB).where(SubtaskDB.task_id == db_id)
+                )
+
+                # 2. Delete dependencies (both directions)
+                await session.execute(
+                    delete(TaskDependencyDB).where(TaskDependencyDB.task_id == db_id)
+                )
+                await session.execute(
+                    delete(TaskDependencyDB).where(TaskDependencyDB.depends_on_id == db_id)
+                )
+
+                # 3. Delete time entries
+                await session.execute(
+                    delete(TimeEntryDB).where(TimeEntryDB.task_id == db_id)
+                )
+
+                # 4. Clear parent_task_id references (child tasks become orphans)
+                await session.execute(
+                    update(TaskDB).where(TaskDB.parent_task_id == db_id).values(parent_task_id=None)
+                )
+
+                # 5. Now delete the task itself
                 await session.execute(
                     delete(TaskDB).where(TaskDB.task_id == task_id)
                 )
