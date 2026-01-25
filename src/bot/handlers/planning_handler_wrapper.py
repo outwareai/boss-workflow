@@ -49,6 +49,8 @@ class PlanningHandler(BaseHandler):
         Priority: HIGH - should be checked before other handlers
         """
         message_lower = message.lower().strip()
+        
+        self.logger.info(f"PlanningHandler.can_handle() checking: {message_lower[:100]}")
 
         # Planning keywords (natural language)
         planning_keywords = [
@@ -59,8 +61,10 @@ class PlanningHandler(BaseHandler):
 
         # Check for planning keywords
         if any(keyword in message_lower for keyword in planning_keywords):
-            self.logger.info(f"Planning keyword detected: {message_lower[:100]}")
+            self.logger.info(f"✓ Planning keyword detected: {message_lower[:100]}")
             return True
+        
+        self.logger.info("✗ No planning keyword matched")
 
         # Check for slash commands
         if message_lower.startswith(("/plan", "/approve", "/refine")):

@@ -45,6 +45,8 @@ class QueryHandler(BaseHandler):
         - Task ID lookups (TASK-XXX)
         """
         message_lower = message.lower().strip()
+        
+        self.logger.info(f"QueryHandler.can_handle() checking: {message_lower[:100]}")
 
         query_keywords = [
             "status", "check", "show", "list", "find",
@@ -53,7 +55,9 @@ class QueryHandler(BaseHandler):
             "task-", "search", "filter", "what's", "working on"
         ]
 
-        return any(keyword in message_lower for keyword in query_keywords)
+        result = any(keyword in message_lower for keyword in query_keywords)
+        self.logger.info(f"QueryHandler result: {result}")
+        return result
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Route query to appropriate handler."""

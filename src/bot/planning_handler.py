@@ -64,6 +64,56 @@ class PlanningHandler:
         self.session_manager = get_planning_session_manager(ai_client)
         self.timeout_handler = get_timeout_handler(telegram_client, timeout_minutes=30)
 
+    async def can_handle(self, message: str, user_id: str, **kwargs) -> bool:
+        """
+        Check if this is a planning request.
+        
+        Handles:
+        - "plan", "breakdown", "break down"
+        - "project for", "build", "create project"
+        - "let's make", "let's create"
+        - "estimate", "timeline for"
+        """
+        message_lower = message.lower().strip()
+        
+        planning_keywords = [
+            "plan", "breakdown", "break down", "break this down",
+            "project for", "build", "create project", "new project",
+            "let's make", "let's create", "let's build", "let's plan",
+            "estimate", "timeline for", "roadmap", "milestones",
+            "schedule for", "organize", "structure"
+        ]
+        
+        return any(keyword in message_lower for keyword in planning_keywords)
+
+    async def handle(self, update, context) -> None:
+        """
+        Entry point for planning handler (called by RoutingHandler).
+        
+        Starts a new planning session and gathers information.
+        """
+        from telegram import Update
+        from telegram.ext import ContextTypes
+        
+        message = update.message.text.strip() if update.message.text else ""
+        chat_id = str(update.effective_chat.id)
+        user_id = str(update.effective_user.id)
+        
+        try:
+            # Start planning session with the message
+            await self.start_planning_session(
+                chat_id=chat_id,
+                user_id=user_id,
+                initial_request=message
+            )
+        except Exception as e:
+            logger.error(f"Planning handler failed: {e}", exc_info=True)
+            await self.telegram.send_message(
+                chat_id,
+                f"❌ Sorry, planning session failed: {str(e)}",
+                parse_mode=None
+            )
+
     async def detect_planning_intent(
         self,
         message: str,
