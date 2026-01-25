@@ -27,6 +27,7 @@ class UserIntent(str, Enum):
 
     # Task creation
     CREATE_TASK = "create_task"              # "john needs to fix the login bug"
+    PLANNING = "planning"                    # "plan a new mobile app", "let's break down this project"
 
     # Task completion/submission
     TASK_DONE = "task_done"                  # "I finished the landing page"
@@ -205,6 +206,9 @@ class IntentDetector:
             "templates": (UserIntent.LIST_TEMPLATES, {}),
             "team": (UserIntent.CHECK_STATUS, {"filter": "team"}),
             "archive": (UserIntent.ARCHIVE_TASKS, {}),
+            "plan": (UserIntent.PLANNING, {}),
+            "approve": (UserIntent.APPROVE_TASK, {"planning_approval": True}),
+            "refine": (UserIntent.PLANNING, {"action": "refine"}),
         }
 
         if cmd in slash_commands:
@@ -215,6 +219,8 @@ class IntentDetector:
             return UserIntent.CREATE_TASK, {"message": args}
         if cmd == "urgent" and args:
             return UserIntent.CREATE_TASK, {"message": args, "priority": "urgent"}
+        if cmd == "plan" and args:
+            return UserIntent.PLANNING, {"message": args}
         if cmd == "search" and args:
             return UserIntent.SEARCH_TASKS, {"query": args}
         if cmd in ["complete", "finish"] and args:
@@ -420,6 +426,7 @@ AVAILABLE INTENTS (pick exactly one):
 
 **TASK MANAGEMENT:**
 - create_task: Boss wants to ASSIGN WORK to someone. Keywords: "needs to", "should", "fix", "build", "create", "implement", "add feature", "deploy", task descriptions with assignee names.
+- planning: Boss wants to PLAN or BREAK DOWN a multi-step project (NOT just create a single task). Keywords: "plan", "let's plan", "break down", "organize", "I want to build", "create a project for", "help me plan". This is for PROJECTS with MULTIPLE tasks, not single tasks.
 - clear_tasks: Delete/remove tasks. Keywords: "clear", "delete", "remove", "wipe" + tasks.
 - archive_tasks: Archive completed tasks.
 - delay_task: Postpone a task. Keywords: "delay", "postpone", "push back", "reschedule".
