@@ -283,6 +283,32 @@ NO = User wants to create a simple task or other action"""
                 # Generate questions using AI
                 questions = await self._generate_clarifying_questions(session.raw_input)
 
+                # If AI says we have enough info, skip questions and go to breakdown
+                if not questions:
+                    logger.info("AI determined enough information - proceeding directly to breakdown")
+
+                    await planning_repo.update_state(
+                        session_id,
+                        PlanningStateEnum.AI_ANALYZING
+                    )
+
+                    await self.telegram.send_message(
+                        chat_id,
+                        "✅ Got it! Analyzing your project and breaking it down into tasks...\n\n"
+                        "This will take a moment... ⏳",
+                        parse_mode="Markdown"
+                    )
+
+                    # Trigger AI breakdown immediately
+                    breakdown_result = await self.ai_breakdown(session_id, chat_id)
+
+                    return {
+                        "success": True,
+                        "questions": [],
+                        "state": PlanningStateEnum.AI_ANALYZING.value,
+                        "breakdown": breakdown_result
+                    }
+
                 # Save questions to session
                 await planning_repo.update_state(
                     session_id,
@@ -324,88 +350,79 @@ NO = User wants to create a simple task or other action"""
         max_questions: int = 3
     ) -> List[str]:
         """
-        Use AI to generate clarifying questions
+        Use AI to intelligently determine what questions to ask.
 
-        ALWAYS asks baseline questions:
-        1. Project name (if not mentioned)
-        2. Deadline/timeline
-        3. Who is assigned
-
-        Then adds context-specific questions.
+        AI analyzes the input and ONLY asks for information that's truly missing.
+        No dumb keyword matching - AI understands context.
 
         Args:
             raw_input: Original planning request
             max_questions: Maximum questions to generate
 
         Returns:
-            List of questions (minimum 3)
+            List of questions (empty if AI determines enough info exists)
         """
         try:
-            # Baseline questions to ALWAYS consider
-            baseline_questions = []
+            prompt = f"""Analyze this project planning request and determine what critical information is MISSING.
 
-            # Check if project name mentioned
-            if not any(word in raw_input.lower() for word in ["project", "called", "named"]):
-                baseline_questions.append("What should we name this project (or leave unnamed)?")
+Request:
+"{raw_input}"
 
-            # Check if timeline mentioned
-            if not any(word in raw_input.lower() for word in ["deadline", "by", "timeline", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]):
-                baseline_questions.append("When do you need this completed?")
+Your task:
+1. Check if the request contains:
+   - Project name or context (can infer from content)
+   - Timeline or deadline
+   - Who will work on it
+   - Enough task details to create a plan
 
-            # Check if assignee mentioned
-            if not any(word in raw_input.lower() for word in ["mayank", "zea", "team", "assign", "for"]):
-                baseline_questions.append("Who should work on this?")
+2. ONLY ask questions for information that is TRULY MISSING and CRITICAL.
 
-            # Generate additional context-specific questions via AI
-            prompt = f"""You are helping a boss plan a project. Based on their request, generate {max_questions - len(baseline_questions)} SHORT clarifying questions.
+3. If the request has detailed timeline, tasks, and context - respond with JUST: "PROCEED"
 
-Request: "{raw_input}"
+4. If questions are needed, list them (max {max_questions}), numbered.
 
-DO NOT ask about:
-- Project name (already asking)
-- Timeline/deadline (already asking)
-- Who will work on it (already asking)
+Be SMART:
+- "Timeline: Sunday - Infrastructure, Monday - Landing page..." = HAS TIMELINE
+- "for Mayank" = HAS ASSIGNEE
+- "project Maya" or "Maya beachclub" = HAS PROJECT CONTEXT
+- Detailed daily breakdown = ENOUGH DETAILS
 
-Focus on:
-- Scope (what's included/excluded)
-- Priority (what's most important)
-- Dependencies (what's needed first)
-- Constraints (budget, tech stack, etc.)
-
-Keep questions SHORT and SPECIFIC. Format as numbered list.
-
-Example:
-1. Are there any existing systems this needs to integrate with?
-2. What's the most critical feature to deliver first?"""
+Format:
+If no questions needed: "PROCEED"
+If questions needed:
+1. First question
+2. Second question
+3. Third question"""
 
             response = await self.ai.chat(
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+                temperature=0.3  # Lower temp for consistent decisions
             )
 
-            # Parse numbered list
-            ai_questions = []
-            for line in text.strip().split("\n"):
+            text = response.choices[0].message.content.strip()
+
+            # Check if AI says to proceed
+            if "PROCEED" in text.upper():
+                logger.info("AI determined sufficient information exists - skipping questions")
+                return []
+
+            # Parse questions
+            questions = []
+            for line in text.split("\n"):
                 line = line.strip()
                 if line and line[0].isdigit():
                     # Remove number prefix
                     question = line.split(".", 1)[1].strip() if "." in line else line
-                    ai_questions.append(question)
+                    questions.append(question)
 
-            # Combine baseline + AI questions
-            all_questions = baseline_questions + ai_questions
-
-            logger.info(f"Generated {len(all_questions)} clarifying questions ({len(baseline_questions)} baseline + {len(ai_questions)} context)")
-            return all_questions[:max_questions]
+            logger.info(f"AI generated {len(questions)} questions based on missing info")
+            return questions[:max_questions]
 
         except Exception as e:
             logger.error(f"Failed to generate questions: {e}", exc_info=True)
-            # Fallback questions - comprehensive baseline
-            return [
-                "What should we name this project (or leave unnamed)?",
-                "When do you need this completed?",
-                "Who should work on this?"
-            ]
+            # If AI fails, skip questions and proceed
+            logger.warning("AI question generation failed - proceeding without questions")
+            return []
 
     async def process_answer(
         self,
