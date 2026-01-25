@@ -289,6 +289,20 @@ Check logs for full details."""
         )
         logger.info("System health check scheduled: every 5 minutes")
 
+        # Q2 2026: Undo history cleanup (daily at 2 AM)
+        self.scheduler.add_job(
+            self._cleanup_undo_history_job,
+            CronTrigger(
+                hour=2,
+                minute=0,
+                timezone=self.timezone
+            ),
+            id="cleanup_undo_history",
+            name="Cleanup Old Undo History",
+            replace_existing=True
+        )
+        logger.info("Undo history cleanup scheduled: daily at 2 AM")
+
         self.scheduler.add_job(
             self._scheduled_jobs_check_job,
             IntervalTrigger(minutes=30),
@@ -1267,6 +1281,32 @@ Run `/api/admin/check-consistency` for details."""
             logger.error(f"CRITICAL: Data Consistency Check failed: {e}", exc_info=True)
             await self._notify_boss_of_failure("Data Consistency Check", e)
             raise
+
+    async def _cleanup_undo_history_job(self) -> None:
+        """
+        Cleanup old undo history records.
+
+        Q2 2026: Remove undo history older than 7 days to keep database lean.
+
+        Runs daily at 2 AM.
+        """
+        logger.info("Running undo history cleanup job")
+
+        try:
+            from ..operations.undo_manager import get_undo_manager
+
+            undo_mgr = get_undo_manager()
+            count = await undo_mgr.cleanup_old_history()
+
+            if count > 0:
+                logger.info(f"Cleaned up {count} old undo records")
+            else:
+                logger.debug("No old undo records to clean up")
+
+        except Exception as e:
+            logger.error(f"Undo history cleanup failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Undo History Cleanup", e)
+            # Don't raise - this is not critical
 
     def trigger_job(self, job_id: str) -> bool:
         """Manually trigger a job."""

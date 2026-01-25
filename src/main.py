@@ -2129,6 +2129,260 @@ async def trigger_sync():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== Q1 2026: BATCH OPERATIONS API ====================
+
+@app.post("/api/batch/complete")
+async def batch_complete_tasks(
+    assignee: str,
+    dry_run: bool = False,
+    user_id: str = "API"
+):
+    """Complete all tasks for a specific assignee."""
+    try:
+        from .operations.batch import batch_ops
+        from .database.connection import get_session
+
+        async with get_session() as session:
+            result = await batch_ops.complete_all_for_assignee(
+                session, assignee, dry_run, user_id
+            )
+            return {"ok": True, **result}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Batch complete error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/batch/reassign")
+async def batch_reassign_tasks(
+    from_assignee: str,
+    to_assignee: str,
+    dry_run: bool = False,
+    user_id: str = "API"
+):
+    """Reassign all tasks from one person to another."""
+    try:
+        from .operations.batch import batch_ops
+        from .database.connection import get_session
+
+        async with get_session() as session:
+            result = await batch_ops.reassign_all(
+                session, from_assignee, to_assignee, None, dry_run, user_id
+            )
+            return {"ok": True, **result}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Batch reassign error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/batch/status")
+async def batch_status_change(
+    task_ids: List[str],
+    status: str,
+    dry_run: bool = False,
+    user_id: str = "API"
+):
+    """Bulk status change for multiple tasks."""
+    try:
+        from .operations.batch import batch_ops
+        from .database.connection import get_session
+
+        async with get_session() as session:
+            result = await batch_ops.bulk_status_change(
+                session, task_ids, status, dry_run, user_id
+            )
+            return {"ok": True, **result}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Batch status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/batch/delete")
+async def batch_delete_tasks(
+    task_ids: List[str],
+    dry_run: bool = False,
+    user_id: str = "API"
+):
+    """Bulk delete multiple tasks."""
+    try:
+        from .operations.batch import batch_ops
+        from .database.connection import get_session
+
+        async with get_session() as session:
+            result = await batch_ops.bulk_delete(
+                session, task_ids, dry_run, user_id
+            )
+            return {"ok": True, **result}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Batch delete error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/batch/tags")
+async def batch_add_tags(
+    task_ids: List[str],
+    tags: List[str],
+    dry_run: bool = False,
+    user_id: str = "API"
+):
+    """Bulk add tags to multiple tasks."""
+    try:
+        from .operations.batch import batch_ops
+        from .database.connection import get_session
+
+        async with get_session() as session:
+            result = await batch_ops.bulk_add_tags(
+                session, task_ids, tags, dry_run, user_id
+            )
+            return {"ok": True, **result}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Batch add tags error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/batch/progress/{batch_id}")
+async def get_batch_progress(batch_id: str):
+    """Get progress of a running batch operation."""
+    try:
+        from .operations.batch import batch_ops
+
+        progress = await batch_ops.get_batch_progress(batch_id)
+        if progress:
+            return {"ok": True, "progress": progress}
+        else:
+            raise HTTPException(status_code=404, detail="Batch operation not found")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get progress error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/batch/cancel/{batch_id}")
+async def cancel_batch_operation(batch_id: str):
+    """Cancel a running batch operation."""
+    try:
+        from .operations.batch import batch_ops
+
+        cancelled = await batch_ops.cancel_batch(batch_id)
+        return {"ok": True, "cancelled": cancelled}
+
+    except Exception as e:
+        logger.error(f"Cancel batch error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== END BATCH OPERATIONS API ====================
+
+
+# ==================== Q2 2026: UNDO/REDO API ====================
+
+@app.get("/api/undo/history")
+async def get_undo_history(user_id: str, limit: int = 10):
+    """
+    Get undo history for a user.
+
+    Args:
+        user_id: User ID (Telegram/Discord)
+        limit: Number of records to return (default 10, max 50)
+
+    Returns:
+        List of undoable actions
+    """
+    try:
+        from .operations.undo_manager import get_undo_manager
+
+        if limit > 50:
+            limit = 50
+
+        undo_mgr = get_undo_manager()
+        history = await undo_mgr.get_undo_history(user_id, limit)
+
+        return {"ok": True, "history": history, "count": len(history)}
+
+    except Exception as e:
+        logger.error(f"Error getting undo history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/undo")
+async def undo_action(user_id: str, action_id: Optional[int] = None):
+    """
+    Undo an action.
+
+    Args:
+        user_id: User performing the undo
+        action_id: Specific action to undo (None = most recent)
+
+    Returns:
+        Undo result with success status
+    """
+    try:
+        from .operations.undo_manager import get_undo_manager
+
+        undo_mgr = get_undo_manager()
+        result = await undo_mgr.undo_action(user_id, action_id)
+
+        if result["success"]:
+            return {"ok": True, **result}
+        else:
+            raise HTTPException(status_code=400, detail=result["message"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error performing undo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/redo")
+async def redo_action(user_id: str, action_id: int):
+    """
+    Redo a previously undone action.
+
+    Args:
+        user_id: User performing the redo
+        action_id: ID of action to redo
+
+    Returns:
+        Redo result with success status
+    """
+    try:
+        from .operations.undo_manager import get_undo_manager
+
+        undo_mgr = get_undo_manager()
+        result = await undo_mgr.redo_action(user_id, action_id)
+
+        if result["success"]:
+            return {"ok": True, **result}
+        else:
+            raise HTTPException(status_code=400, detail=result["message"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error performing redo: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== END UNDO/REDO API ====================
+
+
 @app.get("/api/db/stats")
 async def get_db_stats():
     """Get database statistics."""

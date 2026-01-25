@@ -14,7 +14,7 @@ Schema includes:
 """
 
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Dict
 from sqlalchemy import (
     Column,
     String,
@@ -859,4 +859,47 @@ class DiscordThreadTaskLinkDB(Base):
         Index("idx_thread_link_thread", "thread_id"),
         Index("idx_thread_link_task", "task_id"),
         Index("idx_thread_link_channel", "channel_id"),
+    )
+
+
+# ==================== UNDO HISTORY ====================
+
+class UndoHistoryDB(Base):
+    """
+    Undo/redo history for reversible actions.
+
+    Supports multi-level undo/redo with full audit trail integration.
+    Stores complete context needed to reverse any operation.
+    """
+    __tablename__ = "undo_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # User identification
+    user_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    # Action details
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)  # delete_task, change_status, etc.
+    action_data: Mapped[Dict] = mapped_column(JSON, nullable=False)  # Original action params
+
+    # Undo details
+    undo_function: Mapped[str] = mapped_column(String(100), nullable=False)  # Function to call for undo
+    undo_data: Mapped[Dict] = mapped_column(JSON, nullable=False)  # Data needed for undo
+
+    # Metadata
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Human-readable description
+    extra_metadata: Mapped[Optional[Dict]] = mapped_column(JSON, nullable=True)  # Additional context
+
+    # Status tracking
+    is_undone: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Timestamps
+    timestamp: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    undo_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_undo_history_user", "user_id"),
+        Index("idx_undo_history_timestamp", "timestamp"),
+        Index("idx_undo_history_user_time", "user_id", "timestamp"),
+        Index("idx_undo_history_action_type", "action_type"),
     )

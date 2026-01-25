@@ -50,6 +50,14 @@ class UserIntent(str, Enum):
     BULK_COMPLETE = "bulk_complete"          # "mark these 3 as done"
     BULK_UPDATE = "bulk_update"              # "block TASK-001 TASK-002"
 
+    # Batch operations (Q1 2026)
+    BATCH_COMPLETE_TASKS = "batch_complete_tasks"      # "complete all tasks for John"
+    BATCH_REASSIGN = "batch_reassign"                  # "reassign all from John to Sarah"
+    BATCH_STATUS_CHANGE = "batch_status_change"        # "block all frontend tasks"
+    BATCH_DELETE = "batch_delete"                      # "delete all cancelled tasks"
+    BATCH_ADD_TAGS = "batch_add_tags"                  # "tag all John's tasks as urgent"
+    BATCH_DRY_RUN = "batch_dry_run"                    # "preview changes", "dry run"
+
     # Task updates
     DELAY_TASK = "delay_task"                # "delay the landing page to tomorrow"
     ADD_NOTE = "add_note"                    # "note on TASK-001: talked to client"

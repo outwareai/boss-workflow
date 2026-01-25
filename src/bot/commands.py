@@ -144,6 +144,12 @@ Just send me a message to get started!"""
 • `/block ID ID [reason]` - Block tasks
 • `/assign @Person ID ID` - Assign tasks
 
+**Undo/Redo:**
+• `/undo` - Undo last action
+• `/undo [id]` - Undo specific action
+• `/undo_list` - View undo history
+• `/redo [id]` - Redo undone action
+
 **Reports:**
 • `/weekly` - Generate weekly summary
 • `/daily` - Today's task summary
@@ -1538,6 +1544,105 @@ If you still want to add subtasks manually:
 
 Use `/subtasks {task_id}` to view them.
 Use `/subdone {task_id} 1` to mark them complete."""
+
+    # ==================== UNDO/REDO COMMANDS ====================
+
+    async def handle_undo(self, user_id: str, action_id: Optional[str] = None) -> str:
+        """
+        Handle /undo command - undo last action or specific action.
+
+        Args:
+            user_id: User performing the undo
+            action_id: Optional specific action ID to undo
+
+        Returns:
+            Success/failure message
+        """
+        from ..operations.undo_manager import get_undo_manager
+
+        undo_mgr = get_undo_manager()
+
+        # Convert action_id to int if provided
+        action_id_int = int(action_id) if action_id else None
+
+        result = await undo_mgr.undo_action(user_id, action_id_int)
+
+        if result["success"]:
+            return f"""✅ **Undone: {result['description']}**
+
+Action type: {result['action_type']}
+
+Use `/undo_list` to see more actions you can undo.
+Use `/redo {result.get('id', '')}` if you want to redo this action."""
+        else:
+            return f"❌ {result['message']}"
+
+    async def handle_undo_list(self, user_id: str, limit: int = 10) -> str:
+        """
+        Handle /undo_list command - show undo history.
+
+        Args:
+            user_id: User requesting history
+            limit: Number of actions to show
+
+        Returns:
+            Formatted undo history
+        """
+        from ..operations.undo_manager import get_undo_manager
+
+        undo_mgr = get_undo_manager()
+        history = await undo_mgr.get_undo_history(user_id, limit)
+
+        if not history:
+            return """ℹ️ **No undo history available.**
+
+Your recent actions will appear here, allowing you to undo them if needed."""
+
+        lines = ["🔄 **Undo History** (last 10 actions)", ""]
+
+        for i, action in enumerate(history, 1):
+            lines.append(f"{i}. {action['description']}")
+            lines.append(f"   Type: `{action['action_type']}`")
+            lines.append(f"   Time: {action['timestamp']}")
+            lines.append(f"   ID: `{action['id']}`")
+            lines.append("")
+
+        lines.append("**To undo:**")
+        lines.append("• `/undo` - Undo most recent action")
+        lines.append("• `/undo <id>` - Undo specific action by ID")
+
+        return "\n".join(lines)
+
+    async def handle_redo(self, user_id: str, action_id: str) -> str:
+        """
+        Handle /redo command - redo previously undone action.
+
+        Args:
+            user_id: User performing the redo
+            action_id: ID of action to redo
+
+        Returns:
+            Success/failure message
+        """
+        from ..operations.undo_manager import get_undo_manager
+
+        undo_mgr = get_undo_manager()
+
+        try:
+            action_id_int = int(action_id)
+        except ValueError:
+            return "❌ Invalid action ID. Use `/undo_list` to see available actions."
+
+        result = await undo_mgr.redo_action(user_id, action_id_int)
+
+        if result["success"]:
+            return f"""✅ **Redone: {result['description']}**
+
+Action type: {result['action_type']}
+
+The action has been re-applied."""
+        else:
+            return f"❌ {result['message']}"
 
 
 # Singleton instance

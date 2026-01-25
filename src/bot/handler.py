@@ -379,6 +379,12 @@ class UnifiedHandler:
             UserIntent.EMAIL_RECAP: self._handle_email_recap,
             UserIntent.SEARCH_TASKS: self._handle_search,
             UserIntent.BULK_COMPLETE: self._handle_bulk_complete,
+            # Q1 2026: Batch operations
+            UserIntent.BATCH_COMPLETE_TASKS: self._handle_batch_complete_tasks,
+            UserIntent.BATCH_REASSIGN: self._handle_batch_reassign,
+            UserIntent.BATCH_STATUS_CHANGE: self._handle_batch_status_change,
+            UserIntent.BATCH_DELETE: self._handle_batch_delete,
+            UserIntent.BATCH_ADD_TAGS: self._handle_batch_add_tags,
             UserIntent.LIST_TEMPLATES: self._handle_templates,
             UserIntent.CREATE_FROM_TEMPLATE: self._handle_create_from_template,
             UserIntent.DELAY_TASK: self._handle_delay,
@@ -1631,6 +1637,280 @@ Reply **yes** to confirm or **no** to cancel.""", None
         except Exception as e:
             logger.error(f"Error archiving tasks: {e}")
             return "❌ Error archiving tasks. Please try again.", None
+
+    # ==================== Q1 2026: BATCH OPERATIONS ====================
+
+    async def _handle_batch_complete_tasks(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle: Complete all tasks for [assignee]."""
+        from ..operations.batch import batch_ops
+        from ..database.connection import get_session
+
+        # Extract assignee from data or message
+        assignee = data.get("assignee")
+        if not assignee:
+            # Try to extract from message
+            import re
+            match = re.search(r"(?:for|from|by)\s+(\w+)", message.lower())
+            if match:
+                assignee = match.group(1).title()
+
+        if not assignee:
+            return "Who's tasks should I complete? (e.g., 'complete all tasks for John')", None
+
+        # Check if dry-run requested
+        dry_run = "preview" in message.lower() or "dry run" in message.lower()
+
+        # Get preview first for confirmation
+        async with get_session() as session:
+            preview = await batch_ops.complete_all_for_assignee(
+                session, assignee, dry_run=True
+            )
+
+        total = preview["result"]["total"]
+
+        if total == 0:
+            return f"No pending tasks found for {assignee}.", None
+
+        # Check for confirmation
+        pending_action = self._pending_actions.get(user_id)
+        if not pending_action or pending_action.get("type") != "batch_complete":
+            # First time - ask for confirmation
+            self._pending_actions[user_id] = {
+                "type": "batch_complete",
+                "assignee": assignee,
+                "count": total
+            }
+
+            return (
+                f"⚠️ **Batch Complete Confirmation**\n\n"
+                f"This will mark **{total} task(s)** as completed for {assignee}\n\n"
+                f"Preview:\n"
+                f"✅ {preview['result']['success_count']} will succeed\n"
+                f"❌ {preview['result']['failure_count']} will fail\n"
+                f"⏭️ {preview['result']['skip_count']} will be skipped\n\n"
+                f"Are you sure? (yes/no)"
+            ), None
+
+        # Confirmed - execute
+        if pending_action.get("assignee") == assignee:
+            del self._pending_actions[user_id]
+
+            async with get_session() as session:
+                result = await batch_ops.complete_all_for_assignee(
+                    session, assignee, dry_run=False, user_id=user_name
+                )
+
+            return (
+                f"✅ **Batch Complete Executed**\n\n"
+                f"Assignee: {assignee}\n"
+                f"Succeeded: {result['result']['success_count']}\n"
+                f"Failed: {result['result']['failure_count']}\n"
+                f"Skipped: {result['result']['skip_count']}\n"
+                f"Duration: {result['result']['duration_seconds']:.2f}s"
+            ), None
+
+        return "Batch operation cancelled.", None
+
+    async def _handle_batch_reassign(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle: Reassign all tasks from [assignee] to [new_assignee]."""
+        from ..operations.batch import batch_ops
+        from ..database.connection import get_session
+
+        from_assignee = data.get("from_assignee")
+        to_assignee = data.get("to_assignee")
+
+        if not from_assignee or not to_assignee:
+            return "Please specify who to reassign from and to (e.g., 'reassign all from John to Sarah')", None
+
+        # Get preview
+        async with get_session() as session:
+            preview = await batch_ops.reassign_all(
+                session, from_assignee, to_assignee, dry_run=True
+            )
+
+        total = preview["result"]["total"]
+
+        if total == 0:
+            return f"No tasks found for {from_assignee}.", None
+
+        # Check for confirmation
+        pending_action = self._pending_actions.get(user_id)
+        if not pending_action or pending_action.get("type") != "batch_reassign":
+            # First time - ask for confirmation
+            self._pending_actions[user_id] = {
+                "type": "batch_reassign",
+                "from": from_assignee,
+                "to": to_assignee,
+                "count": total
+            }
+
+            return (
+                f"⚠️ **Batch Reassign Confirmation**\n\n"
+                f"This will reassign **{total} task(s)** from {from_assignee} to {to_assignee}\n\n"
+                f"Are you sure? (yes/no)"
+            ), None
+
+        # Confirmed - execute
+        if pending_action.get("from") == from_assignee and pending_action.get("to") == to_assignee:
+            del self._pending_actions[user_id]
+
+            async with get_session() as session:
+                result = await batch_ops.reassign_all(
+                    session, from_assignee, to_assignee, dry_run=False, user_id=user_name
+                )
+
+            return (
+                f"✅ **Batch Reassign Executed**\n\n"
+                f"From: {from_assignee} → To: {to_assignee}\n"
+                f"Succeeded: {result['result']['success_count']}\n"
+                f"Failed: {result['result']['failure_count']}\n"
+                f"Duration: {result['result']['duration_seconds']:.2f}s"
+            ), None
+
+        return "Batch operation cancelled.", None
+
+    async def _handle_batch_status_change(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle: Change status for multiple tasks."""
+        from ..operations.batch import batch_ops
+        from ..database.connection import get_session
+
+        task_ids = data.get("task_ids", [])
+        new_status = data.get("new_status")
+
+        if not task_ids:
+            return "Which tasks should I update? Please list their IDs.", None
+
+        if not new_status:
+            return "What status should I set? (e.g., 'blocked', 'in_progress')", None
+
+        # Get preview
+        async with get_session() as session:
+            preview = await batch_ops.bulk_status_change(
+                session, task_ids, new_status, dry_run=True
+            )
+
+        # Check for confirmation
+        pending_action = self._pending_actions.get(user_id)
+        if not pending_action or pending_action.get("type") != "batch_status":
+            # First time - ask for confirmation
+            self._pending_actions[user_id] = {
+                "type": "batch_status",
+                "task_ids": task_ids,
+                "status": new_status
+            }
+
+            return (
+                f"⚠️ **Batch Status Change Confirmation**\n\n"
+                f"This will change status of **{len(task_ids)} task(s)** to '{new_status}'\n\n"
+                f"Are you sure? (yes/no)"
+            ), None
+
+        # Confirmed - execute
+        if pending_action.get("status") == new_status:
+            del self._pending_actions[user_id]
+
+            async with get_session() as session:
+                result = await batch_ops.bulk_status_change(
+                    session, task_ids, new_status, dry_run=False, user_id=user_name
+                )
+
+            return (
+                f"✅ **Batch Status Change Executed**\n\n"
+                f"Status: {new_status}\n"
+                f"Succeeded: {result['result']['success_count']}\n"
+                f"Failed: {result['result']['failure_count']}\n"
+                f"Duration: {result['result']['duration_seconds']:.2f}s"
+            ), None
+
+        return "Batch operation cancelled.", None
+
+    async def _handle_batch_delete(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle: Delete multiple tasks."""
+        from ..operations.batch import batch_ops
+        from ..database.connection import get_session
+
+        task_ids = data.get("task_ids", [])
+
+        if not task_ids:
+            return "Which tasks should I delete? Please list their IDs.", None
+
+        # Get preview
+        async with get_session() as session:
+            preview = await batch_ops.bulk_delete(
+                session, task_ids, dry_run=True
+            )
+
+        # Check for confirmation
+        pending_action = self._pending_actions.get(user_id)
+        if not pending_action or pending_action.get("type") != "batch_delete":
+            # First time - ask for confirmation
+            self._pending_actions[user_id] = {
+                "type": "batch_delete",
+                "task_ids": task_ids
+            }
+
+            return (
+                f"⚠️ **Batch Delete Confirmation**\n\n"
+                f"This will **permanently delete {len(task_ids)} task(s)**\n\n"
+                f"Tasks: {', '.join(task_ids[:5])}{'...' if len(task_ids) > 5 else ''}\n\n"
+                f"⚠️ This cannot be undone!\n\n"
+                f"Are you sure? (yes/no)"
+            ), None
+
+        # Confirmed - execute
+        del self._pending_actions[user_id]
+
+        async with get_session() as session:
+            result = await batch_ops.bulk_delete(
+                session, task_ids, dry_run=False, user_id=user_name
+            )
+
+        return (
+            f"✅ **Batch Delete Executed**\n\n"
+            f"Succeeded: {result['result']['success_count']}\n"
+            f"Failed: {result['result']['failure_count']}\n"
+            f"Duration: {result['result']['duration_seconds']:.2f}s"
+        ), None
+
+    async def _handle_batch_add_tags(
+        self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
+    ) -> Tuple[str, Optional[Dict]]:
+        """Handle: Add tags to multiple tasks."""
+        from ..operations.batch import batch_ops
+        from ..database.connection import get_session
+
+        task_ids = data.get("task_ids", [])
+        tags = data.get("tags", [])
+
+        if not task_ids:
+            return "Which tasks should I tag? Please list their IDs.", None
+
+        if not tags:
+            return "What tags should I add? (e.g., 'urgent', 'frontend')", None
+
+        # Execute directly (no confirmation needed for tags)
+        async with get_session() as session:
+            result = await batch_ops.bulk_add_tags(
+                session, task_ids, tags, dry_run=False, user_id=user_name
+            )
+
+        return (
+            f"✅ **Batch Tag Operation Complete**\n\n"
+            f"Tags added: {', '.join(tags)}\n"
+            f"Succeeded: {result['result']['success_count']}\n"
+            f"Failed: {result['result']['failure_count']}\n"
+            f"Duration: {result['result']['duration_seconds']:.2f}s"
+        ), None
+
+    # ==================== END BATCH OPERATIONS ====================
 
     async def _handle_generate_spec(
         self, user_id: str, message: str, data: Dict, context: Dict, user_name: str
