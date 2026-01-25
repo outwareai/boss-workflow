@@ -45,7 +45,7 @@ class ProjectRecognizer:
         """
         try:
             async with get_session() as db:
-                project_repo = get_project_repository(db)
+                project_repo = get_project_repository()
 
                 # Get recent projects for this user
                 recent_projects = await project_repo.get_by_creator(user_id, limit=20)
@@ -130,7 +130,7 @@ Only match if the message CLEARLY refers to the project by name or description.
         """
         try:
             async with get_session() as db:
-                project_repo = get_project_repository(db)
+                project_repo = get_project_repository()
                 project = await project_repo.get_by_id(project_id)
 
                 if not project:
@@ -221,7 +221,7 @@ Only match if the message CLEARLY refers to the project by name or description.
         """
         try:
             async with get_session() as db:
-                project_repo = get_project_repository(db)
+                project_repo = get_project_repository()
 
                 # Get recent completed projects (good for learning)
                 recent_projects = await project_repo.get_by_creator(

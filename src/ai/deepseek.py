@@ -276,19 +276,33 @@ class DeepSeekClient:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 2000
+        max_tokens: int = 2000,
+        response_format: Optional[Dict[str, str]] = None
     ):
         """
         Simple chat method for direct API calls.
         Returns an object with choices[0].message.content like OpenAI SDK.
+
+        Args:
+            messages: List of message dicts with role and content
+            temperature: Temperature for sampling (0-1)
+            max_tokens: Maximum tokens to generate
+            response_format: Optional dict specifying response format (e.g., {"type": "json_object"})
         """
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
+            # Build kwargs
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            }
+
+            # Add response_format if specified
+            if response_format:
+                kwargs["response_format"] = response_format
+
+            response = await self.client.chat.completions.create(**kwargs)
             return response
         except Exception as e:
             logger.error(f"Chat API error: {e}")

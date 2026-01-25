@@ -647,11 +647,12 @@ Generate the JSON now:"""
             logger.error(f"AI breakdown failed: {e}", exc_info=True)
 
             if chat_id:
+                # Use None parse_mode to avoid Markdown errors with exception text
                 await self.telegram.send_message(
                     chat_id,
                     f"❌ Failed to generate task breakdown: {str(e)}\n\n"
                     "Please try rephrasing your project description.",
-                    parse_mode="Markdown"
+                    parse_mode=None
                 )
 
             return {
