@@ -1,7 +1,7 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-25
-> **Version:** 2.5.1 (Q1 2026 - Smart Reminders Phase 3)
+> **Version:** 2.5.2 (Q1 2026 - Intent Routing Test Coverage Phase 1)
 > **Total Lines:** ~2700 | **Total Features:** 118+
 
 **Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
@@ -5735,6 +5735,7 @@ Mirror Discord functionality to Slack
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| **2.5.2** | 2026-01-25 | **🧪 INTENT ROUTING TEST COVERAGE - PHASE 1:** Comprehensive test suite covering all 35+ intents to prevent routing regressions. Features: 73 routing tests (13 slash commands, 12 context states, 30 task modifications, 6 edge cases), handler method existence validation, intent routing matrix verification. **File:** `tests/unit/test_intent_routing.py`. **Impact:** 100% pass rate on intent routing validation, prevents silent routing failures, ensures all intents map to handlers |
 | **2.5.1** | 2026-01-25 | **🔔 SMART REMINDERS PHASE 3:** Personalized deadline reminders grouped by assignee, multi-level overdue escalation (Critical >7d, Warning 3-7d, Attention 1-3d), manual trigger endpoints, priority-based emoji indicators. Features: 2 new scheduled jobs (smart_deadline_reminders every 30m, smart_overdue_escalation 2x daily), 3 admin API endpoints. **Implementation:** `src/scheduler/smart_reminders.py`. **Impact:** Smarter notifications, intelligent task grouping, reduced reminder fatigue, enhanced escalation workflow |
 | **2.5.0** | 2026-01-24 | **🔧 HANDLER REFACTORING (Task #4.3-4.5):** Extracted ValidationHandler (task approval/rejection), RoutingHandler (message routing/delegation), ApprovalHandler (dangerous action confirmations), and QueryHandler from 3,636-line UnifiedHandler. Features: 28 total unit tests (9 validation + 7 routing + 12 approval), SessionManager integration with active_handler sessions, BaseHandler inheritance, AI-powered intent fallback. **Impact:** 4/6 specialized handlers extracted, ~900 lines reduced from UnifiedHandler, pluggable handler architecture established |
 | **2.4.0** | 2026-01-24 | **🔧 SESSIONMANAGER FOUNDATION (Task #4 Phase 1):** Centralized session state management with Redis persistence. Replaces 7 handler dictionaries with unified storage. Features: TTL expiration, thread-safe locks, in-memory fallback, 17 unit tests. **Impact:** Foundation for handler refactoring, session persistence across restarts |
