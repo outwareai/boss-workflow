@@ -22,9 +22,9 @@ from .handlers import (
     QueryHandler,
     ModificationHandler,
     CommandHandler,
-    UnifiedHandlerWrapper
+    UnifiedHandlerWrapper,
+    PlanningHandler
 )
-from .handlers.planning_handler_wrapper import PlanningHandler
 
 logger = logging.getLogger(__name__)
 

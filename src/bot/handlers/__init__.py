@@ -11,6 +11,7 @@ from .query_handler import QueryHandler
 from .modification_handler import ModificationHandler
 from .command_handler import CommandHandler
 from .unified_wrapper import UnifiedHandlerWrapper
+from .planning_handler_wrapper import PlanningHandler
 
 __all__ = [
     "ValidationHandler",
@@ -20,4 +21,5 @@ __all__ = [
     "ModificationHandler",
     "CommandHandler",
     "UnifiedHandlerWrapper",
+    "PlanningHandler",
 ]
