@@ -992,6 +992,43 @@ async def test_alert(severity: str = "warning"):
         return {"status": "error", "error": str(e)}
 
 
+@app.post("/api/admin/synthetic-tests")
+async def run_synthetic_tests_now():
+    """
+    Run synthetic monitoring tests immediately.
+
+    Q3 2026 Phase 2: Manually trigger synthetic health checks.
+    Tests intent classification, help command, and status command.
+
+    Usage:
+        POST /api/admin/synthetic-tests
+
+    Returns:
+        JSON with test results and pass/fail status
+    """
+    try:
+        from .monitoring.synthetic_tests import run_synthetic_tests
+
+        results = await run_synthetic_tests()
+
+        return {
+            "status": results["status"],
+            "timestamp": results["timestamp"],
+            "checks": results["checks"],
+            "failed_checks": results.get("failed_checks", 0),
+            "passed_checks": sum(1 for c in results["checks"] if c["passed"]),
+            "total_checks": len(results["checks"])
+        }
+
+    except Exception as e:
+        logger.error(f"Error running synthetic tests: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
 @app.post("/api/admin/backup-oauth-tokens")
 async def backup_oauth_tokens_api():
     """
@@ -1545,6 +1582,84 @@ async def trigger_job(job_id: str):
         return {"ok": True, "message": f"Job {job_id} triggered"}
     else:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+
+@app.post("/api/admin/send-smart-reminders")
+async def send_smart_reminders_now():
+    """
+    Manually trigger smart deadline reminders.
+
+    Phase 3 (Q1 2026): Send grouped reminders by assignee.
+    """
+    try:
+        from .scheduler.smart_reminders import get_smart_reminder_system
+
+        reminder_system = get_smart_reminder_system()
+        count = await reminder_system.send_deadline_reminders()
+
+        return {
+            "status": "success",
+            "reminders_sent": count,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error sending smart reminders: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/admin/send-overdue-escalation")
+async def send_overdue_escalation_now():
+    """
+    Manually trigger smart overdue escalation.
+
+    Phase 3 (Q1 2026): Send categorized escalation alerts.
+    """
+    try:
+        from .scheduler.smart_reminders import get_smart_reminder_system
+
+        reminder_system = get_smart_reminder_system()
+        count = await reminder_system.send_overdue_escalation()
+
+        return {
+            "status": "success",
+            "escalations_sent": count,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error sending overdue escalation: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/admin/send-reminder/{task_id}")
+async def send_reminder_for_task(task_id: str):
+    """
+    Manually send a reminder for a specific task.
+
+    Phase 3 (Q1 2026): On-demand reminders for urgent follow-ups.
+    """
+    try:
+        from .scheduler.smart_reminders import get_smart_reminder_system
+
+        reminder_system = get_smart_reminder_system()
+        success = await reminder_system.send_manual_reminder(task_id)
+
+        if success:
+            return {
+                "status": "success",
+                "message": f"Reminder sent for {task_id}",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "status": "error",
+                "message": f"Could not send reminder for {task_id}"
+            }
+
+    except Exception as e:
+        logger.error(f"Error sending reminder: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 @app.get("/api/tasks/daily")

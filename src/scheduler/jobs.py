@@ -154,6 +154,28 @@ Check logs for full details."""
             replace_existing=True
         )
 
+        # Smart deadline reminders every 30 minutes (Phase 3 - Q1 2026)
+        self.scheduler.add_job(
+            self._smart_deadline_reminders_job,
+            IntervalTrigger(minutes=30),
+            id="smart_deadline_reminders",
+            name="Smart Deadline Reminders",
+            replace_existing=True
+        )
+
+        # Smart overdue escalation twice daily (9 AM and 3 PM)
+        self.scheduler.add_job(
+            self._smart_overdue_escalation_job,
+            CronTrigger(
+                hour="9,15",
+                minute=0,
+                timezone=self.timezone
+            ),
+            id="smart_overdue_escalation",
+            name="Smart Overdue Escalation",
+            replace_existing=True
+        )
+
         # Conversation timeout check every 15 minutes
         self.scheduler.add_job(
             self._conversation_timeout_job,
@@ -275,6 +297,16 @@ Check logs for full details."""
             replace_existing=True
         )
         logger.info("Scheduler health check scheduled: every 30 minutes")
+
+        # Synthetic monitoring - hourly health checks (Q3 2026 Phase 2)
+        self.scheduler.add_job(
+            self._synthetic_monitoring_job,
+            IntervalTrigger(hours=1),
+            id="synthetic_monitoring",
+            name="Synthetic Monitoring - Hourly Bot Health Checks",
+            replace_existing=True
+        )
+        logger.info("Synthetic monitoring scheduled: every 1 hour")
 
         self.scheduler.start()
         logger.info("Scheduler started with all jobs")
@@ -1042,6 +1074,53 @@ _Reply in this thread with your update!_"""
             await self._notify_boss_of_failure("Proactive Task Check-in", e)
             raise
 
+    async def _smart_deadline_reminders_job(self) -> None:
+        """
+        Send smart grouped deadline reminders (Phase 3).
+
+        Groups reminders by assignee and sends consolidated notifications.
+        """
+        logger.debug("Running smart deadline reminders job")
+
+        try:
+            from .smart_reminders import get_smart_reminder_system
+
+            reminder_system = get_smart_reminder_system()
+            count = await reminder_system.send_deadline_reminders()
+
+            if count > 0:
+                logger.info(f"Smart deadline reminders: {count} sent")
+
+        except Exception as e:
+            logger.error(f"CRITICAL: Smart Deadline Reminders failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Smart Deadline Reminders", e)
+            raise
+
+    async def _smart_overdue_escalation_job(self) -> None:
+        """
+        Send smart escalated overdue alerts (Phase 3).
+
+        Categorizes overdue tasks by severity:
+        - Critical: >7 days overdue
+        - Warning: >3 days overdue
+        - Attention: >1 day overdue
+        """
+        logger.debug("Running smart overdue escalation job")
+
+        try:
+            from .smart_reminders import get_smart_reminder_system
+
+            reminder_system = get_smart_reminder_system()
+            count = await reminder_system.send_overdue_escalation()
+
+            if count > 0:
+                logger.info(f"Smart overdue escalation: {count} alerts sent")
+
+        except Exception as e:
+            logger.error(f"CRITICAL: Smart Overdue Escalation failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Smart Overdue Escalation", e)
+            raise
+
     async def _critical_services_check_job(self) -> None:
         """Check if critical services are responsive."""
         try:
@@ -1065,6 +1144,29 @@ _Reply in this thread with your update!_"""
             await check_scheduled_jobs()
         except Exception as e:
             logger.error(f"Scheduled jobs check failed: {e}", exc_info=True)
+
+    async def _synthetic_monitoring_job(self) -> None:
+        """Run hourly synthetic monitoring - test bot health with synthetic messages."""
+        logger.info("Running synthetic monitoring job")
+        try:
+            from ..monitoring.synthetic_tests import run_synthetic_tests
+
+            results = await run_synthetic_tests()
+
+            # Log summary
+            passed = sum(1 for c in results["checks"] if c["passed"])
+            total = len(results["checks"])
+
+            if results["status"] == "healthy":
+                logger.info(f"Synthetic monitoring: {passed}/{total} checks passed - BOT HEALTHY")
+            else:
+                logger.warning(f"Synthetic monitoring: {passed}/{total} checks passed - FAILURES DETECTED")
+                logger.warning(f"Failed checks: {[c['name'] for c in results['checks'] if not c['passed']]}")
+
+        except Exception as e:
+            logger.error(f"CRITICAL: Synthetic Monitoring failed: {e}", exc_info=True)
+            await self._notify_boss_of_failure("Synthetic Monitoring", e)
+            raise
 
     def trigger_job(self, job_id: str) -> bool:
         """Manually trigger a job."""
