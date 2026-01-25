@@ -54,10 +54,12 @@ class GoogleTasksIntegration:
             if settings.google_credentials_json.startswith('{'):
                 creds_dict = await asyncio.to_thread(json.loads, settings.google_credentials_json)
             else:
-                def _read_creds_file(path):
-                    with open(path, 'r') as f:
-                        return json.load(f)
-                creds_dict = await asyncio.to_thread(_read_creds_file, settings.google_credentials_json)
+                import aiofiles
+                async def _read_creds_file_async(path):
+                    async with aiofiles.open(path, 'r') as f:
+                        content = await f.read()
+                        return await asyncio.to_thread(json.loads, content)
+                creds_dict = await _read_creds_file_async(settings.google_credentials_json)
 
             credentials = ServiceCredentials.from_service_account_info(
                 creds_dict,
@@ -490,11 +492,16 @@ class GoogleTasksIntegration:
 
             status = 'completed' if completed else 'needsAction'
 
-            service.tasks().patch(
-                tasklist=tasklist_id,
-                task=google_task_id,
-                body={'status': status}
-            ).execute()
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: service.tasks().patch(
+                        tasklist=tasklist_id,
+                        task=google_task_id,
+                        body={'status': status}
+                    ).execute()
+                ),
+                timeout=15.0
+            )
 
             logger.info(f"Updated Google Task {google_task_id} for {user_email}: {status}")
             return True

@@ -211,7 +211,7 @@ class GmailIntegration:
                     if not CREDENTIALS_PATH.exists():
                         # Try to create from environment
                         if settings.gmail_oauth_credentials:
-                            CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                            await asyncio.to_thread(CREDENTIALS_PATH.parent.mkdir, parents=True, exist_ok=True)
                             async with aiofiles.open(CREDENTIALS_PATH, 'w') as f:
                                 await f.write(settings.gmail_oauth_credentials)
                         else:
@@ -225,7 +225,7 @@ class GmailIntegration:
 
                 # Save token for next time (local file)
                 try:
-                    TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    await asyncio.to_thread(TOKEN_PATH.parent.mkdir, parents=True, exist_ok=True)
                     async with aiofiles.open(TOKEN_PATH, 'w') as f:
                         await f.write(creds.to_json())
                 except Exception as e:
@@ -253,10 +253,11 @@ class GmailIntegration:
             if settings.google_credentials_json.startswith('{'):
                 creds_dict = await asyncio.to_thread(json.loads, settings.google_credentials_json)
             else:
-                def _read_creds_file(path):
-                    with open(path, 'r') as f:
-                        return json.load(f)
-                creds_dict = await asyncio.to_thread(_read_creds_file, settings.google_credentials_json)
+                async def _read_creds_file_async(path):
+                    async with aiofiles.open(path, 'r') as f:
+                        content = await f.read()
+                        return await asyncio.to_thread(json.loads, content)
+                creds_dict = await _read_creds_file_async(settings.google_credentials_json)
 
             # Create credentials with domain-wide delegation
             credentials = ServiceAccountCredentials.from_service_account_info(

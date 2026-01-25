@@ -51,10 +51,12 @@ class GoogleMeetIntegration:
             if settings.google_credentials_json.startswith('{'):
                 creds_dict = await asyncio.to_thread(json.loads, settings.google_credentials_json)
             else:
-                def _read_creds_file(path):
-                    with open(path, 'r') as f:
-                        return json.load(f)
-                creds_dict = await asyncio.to_thread(_read_creds_file, settings.google_credentials_json)
+                import aiofiles
+                async def _read_creds_file_async(path):
+                    async with aiofiles.open(path, 'r') as f:
+                        content = await f.read()
+                        return await asyncio.to_thread(json.loads, content)
+                creds_dict = await _read_creds_file_async(settings.google_credentials_json)
 
             credentials = Credentials.from_service_account_info(
                 creds_dict,

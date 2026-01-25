@@ -8,7 +8,7 @@ Part of Q1 2026 security audit - adds validation to prevent:
 - Invalid data types
 """
 
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from pydantic import BaseModel, Field, field_validator, EmailStr
 from enum import Enum
 
@@ -236,3 +236,213 @@ class OAuthCallback(BaseModel):
         if v and ("<" in v or ">" in v):
             raise ValueError("error cannot contain HTML tags (XSS prevention)")
         return v
+
+
+# ============================================
+# TASK CRUD OPERATIONS (Critical Fix #4)
+# ============================================
+
+class TaskCreateRequest(BaseModel):
+    """Validation for task creation (POST /api/db/tasks)."""
+    task_id: str = Field(..., min_length=1, max_length=100, pattern=r'^TASK-\d{8}-\d{3}$')
+    title: str = Field(..., min_length=1, max_length=500)
+    assignee: str = Field(..., min_length=1, max_length=100)
+    status: Optional[TaskStatusFilter] = Field(default=TaskStatusFilter.PENDING)
+    priority: Optional[Literal["low", "medium", "high", "urgent"]] = Field(default="medium")
+    deadline: Optional[str] = None  # ISO format datetime string
+    description: Optional[str] = Field(None, max_length=5000)
+    task_type: Optional[str] = Field(default="task", max_length=50)
+    estimated_effort: Optional[str] = Field(None, max_length=50)
+    tags: Optional[list] = None
+    acceptance_criteria: Optional[str] = Field(None, max_length=2000)
+    created_by: Optional[str] = Field(None, max_length=100)
+    original_message: Optional[str] = Field(None, max_length=4096)
+    project_id: Optional[int] = None
+
+    @field_validator('title', 'assignee', 'description', 'acceptance_criteria', 'original_message')
+    @classmethod
+    def validate_no_xss(cls, v):
+        """Prevent XSS attacks in text fields."""
+        if v is None:
+            return v
+        stripped = v.strip()
+        if "<script" in stripped.lower() or "<iframe" in stripped.lower():
+            raise ValueError("Text fields cannot contain script/iframe tags")
+        return stripped
+
+    @field_validator('tags')
+    @classmethod
+    def validate_tags(cls, v):
+        """Validate tags list."""
+        if v is None:
+            return v
+        if len(v) > 20:
+            raise ValueError("Maximum 20 tags allowed")
+        for tag in v:
+            if not isinstance(tag, str):
+                raise ValueError("All tags must be strings")
+            if len(tag) > 50:
+                raise ValueError("Tag length cannot exceed 50 characters")
+        return v
+
+
+class TaskUpdateRequest(BaseModel):
+    """Validation for task updates (PUT /api/db/tasks/{task_id})."""
+    title: Optional[str] = Field(None, min_length=1, max_length=500)
+    assignee: Optional[str] = Field(None, min_length=1, max_length=100)
+    status: Optional[TaskStatusFilter] = None
+    priority: Optional[Literal["low", "medium", "high", "urgent"]] = None
+    deadline: Optional[str] = None  # ISO format datetime string
+    description: Optional[str] = Field(None, max_length=5000)
+    estimated_effort: Optional[str] = Field(None, max_length=50)
+    tags: Optional[list] = None
+    acceptance_criteria: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator('title', 'assignee', 'description', 'acceptance_criteria')
+    @classmethod
+    def validate_no_xss(cls, v):
+        """Prevent XSS attacks in text fields."""
+        if v is None:
+            return v
+        stripped = v.strip()
+        if "<script" in stripped.lower() or "<iframe" in stripped.lower():
+            raise ValueError("Text fields cannot contain script/iframe tags")
+        return stripped
+
+    @field_validator('tags')
+    @classmethod
+    def validate_tags(cls, v):
+        """Validate tags list."""
+        if v is None:
+            return v
+        if len(v) > 20:
+            raise ValueError("Maximum 20 tags allowed")
+        for tag in v:
+            if not isinstance(tag, str):
+                raise ValueError("All tags must be strings")
+            if len(tag) > 50:
+                raise ValueError("Tag length cannot exceed 50 characters")
+        return v
+
+
+# ============================================
+# BATCH OPERATIONS (Critical Fix #4)
+# ============================================
+
+class BatchCompleteRequest(BaseModel):
+    """Validation for batch complete (POST /api/batch/complete)."""
+    assignee: str = Field(..., min_length=1, max_length=100)
+    dry_run: bool = Field(default=False)
+    user_id: str = Field(default="API", max_length=100)
+
+    @field_validator('assignee', 'user_id')
+    @classmethod
+    def validate_no_xss(cls, v):
+        """Prevent XSS attacks."""
+        if v is None:
+            return v
+        if "<" in v or ">" in v:
+            raise ValueError("Field cannot contain HTML/script tags")
+        return v.strip()
+
+
+class BatchReassignRequest(BaseModel):
+    """Validation for batch reassign (POST /api/batch/reassign)."""
+    from_assignee: str = Field(..., min_length=1, max_length=100)
+    to_assignee: str = Field(..., min_length=1, max_length=100)
+    status_filter: Optional[list[str]] = None
+    dry_run: bool = Field(default=False)
+    user_id: str = Field(default="API", max_length=100)
+
+    @field_validator('from_assignee', 'to_assignee', 'user_id')
+    @classmethod
+    def validate_no_xss(cls, v):
+        """Prevent XSS attacks."""
+        if v is None:
+            return v
+        if "<" in v or ">" in v:
+            raise ValueError("Field cannot contain HTML/script tags")
+        return v.strip()
+
+    @field_validator('status_filter')
+    @classmethod
+    def validate_status_filter(cls, v):
+        """Validate status filter list."""
+        if v is None:
+            return v
+        valid_statuses = [s.value for s in TaskStatusFilter]
+        for status in v:
+            if status not in valid_statuses:
+                raise ValueError(f"Invalid status: {status}. Must be one of: {', '.join(valid_statuses)}")
+        return v
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Custom validation: from_assignee and to_assignee must be different
+        if self.from_assignee == self.to_assignee:
+            raise ValueError("from_assignee and to_assignee must be different")
+
+
+class BatchStatusChangeRequest(BaseModel):
+    """Validation for bulk status change (POST /api/batch/status)."""
+    task_ids: list[str] = Field(..., min_length=1, max_length=100)
+    status: TaskStatusFilter
+    dry_run: bool = Field(default=False)
+    user_id: str = Field(default="API", max_length=100)
+
+    @field_validator('task_ids')
+    @classmethod
+    def validate_task_ids(cls, v):
+        """Validate task IDs format."""
+        if not v:
+            raise ValueError("task_ids cannot be empty")
+        if len(v) > 100:
+            raise ValueError("Maximum 100 tasks allowed per batch operation")
+        for task_id in v:
+            if not isinstance(task_id, str):
+                raise ValueError(f"Invalid task_id type: {type(task_id)}")
+            if not task_id.startswith('TASK-'):
+                raise ValueError(f"Invalid task_id format: {task_id}. Must start with 'TASK-'")
+            if len(task_id) > 100:
+                raise ValueError(f"task_id too long: {task_id}")
+        return v
+
+    @field_validator('user_id')
+    @classmethod
+    def validate_no_xss(cls, v):
+        """Prevent XSS attacks."""
+        if "<" in v or ">" in v:
+            raise ValueError("user_id cannot contain HTML/script tags")
+        return v.strip()
+
+
+# ============================================
+# UNDO/REDO OPERATIONS (Critical Fix #4)
+# ============================================
+
+class UndoRequest(BaseModel):
+    """Validation for undo action (POST /api/undo)."""
+    user_id: str = Field(..., min_length=1, max_length=100)
+    action_id: Optional[int] = Field(None, ge=1)
+
+    @field_validator('user_id')
+    @classmethod
+    def validate_user_id(cls, v):
+        """Validate user_id format."""
+        if "<" in v or ">" in v:
+            raise ValueError("user_id cannot contain HTML/script tags")
+        return v.strip()
+
+
+class RedoRequest(BaseModel):
+    """Validation for redo action (POST /api/redo)."""
+    user_id: str = Field(..., min_length=1, max_length=100)
+    action_id: int = Field(..., ge=1)
+
+    @field_validator('user_id')
+    @classmethod
+    def validate_user_id(cls, v):
+        """Validate user_id format."""
+        if "<" in v or ">" in v:
+            raise ValueError("user_id cannot contain HTML/script tags")
+        return v.strip()

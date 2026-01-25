@@ -5,6 +5,7 @@ Transcribes voice messages to text for hands-free task creation.
 """
 
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -48,13 +49,22 @@ class VoiceTranscriber:
             return None
 
         try:
-            # Save to temp file (async)
+            # Save to temp file (async) - Create temp file path first
             suffix = Path(filename).suffix or ".ogg"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-                temp_path = Path(f.name)
+            import os
+            temp_fd, temp_file_path = tempfile.mkstemp(suffix=suffix)
+            temp_path = Path(temp_file_path)
 
-            async with aiofiles.open(temp_path, "wb") as f:
-                await f.write(audio_data)
+            # Write async
+            try:
+                async with aiofiles.open(temp_path, "wb") as f:
+                    await f.write(audio_data)
+            except Exception as e:
+                os.close(temp_fd)
+                os.unlink(temp_path)
+                raise
+            finally:
+                os.close(temp_fd)
 
             try:
                 # Call Whisper API
@@ -115,11 +125,20 @@ class VoiceTranscriber:
 
         try:
             suffix = Path(filename).suffix or ".ogg"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-                temp_path = Path(f.name)
+            import os
+            temp_fd, temp_file_path = tempfile.mkstemp(suffix=suffix)
+            temp_path = Path(temp_file_path)
 
-            async with aiofiles.open(temp_path, "wb") as f:
-                await f.write(audio_data)
+            # Write async
+            try:
+                async with aiofiles.open(temp_path, "wb") as f:
+                    await f.write(audio_data)
+            except Exception as e:
+                os.close(temp_fd)
+                os.unlink(temp_path)
+                raise
+            finally:
+                os.close(temp_fd)
 
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
