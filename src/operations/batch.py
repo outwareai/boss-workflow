@@ -429,7 +429,12 @@ class BatchOperations:
 Duration: {result.to_dict()['duration_seconds']:.2f}s
             """
 
-            await self.discord.post_simple_message(message.strip())
+            # Route to TASKS channel instead of spamming general
+            await self.discord.post_alert(
+                title="Batch Operation Complete",
+                message=message.strip(),
+                alert_type="info"
+            )
         except Exception as e:
             logger.error(f"Failed to send Discord notification: {e}")
 
