@@ -97,6 +97,14 @@ class Database:
                 autoflush=False,
             )
 
+            # Q3 2026 Phase 4: Enable slow query detection
+            try:
+                from .slow_query_detector import slow_query_detector
+                slow_query_detector.setup(self.engine.sync_engine)
+                logger.info("Slow query detector enabled")
+            except Exception as e:
+                logger.warning(f"Failed to enable slow query detector: {e}")
+
             # Create all tables
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)

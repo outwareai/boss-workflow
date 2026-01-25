@@ -1,8 +1,8 @@
 # Boss Workflow Automation - Features Documentation
 
 > **Last Updated:** 2026-01-25
-> **Version:** 2.5.2 (Q1 2026 - Intent Routing Test Coverage Phase 1)
-> **Total Lines:** ~2700 | **Total Features:** 118+
+> **Version:** 2.5.3 (Q3 2026 Phase 4 - Performance Metrics Tracking)
+> **Total Lines:** ~2850 | **Total Features:** 121+
 
 **Purpose:** Complete reference for all features, functions, and capabilities of the Boss Workflow Automation system.
 **Usage Rule:** **Read this file FIRST when starting work, update LAST after making changes.**
@@ -4357,6 +4357,197 @@ GET /health/db
 - `AIRequestFailures`: >10% AI request failures
 - `DiscordSendFailures`: Failed Discord messages detected
 
+### Performance Metrics Tracking (Q3 2026 Phase 4)
+
+**Status:** ✅ Production
+**Priority:** P3 (Production hardening - Medium effort)
+**Files:** `src/monitoring/performance.py`, `src/database/slow_query_detector.py`
+
+#### Overview
+
+Response time tracking and slow query detection system that automatically monitors request/query performance and logs warnings when thresholds are exceeded.
+
+#### Features
+
+**Performance Tracker (`src/monitoring/performance.py`):**
+- Request performance tracking decorator
+- Query performance tracking decorator
+- Automatic slow request detection (threshold: 1 second)
+- Automatic slow query detection (threshold: 100ms)
+- Integration with Prometheus metrics
+- Warning logs for performance issues
+
+**Slow Query Detector (`src/database/slow_query_detector.py`):**
+- SQLAlchemy event-based query monitoring
+- Automatic slow query logging
+- Query statistics (avg, max, min duration)
+- Query history storage (last 100 slow queries)
+- Statement preview for long queries
+
+#### Usage
+
+**Track Request Performance:**
+```python
+from src.monitoring.performance import perf_tracker
+
+@perf_tracker.track_request
+async def my_endpoint():
+    # Automatically tracked, logs warning if >1s
+    return {"data": "..."}
+```
+
+**Track Query Performance:**
+```python
+@perf_tracker.track_query("get_by_id")
+async def get_by_id(self, task_id: str):
+    # Automatically tracked, logs warning if >100ms
+    result = await session.execute(...)
+    return result
+```
+
+**Manual Performance Tracking:**
+```python
+from src.monitoring.performance import perf_tracker
+import time
+
+start = time.time()
+# ... operation ...
+duration = time.time() - start
+
+if duration > perf_tracker.slow_query_threshold:
+    logger.warning(f"Slow operation: took {duration:.2f}s")
+```
+
+#### API Endpoints
+
+**Get Performance Metrics:**
+```bash
+GET /api/performance/metrics
+
+Response:
+{
+  "slow_queries": [...],
+  "slow_query_stats": {
+    "total_slow_queries": 15,
+    "avg_duration_ms": 150.5,
+    "max_duration_ms": 350.2,
+    "min_duration_ms": 105.8,
+    "threshold_ms": 100
+  },
+  "thresholds": {
+    "slow_query_ms": 100,
+    "slow_request_s": 1.0
+  }
+}
+```
+
+**Get Slow Query Report:**
+```bash
+GET /api/performance/slow-queries?limit=20
+
+Response:
+{
+  "total": 15,
+  "queries": [
+    {
+      "statement": "SELECT * FROM tasks WHERE ...",
+      "statement_preview": "SELECT * FROM tasks WHERE ...",
+      "duration_ms": 350.2,
+      "timestamp": 1737824534.567,
+      "parameters": "{'task_id': 'TASK-001'}"
+    }
+  ],
+  "statistics": {...},
+  "threshold_ms": 100
+}
+```
+
+**Clear Slow Query History:**
+```bash
+POST /api/performance/clear-slow-queries
+
+Response:
+{
+  "status": "success",
+  "message": "Slow query history cleared",
+  "timestamp": "2026-01-25T12:34:56.789Z"
+}
+```
+
+#### Thresholds
+
+**Configurable in `performance.py`:**
+- Slow request threshold: 1.0 seconds (logs warning)
+- Slow query threshold: 100ms (logs warning)
+
+**Modify thresholds:**
+```python
+from src.monitoring.performance import perf_tracker
+from src.database.slow_query_detector import slow_query_detector
+
+perf_tracker.slow_request_threshold = 2.0  # 2 seconds
+slow_query_detector.threshold_ms = 200     # 200ms
+```
+
+#### Integration
+
+**Automatic Setup:**
+- Slow query detector enabled on database initialization
+- Performance tracker available as global singleton
+- Prometheus metrics automatically recorded
+- SQLAlchemy event hooks for query monitoring
+
+**Repository Integration Example:**
+```python
+# src/database/repositories/tasks.py
+async def get_by_id(self, task_id: str):
+    start_time = time.time()
+
+    # ... query execution ...
+
+    if PERF_TRACKING_ENABLED:
+        duration = time.time() - start_time
+        if duration > perf_tracker.slow_query_threshold:
+            logger.warning(f"Slow query: get_by_id took {duration:.2f}s")
+```
+
+#### Monitoring Dashboard
+
+**Grafana Additions (recommended):**
+1. Slow Query Count (gauge)
+2. Average Query Duration (graph)
+3. Top 10 Slow Queries (table)
+4. Slow Request Rate (graph)
+
+**PromQL Queries:**
+```promql
+# Slow queries per minute
+rate(db_query_duration_seconds_count{operation=~".*"}[1m])
+
+# 95th percentile query duration
+histogram_quantile(0.95, db_query_duration_seconds_bucket)
+
+# Slow request rate
+rate(http_request_duration_seconds_count{le="+Inf"}[5m])
+```
+
+#### Troubleshooting
+
+**No slow queries logged:**
+- Check threshold settings (may be too high)
+- Verify slow_query_detector is initialized
+- Check database connection initialization
+
+**Too many slow query warnings:**
+- Increase threshold in `slow_query_detector.threshold_ms`
+- Review database indexes
+- Check connection pool status
+
+**Performance metrics not recorded:**
+- Verify Prometheus is enabled
+- Check `METRICS_ENABLED` flag in repositories
+- Ensure metrics middleware is active
+
 **Info Alerts (12h repeat):**
 - `LowCacheHitRate`: <50% cache hit rate for 10 minutes
 
@@ -5735,6 +5926,7 @@ Mirror Discord functionality to Slack
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| **2.6.0** | 2026-01-25 | **🔄 CI/CD PIPELINE - PHASE 2:** Comprehensive CI/CD pipeline with automated testing, branch protection, and Railway deployment. Features: Main CI workflow (lint + test matrix 3.10-3.12 + smoke tests + security scan), auto-deploy on master merge, PR auto-comment with test results, weekly dependency updates, branch protection requiring all checks to pass. **Files:** `.github/workflows/ci.yml`, `deploy.yml`, `pr-comment.yml`, `dependency-update.yml`. **Docs:** `docs/CICD_SETUP.md`, `.github/BRANCH_PROTECTION.md`, `.github/QUICK_REFERENCE.md`. **Impact:** Tests block merge if failing, auto-deploy after merge, coverage tracking with Codecov, security scanning with Bandit, zero-downtime deployments |
 | **2.5.2** | 2026-01-25 | **🧪 INTENT ROUTING TEST COVERAGE - PHASE 1:** Comprehensive test suite covering all 35+ intents to prevent routing regressions. Features: 73 routing tests (13 slash commands, 12 context states, 30 task modifications, 6 edge cases), handler method existence validation, intent routing matrix verification. **File:** `tests/unit/test_intent_routing.py`. **Impact:** 100% pass rate on intent routing validation, prevents silent routing failures, ensures all intents map to handlers |
 | **2.5.1** | 2026-01-25 | **🔔 SMART REMINDERS PHASE 3:** Personalized deadline reminders grouped by assignee, multi-level overdue escalation (Critical >7d, Warning 3-7d, Attention 1-3d), manual trigger endpoints, priority-based emoji indicators. Features: 2 new scheduled jobs (smart_deadline_reminders every 30m, smart_overdue_escalation 2x daily), 3 admin API endpoints. **Implementation:** `src/scheduler/smart_reminders.py`. **Impact:** Smarter notifications, intelligent task grouping, reduced reminder fatigue, enhanced escalation workflow |
 | **2.5.0** | 2026-01-24 | **🔧 HANDLER REFACTORING (Task #4.3-4.5):** Extracted ValidationHandler (task approval/rejection), RoutingHandler (message routing/delegation), ApprovalHandler (dangerous action confirmations), and QueryHandler from 3,636-line UnifiedHandler. Features: 28 total unit tests (9 validation + 7 routing + 12 approval), SessionManager integration with active_handler sessions, BaseHandler inheritance, AI-powered intent fallback. **Impact:** 4/6 specialized handlers extracted, ~900 lines reduced from UnifiedHandler, pluggable handler architecture established |

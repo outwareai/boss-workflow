@@ -40,6 +40,13 @@ try:
 except ImportError:
     METRICS_ENABLED = False
 
+# Q3 2026 Phase 4: Import performance tracker
+try:
+    from ...monitoring.performance import perf_tracker
+    PERF_TRACKING_ENABLED = True
+except ImportError:
+    PERF_TRACKING_ENABLED = False
+
 # Q3 2026: Import Redis caching
 from ...cache.decorators import cached, cache_invalidate
 from ...cache.redis_client import cache
@@ -113,7 +120,12 @@ class TaskRepository:
                 raise DatabaseOperationError(f"Failed to create task: {e}")
 
     async def get_by_id(self, task_id: str) -> Optional[TaskDB]:
-        """Get task by task_id (TASK-XXXXXX-XXX format)."""
+        """Get task by task_id (TASK-XXXXXX-XXX format).
+
+        Q3 2026 Phase 4: Performance tracked for slow query detection.
+        """
+        start_time = time.time()
+
         async with self.db.session() as session:
             result = await session.execute(
                 select(TaskDB)
@@ -126,7 +138,18 @@ class TaskRepository:
                 )
                 .where(TaskDB.task_id == task_id)
             )
-            return result.scalar_one_or_none()
+            task = result.scalar_one_or_none()
+
+            # Q3 2026 Phase 4: Performance tracking
+            if PERF_TRACKING_ENABLED:
+                try:
+                    duration = time.time() - start_time
+                    if duration > perf_tracker.slow_query_threshold:
+                        logger.warning(f"Slow query: get_by_id took {duration:.2f}s")
+                except Exception as e:
+                    logger.warning(f"Failed to track performance: {e}")
+
+            return task
 
     async def get_by_db_id(self, db_id: int) -> Optional[TaskDB]:
         """Get task by database primary key."""

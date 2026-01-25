@@ -2182,6 +2182,88 @@ async def get_error_spike_metrics():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/performance/metrics")
+async def get_performance_metrics():
+    """Get performance metrics.
+
+    Q3 2026 Phase 4: Response time tracking and slow query detection.
+
+    Returns:
+        JSON with slow queries and performance thresholds
+    """
+    try:
+        from .monitoring.performance import perf_tracker
+        from .database.slow_query_detector import slow_query_detector
+
+        return {
+            "slow_queries": slow_query_detector.get_slow_queries(),
+            "slow_query_stats": slow_query_detector.get_stats(),
+            "thresholds": {
+                "slow_query_ms": slow_query_detector.threshold_ms,
+                "slow_request_s": perf_tracker.slow_request_threshold
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/performance/slow-queries")
+async def get_slow_queries(limit: int = 20):
+    """Get slow query report.
+
+    Q3 2026 Phase 4: Detailed slow query analysis.
+
+    Args:
+        limit: Maximum number of queries to return (default 20)
+
+    Returns:
+        JSON with slow query details sorted by duration
+    """
+    try:
+        from .database.slow_query_detector import slow_query_detector
+
+        queries = slow_query_detector.get_slow_queries(limit=limit)
+        stats = slow_query_detector.get_stats()
+
+        return {
+            "total": len(queries),
+            "queries": queries,
+            "statistics": stats,
+            "threshold_ms": slow_query_detector.threshold_ms
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting slow queries: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/performance/clear-slow-queries")
+async def clear_slow_query_history():
+    """Clear slow query history.
+
+    Q3 2026 Phase 4: Reset slow query tracking.
+
+    Returns:
+        JSON confirmation
+    """
+    try:
+        from .database.slow_query_detector import slow_query_detector
+
+        slow_query_detector.clear_history()
+
+        return {
+            "status": "success",
+            "message": "Slow query history cleared",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing slow query history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Error handlers
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

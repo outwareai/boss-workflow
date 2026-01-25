@@ -1,0 +1,77 @@
+name: PR Auto-Comment
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run tests and capture results
+        id: tests
+        run: |
+          pytest tests/unit/ -v --tb=short > test-output.txt 2>&1 || true
+
+          # Extract summary
+          echo "## Test Results" > test-summary.md
+          echo "" >> test-summary.md
+
+          if grep -q "passed" test-output.txt; then
+            PASSED=$(grep -oP '\d+(?= passed)' test-output.txt | head -1)
+            echo "✅ **Passed:** $PASSED" >> test-summary.md
+          fi
+
+          if grep -q "failed" test-output.txt; then
+            FAILED=$(grep -oP '\d+(?= failed)' test-output.txt | head -1)
+            echo "❌ **Failed:** $FAILED" >> test-summary.md
+          fi
+
+          if grep -q "skipped" test-output.txt; then
+            SKIPPED=$(grep -oP '\d+(?= skipped)' test-output.txt | head -1)
+            echo "⏭️ **Skipped:** $SKIPPED" >> test-summary.md
+          fi
+
+          echo "" >> test-summary.md
+          echo "### Details" >> test-summary.md
+          echo '```' >> test-summary.md
+          tail -50 test-output.txt >> test-summary.md
+          echo '```' >> test-summary.md
+
+      - name: Run coverage
+        id: coverage
+        run: |
+          pytest tests/unit/ --cov=src --cov-report=term-missing > coverage-output.txt 2>&1 || true
+
+          echo "" >> test-summary.md
+          echo "### Coverage Report" >> test-summary.md
+          echo '```' >> test-summary.md
+          grep -A 20 "Name.*Stmts.*Miss.*Cover" coverage-output.txt >> test-summary.md || echo "Coverage data not available" >> test-summary.md
+          echo '```' >> test-summary.md
+
+      - name: Comment PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('test-summary.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            })

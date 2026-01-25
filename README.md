@@ -1,5 +1,10 @@
 # Boss Workflow Automation System
 
+[![CI Pipeline](https://github.com/outwareai/boss-workflow/workflows/CI%20Pipeline/badge.svg)](https://github.com/outwareai/boss-workflow/actions/workflows/ci.yml)
+[![Test Suite](https://github.com/outwareai/boss-workflow/workflows/Test%20Suite/badge.svg)](https://github.com/outwareai/boss-workflow/actions/workflows/test.yml)
+[![Deploy](https://github.com/outwareai/boss-workflow/workflows/Deploy%20to%20Railway/badge.svg)](https://github.com/outwareai/boss-workflow/actions/workflows/deploy.yml)
+[![codecov](https://codecov.io/gh/outwareai/boss-workflow/branch/master/graph/badge.svg)](https://codecov.io/gh/outwareai/boss-workflow)
+
 A conversational task management system that integrates Telegram, DeepSeek AI, Discord, Google Sheets, and Google Calendar.
 
 ## Recent Updates (Q1-Q3 2026)

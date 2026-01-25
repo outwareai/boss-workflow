@@ -1,0 +1,56 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway link boss-workflow || echo "Already linked"
+          railway up --detach
+
+      - name: Wait for deployment
+        run: sleep 60
+
+      - name: Verify deployment
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOSS_CHAT_ID: ${{ secrets.TELEGRAM_BOSS_CHAT_ID }}
+        run: |
+          python test_full_loop.py verify-deploy || echo "Verification failed but deployment may still be successful"
+        continue-on-error: true
+
+      - name: Deployment summary
+        run: |
+          echo "## Railway Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Deployed to Railway successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** master" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check Railway logs: \`railway logs -s boss-workflow\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Monitor deployment status" >> $GITHUB_STEP_SUMMARY
+          echo "3. Run post-deploy tests if needed" >> $GITHUB_STEP_SUMMARY

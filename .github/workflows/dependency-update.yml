@@ -1,0 +1,122 @@
+name: Weekly Dependency Check
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install pip-audit
+        run: |
+          pip install pip-audit pip-tools
+
+      - name: Check for security vulnerabilities
+        id: audit
+        run: |
+          pip-audit --requirement requirements.txt --format json > audit-report.json || true
+          if [ -s audit-report.json ]; then
+            echo "vulnerabilities_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "vulnerabilities_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for outdated packages
+        id: outdated
+        run: |
+          pip install -r requirements.txt
+          pip list --outdated > outdated-packages.txt || true
+          if [ -s outdated-packages.txt ]; then
+            echo "outdated_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "outdated_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create issue if updates needed
+        if: steps.audit.outputs.vulnerabilities_found == 'true' || steps.outdated.outputs.outdated_found == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+
+            let body = '## Weekly Dependency Update Report\n\n';
+            body += `**Date:** ${new Date().toISOString().split('T')[0]}\n\n`;
+
+            // Check vulnerabilities
+            if ('${{ steps.audit.outputs.vulnerabilities_found }}' === 'true') {
+              const auditReport = JSON.parse(fs.readFileSync('audit-report.json', 'utf8'));
+              body += '### 🚨 Security Vulnerabilities\n\n';
+              body += '```json\n' + JSON.stringify(auditReport, null, 2) + '\n```\n\n';
+            }
+
+            // Check outdated packages
+            if ('${{ steps.outdated.outputs.outdated_found }}' === 'true') {
+              const outdated = fs.readFileSync('outdated-packages.txt', 'utf8');
+              body += '### 📦 Outdated Packages\n\n';
+              body += '```\n' + outdated + '\n```\n\n';
+            }
+
+            body += '### Action Items\n\n';
+            body += '1. Review the security vulnerabilities and outdated packages above\n';
+            body += '2. Update dependencies in `requirements.txt`\n';
+            body += '3. Test thoroughly after updates\n';
+            body += '4. Create a PR with the updates\n\n';
+            body += '### Update Commands\n\n';
+            body += '```bash\n';
+            body += '# Update specific package\n';
+            body += 'pip install --upgrade package-name\n';
+            body += 'pip freeze > requirements.txt\n\n';
+            body += '# Test after update\n';
+            body += 'pytest tests/unit/ -v\n';
+            body += '```\n';
+
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'dependencies'
+            });
+
+            const existingIssue = issues.data.find(issue =>
+              issue.title.includes('Weekly Dependency Update')
+            );
+
+            if (existingIssue) {
+              // Update existing issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: body
+              });
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Weekly Dependency Update Report',
+                body: body,
+                labels: ['dependencies', 'maintenance']
+              });
+            }
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-reports
+          path: |
+            audit-report.json
+            outdated-packages.txt
