@@ -715,11 +715,33 @@ REVIEWING_BREAKDOWN → REFINING → FINALIZING → COMPLETED
 
 **Features by Group:**
 
-**GROUP 1: Foundation**
+**GROUP 1: Foundation + Enhanced Task Decomposition** ✅ **COMPLETE**
 - Database schema with 6 tables and migrations
 - Conversational planning flow with `/plan`, `/approve`, `/refine`
 - Project recognition from conversation
 - 5 repositories with Phase 2 exception handling
+- **✨ Phase 2: Historical Effort Estimation**
+  - Estimates task hours based on similar past tasks
+  - Uses semantic similarity matching (Jaccard + keywords)
+  - Provides confidence scores (high/medium/low)
+  - Learns from actual_hours vs estimated_hours over time
+- **✨ Phase 2: Team Performance-Based Assignee Suggestions**
+  - Recommends assignees based on success rate
+  - Considers skill matching (task type, category, tags)
+  - Factors in current workload (active tasks + hours)
+  - Scoring: 40% success rate + 40% skill match + 20% availability
+- **✨ Phase 3: Dependency Validation**
+  - Detects circular dependencies using DFS algorithm
+  - Validates all dependency references exist
+  - Identifies resource conflicts (same person on dependent tasks)
+  - Calculates topological sort for parallel execution
+  - Estimates critical path with time analysis
+- **✨ Phase 3: Refinement Impact Analysis**
+  - Analyzes impact before applying changes
+  - Recalculates timelines for affected tasks
+  - Detects new dependency issues from refinements
+  - Shows warnings for resource conflicts
+  - Prevents invalid state changes (blocks if cycles detected)
 
 **GROUP 2: Intelligence**
 - Multi-round refinement dialogue
@@ -753,13 +775,47 @@ REVIEWING_BREAKDOWN → REFINING → FINALIZING → COMPLETED
 - Template Confidence Threshold: 60%
 - Clarifying Questions: 2-3 max (adaptive based on complexity)
 
+**GROUP 1 Technical Implementation:**
+
+*DependencyValidator:*
+- Graph representation: Adjacency list (task_id → [dependencies])
+- Cycle detection: Depth-First Search (DFS) with recursion stack
+- Topological sort: Kahn's algorithm for parallel execution levels
+- Critical path: Backtracking from longest completion time
+- Time complexity: O(V + E) for validation
+
+*HistoricalEstimator:*
+- Similarity matching: Jaccard coefficient + exact word matches
+- Keyword extraction: Stopword filtering + min length 3
+- Similarity threshold: 0.3 minimum for match consideration
+- Confidence levels: High (≥60% + ≥3 matches), Medium (≥40% + ≥1), Low (default)
+- Weighted average: similarity × success_rate as weights
+
+*TeamPerformanceAnalyzer:*
+- Success rate: on_time_completion / total_completed
+- Workload calculation: (hours_remaining / 40) × 0.7 + (active_tasks / 10) × 0.3
+- Skill matching: Overlap between (task tags/type) and (member skills)
+- Assignee scoring: success_rate × 0.4 + skill_match × 0.4 + availability × 0.2
+
+*RefinementAnalyzer:*
+- Impact detection: Finds tasks with modified_task in dependencies
+- Timeline shift: effort_delta / 8 hours per day
+- Validation sequence: Apply changes → Validate → Show impact → Confirm
+- Rollback: Changes only applied if validation passes
+
 **Files:**
-- `src/bot/planning_handler.py` - Core planning logic
+- `src/bot/planning_handler.py` - Core planning logic with GROUP 1 integration
+- `src/bot/planning_enhancements.py` - GROUP 1 enhancement orchestrator
 - `src/ai/project_recognizer.py` - Project context retrieval
+- `src/ai/historical_estimator.py` - **NEW:** Effort estimation from history
+- `src/ai/team_performance_analyzer.py` - **NEW:** Assignee recommendations
+- `src/ai/refinement_analyzer.py` - **NEW:** Refinement impact analysis
+- `src/utils/dependency_validator.py` - **NEW:** Dependency cycle detection
 - `src/database/repositories/planning.py` - Planning repositories
 - `src/database/repositories/memory.py` - Memory repositories
 - `src/database/repositories/templates.py` - Template management
 - `migrations/003_planning_and_projects.sql` - Database schema
+- `tests/unit/test_group1_planning_enhancements.py` - **NEW:** 18 unit tests
 
 **Limitations:**
 - Boss-only feature (team members cannot initiate planning)
@@ -7069,3 +7125,282 @@ railway logs -s boss-workflow | grep "orphaned\|mismatch"
 ✅ Manual fix endpoint (`/api/admin/fix-orphans`)
 ✅ Production-ready
 
+---
+
+## 📚 GROUP 2: Project Memory System (Q1 2026)
+
+**Status:** ✅ Production
+**Implementation Date:** 2026-01-25
+**Version:** 1.0
+
+### Overview
+
+Intelligent memory system that learns from past projects and provides smart recommendations for future planning. The system automatically extracts patterns, decisions, and insights from completed projects, then uses this knowledge to help with new project planning.
+
+### Architecture
+
+```
+┌─────────────────────┐
+│  Planning Session   │
+│    (New Project)    │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐     ┌──────────────────────┐
+│ Memory Retrieval    │────►│ Pattern Recognizer   │
+│ - Find similar      │     │ - Compare projects   │
+│ - Get context       │     │ - Predict challenges │
+│ - Recommendations   │     │ - Match templates    │
+└─────────────────────┘     └──────────────────────┘
+           │                         │
+           └────────┬────────────────┘
+                    ▼
+           ┌─────────────────┐
+           │ Project Memory  │
+           │   Database      │
+           │ - Patterns      │
+           │ - Decisions     │
+           │ - Discussions   │
+           └─────────────────┘
+                    ▲
+                    │
+           ┌────────┴─────────┐
+           │ Memory Extractor │
+           │ - Auto-extract   │
+           │ - Weekly job     │
+           │ - AI analysis    │
+           └──────────────────┘
+```
+
+### Core Components
+
+#### 1. Memory Extractor (`src/ai/memory_extractor.py`)
+
+Extracts and stores insights from completed projects.
+
+**Features:**
+- **Pattern Extraction:** Analyzes completed projects to identify:
+  - Common challenges encountered
+  - Success patterns that worked
+  - Team performance insights
+  - Bottleneck patterns
+  - Time estimation accuracy
+- **Decision Extraction:** Captures decisions made during planning:
+  - What was decided
+  - Rationale and reasoning
+  - Alternatives considered
+  - Decision maker (user/AI)
+- **Discussion Summarization:** AI-powered summaries of planning conversations
+- **Completion Metrics:** Analyzes project performance:
+  - Task completion rates
+  - Average completion times
+  - High-performing team members
+  - Blocking tasks identification
+
+**Functions:**
+```python
+# Extract patterns from a completed project
+await memory_extractor.extract_project_patterns(project_id)
+
+# Extract decisions from planning session
+count = await memory_extractor.extract_decisions_from_session(session_id)
+
+# Summarize discussion
+summary = await memory_extractor.summarize_discussion(messages)
+
+# Analyze completion metrics
+metrics = await memory_extractor.analyze_completion_metrics(project_id)
+
+# Create discussion summary
+discussion_id = await memory_extractor.create_discussion_summary(
+    project_id,
+    planning_session_id,
+    messages,
+    importance_score=0.8
+)
+```
+
+**Scheduled Job:**
+- Runs weekly on Sunday at 3 AM
+- Analyzes projects completed in last 7 days
+- Automatically extracts patterns and stores in database
+- Notifies boss of completion via Telegram
+
+#### 2. Pattern Recognizer (`src/ai/pattern_recognizer.py`)
+
+Finds patterns and similarities across projects.
+
+**Features:**
+- **Similar Project Detection:** AI-based similarity scoring (0-100)
+  - Matches based on goals, complexity, technical requirements
+  - Returns top N most similar projects with reasons
+- **Common Pattern Extraction:** Aggregates insights across projects
+  - Most frequent challenges
+  - Most successful patterns
+  - Key lessons learned
+- **Challenge Prediction:** Predicts likely challenges for new projects
+  - Based on historical frequency
+  - Team experience consideration
+  - Includes mitigation strategies
+- **Template Recommendation:** Matches projects to planning templates
+  - Relevance scoring
+  - Category and complexity matching
+
+**Functions:**
+```python
+# Find similar projects
+similar = await pattern_recognizer.find_similar_projects(
+    "Build mobile app",
+    limit=5,
+    min_confidence=0.6
+)
+
+# Extract common patterns across projects
+patterns = await pattern_recognizer.extract_common_patterns(
+    ["PROJ-001", "PROJ-002", "PROJ-003"]
+)
+
+# Predict challenges
+challenges = await pattern_recognizer.predict_challenges(
+    project_description="Build e-commerce platform",
+    team=["Mayank", "Sarah"]
+)
+
+# Recommend templates
+templates = await pattern_recognizer.recommend_templates(
+    "Redesign mobile app UI"
+)
+```
+
+#### 3. Memory Retrieval (`src/ai/memory_retrieval.py`)
+
+Retrieves memory and provides context-aware recommendations.
+
+**Features:**
+- **Question Answering:** Answers questions about past projects
+  - Uses project memory, decisions, and discussions
+  - Provides specific examples from history
+- **Planning Context:** Provides relevant context for new planning sessions
+  - Similar projects found
+  - Predicted challenges with probabilities
+  - Recommended templates
+  - Human-readable context summary
+- **Next Steps Suggestions:** Recommends next steps during planning
+  - Checks for missing assignees
+  - Suggests dependencies
+  - Identifies missing estimates
+- **Proactive Warnings:** Generates warnings during planning
+  - Unrealistic timelines (>160 hours)
+  - Missing critical tasks (testing, docs)
+  - Single points of failure (one person too many tasks)
+  - Tasks without acceptance criteria
+- **Project Insights:** AI-powered analysis of task plans
+  - Complexity scoring (1-10)
+  - Estimated duration
+  - Risk factors
+  - Recommendations
+  - Critical path identification
+
+**Functions:**
+```python
+# Answer project question
+answer = await memory_retrieval.answer_project_question(
+    "What challenges did we face in the mobile app project?",
+    project_id="PROJ-001"
+)
+
+# Get planning context
+context = await memory_retrieval.get_relevant_context(
+    "Build e-commerce platform"
+)
+
+# Suggest next steps
+suggestions = await memory_retrieval.suggest_next_steps(session_id)
+
+# Get proactive warnings
+warnings = await memory_retrieval.proactive_warnings(task_drafts)
+
+# Generate project insights
+insights = await memory_retrieval.generate_project_insights(task_drafts)
+```
+
+### Planning Handler Integration
+
+The memory system is integrated into the planning handler to provide context automatically.
+
+**When Planning Starts:**
+The system automatically retrieves context from memory and displays to user with similar projects and predicted challenges.
+
+**When Planning Completes:**
+The system automatically extracts decisions made during the session.
+
+### Database Schema
+
+**project_memory table:**
+- memory_id (PK)
+- project_id (FK)
+- common_challenges (JSON)
+- success_patterns (JSON)
+- team_insights (JSON)
+- estimated_vs_actual (JSON)
+- bottleneck_patterns (JSON)
+- recommended_templates (JSON)
+- pattern_confidence (0-1)
+- last_analyzed_at
+- analysis_version
+
+**project_decisions table:**
+- decision_id (PK)
+- project_id (FK)
+- planning_session_id (FK)
+- decision_type (tech_choice, scope_change, etc.)
+- decision_text
+- reasoning
+- alternatives_considered (JSON)
+- made_by
+- context (JSON)
+- impact_assessment
+- outcome
+- decided_at
+- reviewed_at
+
+**key_discussions table:**
+- discussion_id (PK)
+- project_id (FK)
+- planning_session_id (FK)
+- topic
+- summary (AI-generated)
+- key_points (JSON)
+- message_ids (JSON)
+- participant_ids (JSON)
+- extracted_decisions (JSON)
+- extracted_action_items (JSON)
+- importance_score (0-1)
+- tags (JSON)
+- occurred_at
+- summarized_at
+
+### Scheduled Jobs
+
+**Pattern Extraction Job:**
+- **Schedule:** Weekly on Sunday at 3 AM
+- **Function:** `_extract_project_patterns_job()`
+- **Operation:**
+  1. Finds projects completed in last 7 days
+  2. Extracts patterns using AI analysis
+  3. Stores in project_memory table
+  4. Sends completion notification to boss
+
+### Success Criteria Met
+
+✅ Patterns auto-extracted from completed projects
+✅ Decisions captured during planning sessions
+✅ Similar projects found with AI similarity scoring
+✅ Planning context provided automatically
+✅ Proactive warnings generated during planning
+✅ Weekly pattern extraction job running
+✅ Memory retrieval answers project questions
+✅ Integration with planning handler complete
+✅ Production-ready with error handling
+
+---
