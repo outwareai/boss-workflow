@@ -219,13 +219,10 @@ class DependencyValidator:
             return []
 
         # Kahn's algorithm for topological sort
-        in_degree = {task_id: 0 for task_id in self.tasks}
-
-        # Calculate in-degrees
-        for task_id, deps in self.graph.items():
-            for dep in deps:
-                if dep in in_degree:  # Only count valid dependencies
-                    in_degree[dep] += 1
+        # Calculate in-degrees (how many tasks must complete before this one)
+        in_degree = {}
+        for task_id in self.tasks:
+            in_degree[task_id] = len(self.graph.get(task_id, []))
 
         # Start with tasks that have no dependencies
         queue = [task_id for task_id, degree in in_degree.items() if degree == 0]

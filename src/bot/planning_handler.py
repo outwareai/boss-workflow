@@ -928,6 +928,105 @@ OUTPUT FORMAT (JSON):
                 "error": str(e)
             }
 
+    async def refine_task(
+        self,
+        session_id: str,
+        task_id: str,
+        changes: Dict[str, Any],
+        chat_id: str
+    ) -> Dict[str, Any]:
+        """
+        Refine a specific task with impact analysis.
+
+        GROUP 1 Phase 3: Interactive Refinement Loop
+
+        Args:
+            session_id: Planning session ID
+            task_id: Task draft ID to modify
+            changes: Dict of changes to apply
+            chat_id: Telegram chat ID
+
+        Returns:
+            Dict with refinement result and impact analysis
+        """
+        try:
+            async with get_session() as db:
+                planning_repo = get_planning_repository(db)
+                draft_repo = get_task_draft_repository(db)
+
+                # Validate session
+                session = await planning_repo.get_by_id_or_fail(session_id)
+
+                # Analyze impact before applying changes
+                impact = await self.enhancer.analyze_refinement_impact(
+                    session_id,
+                    task_id,
+                    changes,
+                    db
+                )
+
+                # Show impact to user
+                await self.telegram.send_message(
+                    chat_id,
+                    impact["message"],
+                    parse_mode="Markdown"
+                )
+
+                # If valid, apply changes
+                if impact["is_valid"]:
+                    await draft_repo.update(task_id, changes)
+
+                    # Track refinement
+                    await planning_repo.add_user_edit(
+                        session_id,
+                        "modify_task",
+                        {
+                            "task_id": task_id,
+                            "changes": changes,
+                            "impact": {
+                                "affected_tasks": impact["affected_tasks"],
+                                "timeline_changes": impact["timeline_changes"]
+                            }
+                        }
+                    )
+
+                    logger.info(f"Refined task {task_id} in session {session_id}")
+
+                    return {
+                        "success": True,
+                        "is_valid": True,
+                        "impact": impact
+                    }
+                else:
+                    # Changes create invalid state
+                    await self.telegram.send_message(
+                        chat_id,
+                        "⚠️ Cannot apply changes - please fix validation errors first.",
+                        parse_mode="Markdown"
+                    )
+
+                    return {
+                        "success": False,
+                        "is_valid": False,
+                        "impact": impact,
+                        "error": "Validation failed"
+                    }
+
+        except Exception as e:
+            logger.error(f"Failed to refine task: {e}", exc_info=True)
+
+            if chat_id:
+                await self.telegram.send_message(
+                    chat_id,
+                    f"❌ Failed to refine task: {str(e)}",
+                    parse_mode="Markdown"
+                )
+
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     def _format_breakdown_for_refinement(
         self,
         breakdown: Dict[str, Any],
@@ -1096,6 +1195,63 @@ Only match if confidence > 0.6.
             if t.get('category'):
                 lines.append(f"  Category: {t['category']}")
         return "\n".join(lines)
+
+    async def _get_planning_context(
+        self,
+        project_description: str,
+        session_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get relevant context from memory system for planning.
+
+        GROUP 2: Memory System integration.
+
+        Args:
+            project_description: Description of the project
+            session_id: Planning session ID
+
+        Returns:
+            Dictionary with context including similar projects, challenges, templates
+        """
+        try:
+            # Get context from memory retrieval
+            context = await memory_retrieval.get_relevant_context(project_description)
+
+            logger.info(
+                f"Retrieved planning context for session {session_id}: "
+                f"{len(context.get('similar_projects', []))} similar projects, "
+                f"{len(context.get('predicted_challenges', []))} challenges"
+            )
+
+            return context
+
+        except Exception as e:
+            logger.error(f"Failed to get planning context: {e}", exc_info=True)
+            return {
+                "similar_projects": [],
+                "predicted_challenges": [],
+                "recommended_templates": [],
+                "context_summary": "",
+                "has_context": False
+            }
+
+    async def _extract_session_insights(self, session_id: str):
+        """
+        Extract insights from completed planning session.
+
+        GROUP 2: Memory System - Called after session completes.
+
+        Args:
+            session_id: Planning session ID
+        """
+        try:
+            # Extract decisions made during session
+            await memory_extractor.extract_decisions_from_session(session_id)
+
+            logger.info(f"Extracted insights from planning session {session_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to extract session insights: {e}", exc_info=True)
 
 
 def get_planning_handler(
