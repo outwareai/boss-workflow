@@ -16,6 +16,9 @@ from .projects import ProjectRepository, get_project_repository
 from .attendance import AttendanceRepository, get_attendance_repository
 from .oauth import OAuthTokenRepository, get_oauth_repository
 from .staff_context import StaffContextRepository, get_staff_context_repository
+from .planning import PlanningRepository, TaskDraftRepository, get_planning_repository, get_task_draft_repository
+from .memory import MemoryRepository, DecisionRepository, DiscussionRepository, get_memory_repository, get_decision_repository, get_discussion_repository
+from .templates import TemplateRepository, get_template_repository
 
 __all__ = [
     "TaskRepository",
@@ -38,4 +41,16 @@ __all__ = [
     "get_oauth_repository",
     "StaffContextRepository",
     "get_staff_context_repository",
+    "PlanningRepository",
+    "get_planning_repository",
+    "TaskDraftRepository",
+    "get_task_draft_repository",
+    "MemoryRepository",
+    "get_memory_repository",
+    "DecisionRepository",
+    "get_decision_repository",
+    "DiscussionRepository",
+    "get_discussion_repository",
+    "TemplateRepository",
+    "get_template_repository",
 ]

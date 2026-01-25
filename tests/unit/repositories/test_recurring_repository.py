@@ -491,7 +491,7 @@ async def test_update_after_run(recurring_repository, sample_recurring_task):
 
     result = await repo.update_after_run("REC-20260124-001")
 
-    assert result is True
+    assert result == sample_recurring_task
     session.flush.assert_called_once()
     # Verify last_run was updated and instances_created incremented
     assert sample_recurring_task.instances_created == 6
@@ -499,16 +499,18 @@ async def test_update_after_run(recurring_repository, sample_recurring_task):
 
 @pytest.mark.asyncio
 async def test_update_after_run_not_found(recurring_repository):
-    """Test updating after run when task doesn't exist."""
+    """Test updating after run when task doesn't exist raises exception."""
+    from src.database.exceptions import EntityNotFoundError
     repo, session = recurring_repository
 
     mock_result = Mock()
     mock_result.scalar_one_or_none = Mock(return_value=None)
     session.execute.return_value = mock_result
 
-    result = await repo.update_after_run("REC-nonexistent")
+    # Should raise EntityNotFoundError
+    with pytest.raises(EntityNotFoundError, match="Recurring task REC-nonexistent not found"):
+        await repo.update_after_run("REC-nonexistent")
 
-    assert result is False
     session.flush.assert_not_called()
 
 
@@ -527,23 +529,25 @@ async def test_pause_recurring_task(recurring_repository, sample_recurring_task)
 
     result = await repo.pause("REC-20260124-001")
 
-    assert result is True
+    assert result == sample_recurring_task
     assert sample_recurring_task.is_active is False
     session.flush.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_pause_not_found(recurring_repository):
-    """Test pausing when task doesn't exist."""
+    """Test pausing when task doesn't exist raises exception."""
+    from src.database.exceptions import EntityNotFoundError
     repo, session = recurring_repository
 
     mock_result = Mock()
     mock_result.scalar_one_or_none = Mock(return_value=None)
     session.execute.return_value = mock_result
 
-    result = await repo.pause("REC-nonexistent")
+    # Should raise EntityNotFoundError
+    with pytest.raises(EntityNotFoundError, match="Recurring task REC-nonexistent not found"):
+        await repo.pause("REC-nonexistent")
 
-    assert result is False
     session.flush.assert_not_called()
 
 
@@ -559,7 +563,7 @@ async def test_resume_recurring_task(recurring_repository, sample_recurring_task
 
     result = await repo.resume("REC-20260124-001")
 
-    assert result is True
+    assert result == sample_recurring_task
     assert sample_recurring_task.is_active is True
     session.flush.assert_called_once()
 
@@ -584,16 +588,18 @@ async def test_resume_recalculates_next_run(recurring_repository, sample_recurri
 
 @pytest.mark.asyncio
 async def test_resume_not_found(recurring_repository):
-    """Test resuming when task doesn't exist."""
+    """Test resuming when task doesn't exist raises exception."""
+    from src.database.exceptions import EntityNotFoundError
     repo, session = recurring_repository
 
     mock_result = Mock()
     mock_result.scalar_one_or_none = Mock(return_value=None)
     session.execute.return_value = mock_result
 
-    result = await repo.resume("REC-nonexistent")
+    # Should raise EntityNotFoundError
+    with pytest.raises(EntityNotFoundError, match="Recurring task REC-nonexistent not found"):
+        await repo.resume("REC-nonexistent")
 
-    assert result is False
     session.flush.assert_not_called()
 
 
@@ -619,14 +625,16 @@ async def test_delete_recurring_task(recurring_repository, sample_recurring_task
 
 @pytest.mark.asyncio
 async def test_delete_not_found(recurring_repository):
-    """Test deleting when task doesn't exist."""
+    """Test deleting when task doesn't exist raises exception."""
+    from src.database.exceptions import EntityNotFoundError
     repo, session = recurring_repository
 
     mock_result = Mock()
     mock_result.scalar_one_or_none = Mock(return_value=None)
     session.execute.return_value = mock_result
 
-    result = await repo.delete("REC-nonexistent")
+    # Should raise EntityNotFoundError
+    with pytest.raises(EntityNotFoundError, match="Recurring task REC-nonexistent not found"):
+        await repo.delete("REC-nonexistent")
 
-    assert result is False
     session.delete.assert_not_called()

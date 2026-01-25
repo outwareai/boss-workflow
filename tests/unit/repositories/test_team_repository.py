@@ -130,14 +130,15 @@ async def test_create_generates_username(team_repository):
 
 @pytest.mark.asyncio
 async def test_create_handles_errors_gracefully(team_repository):
-    """Test that create() returns None on error."""
+    """Test that create() raises exception on error."""
+    from src.database.exceptions import DatabaseOperationError
     repo, session = team_repository
 
     session.add.side_effect = Exception("Database error")
 
-    result = await repo.create(name="Test User")
-
-    assert result is None
+    # Should raise DatabaseOperationError
+    with pytest.raises(DatabaseOperationError, match="Failed to create team member"):
+        await repo.create(name="Test User")
 
 
 # ============================================================
