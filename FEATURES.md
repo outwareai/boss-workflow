@@ -7404,3 +7404,315 @@ The system automatically extracts decisions made during the session.
 ✅ Production-ready with error handling
 
 ---
+
+## GROUP 3: Phase 8 - Automated Documentation Generation
+
+**Status:** ✅ Complete (2026-01-25)
+**Location:** `src/services/documentation_generator.py`, `src/integrations/google_docs.py`
+
+### Overview
+
+Automatically generate professional documentation from planning sessions in multiple formats (Markdown, Google Docs) with AI-powered content generation.
+
+### Features
+
+#### 1. Markdown Export (`DocumentationGenerator`)
+
+Generates comprehensive markdown documentation from planning sessions.
+
+**Components:**
+- **Executive Summary** - AI-generated 2-3 paragraph project overview
+- **Tasks Breakdown** - Organized by assignee with full details
+- **Timeline Visualization** - Chronological task schedule
+- **Risk Assessment** - AI-identified risks with mitigation strategies
+- **Success Criteria** - Measurable project goals as checklist
+- **Decision Log** - Key decisions made during planning
+- **Appendix** - Metadata and generation info
+
+**Functions:**
+```python
+from src.services.documentation_generator import get_documentation_generator
+
+doc_gen = get_documentation_generator()
+
+# Generate markdown document
+markdown = await doc_gen.generate_project_plan_markdown(session_id)
+
+# Export to file
+file_path = await doc_gen.export_to_file(session_id)
+# Returns: "exports/plan_PLAN-20260125-ABC123_20260125_143022.md"
+```
+
+**Markdown Structure:**
+```markdown
+# Project Plan: [Description]
+
+**Created:** 2026-01-25 14:30
+**Status:** reviewing_breakdown
+**Complexity:** medium
+**Total Tasks:** 12
+
+## Executive Summary
+[AI-generated 2-3 paragraph overview]
+
+## Tasks Breakdown
+### Mayank (5 tasks)
+**DRAFT-001:** Implement authentication
+- **Description:** JWT-based auth system
+- **Priority:** high
+- **Effort:** 8 hours
+...
+
+## Timeline
+```
+2026-02-01 | Mayank          | Implement authentication
+2026-02-05 | Sarah           | Design UI mockups
+```
+
+## Risk Assessment
+- **Scope Creep** (Impact: Medium) - Monitor additions. *Mitigation: Weekly scope reviews*
+- **Timeline Delays** (Impact: High) - Buffer time needed. *Mitigation: 20% contingency*
+
+## Success Criteria
+- [ ] All 12 tasks completed on time
+- [ ] 95% test coverage achieved
+- [ ] Zero critical bugs in production
+
+## Decision Log
+No decisions recorded yet.
+```
+
+#### 2. Google Docs Integration (`GoogleDocsClient`)
+
+Creates formatted Google Docs with project specifications.
+
+**Features:**
+- **Document Creation** - New Google Doc with custom title
+- **Content Formatting** - Headings, paragraphs, tables
+- **Table Generation** - Task breakdown in table format
+- **Public Sharing** - Automatic shareable link generation
+
+**Functions:**
+```python
+from src.integrations.google_docs import get_google_docs_client
+
+docs_client = get_google_docs_client()
+
+# Create document
+doc_id = await docs_client.create_document("Project Plan: Mobile App")
+
+# Add content
+await docs_client.add_content(doc_id, "Executive Summary", style="HEADING_1")
+await docs_client.add_content(doc_id, "Project overview text...")
+
+# Add table
+table_data = [
+    ["Task ID", "Title", "Assignee", "Effort"],
+    ["TASK-001", "Design UI", "Sarah", "8h"],
+    ["TASK-002", "Build API", "Mayank", "12h"]
+]
+await docs_client.add_table(doc_id, table_data)
+
+# Get shareable link
+url = await docs_client.get_shareable_link(doc_id)
+# Returns: "https://docs.google.com/document/d/ABC123.../edit"
+```
+
+**Document Structure:**
+- Title with metadata (created date, session ID, complexity)
+- Executive summary section
+- Task breakdown table (ID, Title, Assignee, Effort, Priority, Deadline)
+- Automatic public sharing (anyone with link can view)
+
+#### 3. Auto-Update Google Sheets
+
+Automatically updates Google Sheets when tasks are approved from planning sessions.
+
+**Operations:**
+- **Task Addition** - Appends new tasks to Daily Tasks sheet
+- **Dashboard Refresh** - Updates metrics (total, pending, in progress, completed)
+- **Completion Rate** - Calculates and displays completion percentage
+
+**Functions:**
+```python
+# Called automatically on task approval
+await doc_gen.auto_update_project_tracker(
+    session_id,
+    created_tasks=[task1, task2, task3]
+)
+
+# Updates:
+# 1. Appends rows to "📋 Daily Tasks"
+# 2. Refreshes "📊 Dashboard" metrics
+```
+
+**Dashboard Update:**
+```
+| Metric           | Value | Updated            |
+|------------------|-------|--------------------|
+| Total Tasks      | 145   | 2026-01-25 14:30  |
+| Pending          | 32    |                    |
+| In Progress      | 18    |                    |
+| Completed        | 95    |                    |
+| Completion Rate  | 65.5% |                    |
+```
+
+#### 4. Command: `/export`
+
+Telegram command to export planning session documentation.
+
+**Usage:**
+```
+/export markdown    # Export as Markdown file
+/export gdoc        # Create Google Doc
+```
+
+**Markdown Export Response:**
+```
+✅ **Plan exported to Markdown**
+
+**File:** `exports/plan_PLAN-20260125-ABC123_20260125_143022.md`
+
+You can:
+• Download the file
+• Commit to your repository
+• Share with your team
+
+The document includes:
+• Executive summary
+• Task breakdown by assignee
+• Timeline visualization
+• Risk assessment
+• Success criteria
+• Decision log
+```
+
+**Google Doc Export Response:**
+```
+✅ **Google Doc created**
+
+**Link:** https://docs.google.com/document/d/ABC123.../edit
+
+The document includes:
+• Project overview
+• Task breakdown table
+• Timeline and milestones
+• Team assignments
+
+You can now:
+• Share the link with your team
+• Edit collaboratively
+• Export to PDF
+```
+
+### File Structure
+
+**Services:**
+- `src/services/documentation_generator.py` - Main documentation generator
+  - `DocumentationGenerator` class
+  - `generate_project_plan_markdown()` - Generate markdown doc
+  - `export_to_file()` - Save to file system
+  - `create_google_doc_spec()` - Create Google Doc
+  - `auto_update_project_tracker()` - Update sheets
+  - `_generate_executive_summary()` - AI-powered summary
+  - `_generate_risk_section()` - AI-powered risk assessment
+  - `_generate_success_criteria()` - AI-powered success criteria
+  - `_update_dashboard_metrics()` - Refresh dashboard
+
+**Integrations:**
+- `src/integrations/google_docs.py` - Google Docs API client
+  - `GoogleDocsClient` class
+  - `create_document()` - Create new doc
+  - `add_content()` - Add text with styling
+  - `add_table()` - Insert tables
+  - `get_shareable_link()` - Generate public URL
+  - `create_spec_document()` - Complete spec doc creation
+
+**Commands:**
+- `src/bot/commands.py` - Command handlers
+  - `handle_export()` - `/export` command handler
+- `src/bot/handlers/command_handler.py` - Handler routing
+  - `_cmd_export()` - Export command implementation
+
+### AI-Powered Content
+
+All AI content generation uses DeepSeek with specialized prompts:
+
+**Executive Summary:**
+- Temperature: 0.7 (creative but focused)
+- Max tokens: 500
+- Prompt includes: project description, task count, complexity, key tasks
+- Output: 2-3 professional paragraphs
+
+**Risk Assessment:**
+- Temperature: 0.6 (balanced)
+- Max tokens: 800
+- Prompt includes: project complexity, sample tasks, effort estimates
+- Output: 3-5 risks with impact levels and mitigation strategies
+
+**Success Criteria:**
+- Temperature: 0.5 (precise)
+- Max tokens: 500
+- Prompt includes: project description, categories, task count
+- Output: 3-5 measurable criteria as markdown checklist
+
+### Error Handling
+
+- **Session Not Found:** Returns error message, no crash
+- **Google API Failures:** Graceful degradation, returns error details
+- **AI Generation Failures:** Falls back to template-based content
+- **File System Errors:** Logs error, re-raises with context
+
+### Dependencies
+
+**Python Packages:**
+- `google-api-python-client` - Google Docs/Drive API
+- `google-auth` - Authentication
+- Existing: `openai` (DeepSeek), `sqlalchemy`, `asyncio`
+
+**Configuration:**
+- `GOOGLE_CREDENTIALS_JSON` - Service account credentials
+- Scopes: `docs`, `drive`, `spreadsheets`
+
+### Usage Example
+
+**Complete Workflow:**
+```bash
+# 1. Start planning
+/plan Build customer dashboard with analytics
+
+# [AI generates task breakdown]
+
+# 2. Review and approve
+/approve
+
+# 3. Export documentation
+/export markdown
+# File created: exports/plan_PLAN-20260125-ABC123.md
+
+# 4. Create Google Doc
+/export gdoc
+# Doc created: https://docs.google.com/document/d/...
+
+# 5. Sheets automatically updated
+# Dashboard refreshed with new tasks
+```
+
+### Success Criteria Met
+
+✅ `/export markdown` generates comprehensive plan document
+✅ `/export gdoc` creates Google Doc with spec sheet
+✅ Auto-update of Google Sheets on task approval
+✅ Dashboard metrics refresh automatically
+✅ Decision log tracking (integrated with planning)
+✅ Timeline visualization in markdown
+✅ AI-generated risk assessment
+✅ AI-generated success criteria checklist
+✅ Executive summary auto-generated
+✅ Professional document formatting
+✅ Error handling and graceful degradation
+✅ Shareable Google Docs with public links
+✅ Markdown files saved to exports/ directory
+✅ Integration with planning handler complete
+
+---

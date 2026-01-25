@@ -296,30 +296,57 @@ NO = User wants to create a simple task or other action"""
         """
         Use AI to generate clarifying questions
 
+        ALWAYS asks baseline questions:
+        1. Project name (if not mentioned)
+        2. Deadline/timeline
+        3. Who is assigned
+
+        Then adds context-specific questions.
+
         Args:
             raw_input: Original planning request
             max_questions: Maximum questions to generate
 
         Returns:
-            List of questions
+            List of questions (minimum 3)
         """
         try:
-            prompt = f"""You are helping a boss plan a project. Based on their request, generate {max_questions} SHORT clarifying questions.
+            # Baseline questions to ALWAYS consider
+            baseline_questions = []
+
+            # Check if project name mentioned
+            if not any(word in raw_input.lower() for word in ["project", "called", "named"]):
+                baseline_questions.append("What should we name this project (or leave unnamed)?")
+
+            # Check if timeline mentioned
+            if not any(word in raw_input.lower() for word in ["deadline", "by", "timeline", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]):
+                baseline_questions.append("When do you need this completed?")
+
+            # Check if assignee mentioned
+            if not any(word in raw_input.lower() for word in ["mayank", "zea", "team", "assign", "for"]):
+                baseline_questions.append("Who should work on this?")
+
+            # Generate additional context-specific questions via AI
+            prompt = f"""You are helping a boss plan a project. Based on their request, generate {max_questions - len(baseline_questions)} SHORT clarifying questions.
 
 Request: "{raw_input}"
 
-Questions should cover:
+DO NOT ask about:
+- Project name (already asking)
+- Timeline/deadline (already asking)
+- Who will work on it (already asking)
+
+Focus on:
 - Scope (what's included/excluded)
-- Timeline (when needed)
-- Team (who will work on it)
+- Priority (what's most important)
 - Dependencies (what's needed first)
+- Constraints (budget, tech stack, etc.)
 
 Keep questions SHORT and SPECIFIC. Format as numbered list.
 
 Example:
-1. When do you need this completed?
-2. Who should work on this?
-3. Are there any existing systems this needs to integrate with?"""
+1. Are there any existing systems this needs to integrate with?
+2. What's the most critical feature to deliver first?"""
 
             response = await self.ai.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
@@ -327,24 +354,27 @@ Example:
             )
 
             # Parse numbered list
-            questions = []
+            ai_questions = []
             for line in response.strip().split("\n"):
                 line = line.strip()
                 if line and line[0].isdigit():
                     # Remove number prefix
                     question = line.split(".", 1)[1].strip() if "." in line else line
-                    questions.append(question)
+                    ai_questions.append(question)
 
-            logger.info(f"Generated {len(questions)} clarifying questions")
-            return questions[:max_questions]
+            # Combine baseline + AI questions
+            all_questions = baseline_questions + ai_questions
+
+            logger.info(f"Generated {len(all_questions)} clarifying questions ({len(baseline_questions)} baseline + {len(ai_questions)} context)")
+            return all_questions[:max_questions]
 
         except Exception as e:
             logger.error(f"Failed to generate questions: {e}", exc_info=True)
-            # Fallback questions
+            # Fallback questions - comprehensive baseline
             return [
+                "What should we name this project (or leave unnamed)?",
                 "When do you need this completed?",
-                "Who should work on this?",
-                "What's the most important outcome?"
+                "Who should work on this?"
             ]
 
     async def process_answer(
