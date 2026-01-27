@@ -671,7 +671,19 @@ Generate the JSON now:"""
                 await draft_repo.bulk_create_from_ai(session_id, enhanced_tasks)
 
                 # GROUP 1 Phase 3: Validate dependencies
-                validation = await self.enhancer.validate_plan(session_id, enhanced_tasks)
+                # Fetch created drafts from DB (now they have draft_ids)
+                created_drafts = await draft_repo.get_by_session(session_id)
+                draft_dicts = [
+                    {
+                        "draft_id": d.draft_id,
+                        "title": d.title,
+                        "assigned_to": d.assigned_to,
+                        "depends_on": d.depends_on or [],
+                        "estimated_hours": d.estimated_hours
+                    }
+                    for d in created_drafts
+                ]
+                validation = await self.enhancer.validate_plan(session_id, draft_dicts)
 
                 # Present to user
                 await self._present_breakdown(chat_id, session_id, breakdown)
