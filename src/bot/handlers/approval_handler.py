@@ -50,9 +50,21 @@ class ApprovalHandler(BaseHandler):
 
         # Check for yes/no responses
         if message_lower in ["yes", "no", "y", "n", "confirm", "cancel", "do it", "proceed", "ok", "correct", "wrong", "nevermind"]:
-            # Only handle if user has pending approval
+            # Check both new session storage AND legacy _pending_actions dict
             pending = await self.get_session("action", user_id)
-            return pending is not None
+            if pending:
+                return True
+
+            # LEGACY: Also check UnifiedHandler's _pending_actions for backwards compatibility
+            try:
+                from ..handler import get_unified_handler
+                unified = get_unified_handler()
+                if user_id in unified._pending_actions:
+                    return True
+            except Exception:
+                pass
+
+            return False
 
         return False
 
@@ -63,8 +75,29 @@ class ApprovalHandler(BaseHandler):
         user_id = user_info["user_id"]
         user_name = user_info.get("first_name", "User")
 
-        # Get pending action
+        # Get pending action from new session storage
         pending = await self.get_session("action", user_id)
+
+        # LEGACY: Also check UnifiedHandler's _pending_actions
+        if not pending:
+            try:
+                from ..handler import get_unified_handler
+                unified = get_unified_handler()
+                if user_id in unified._pending_actions:
+                    # Delegate to UnifiedHandler for legacy actions
+                    response, action_data = await unified.handle_message(
+                        user_id=user_id,
+                        message=update.message.text,
+                        user_name=user_name,
+                        is_boss=True,
+                        source="telegram"
+                    )
+                    if response:
+                        await self.send_message(update, response)
+                    return
+            except Exception as e:
+                self.logger.error(f"Error checking legacy pending actions: {e}")
+
         if not pending:
             await self.send_error(update, "No pending action to approve")
             return
